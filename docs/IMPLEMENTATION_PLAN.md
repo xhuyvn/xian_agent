@@ -13,17 +13,17 @@ The prototype in `src/` represents a rapid architectural spike (commit `8894ce7`
 
 ### 1.1 Prototype File Audit & Dispositions
 
-| Prototype File | Blueprint §0.2 Disposition | Concrete Gaps & Deficiencies Found in Code | Blueprint Reference |
+| Prototype File | Blueprint Disposition / Status (§0.2 or Inferred) | Concrete Gaps & Deficiencies Found in Code | Blueprint Reference |
 |---|---|---|---|
 | `src/cli.py` | **Replace** (Ingest loop & query handling) | • Flat `src.` imports (`from src.ingestion...`) rather than blueprint package namespace `src.xn...`.<br>• Uses `sorted(glob.glob(os.path.join(raw_dir, "*.txt")))` sorting lexically rather than extracting integer $N$ from `^chapter_(\d+)\.md$` (G-10: `chapter_10` sorts before `chapter_2`).<br>• Ingest loop has no stage isolation, job state tracking, input hashing, or per-chapter transactions (G-03, G-19).<br>• Hardcodes `LifecycleEventType.CLASH` for every entity extracted (G-04).<br>• CLI options lack `--novel`, `--stage`, `--from`, `--to`, `--stale-only`, `--until`, `--full`, `--mode`.<br>• Query command initializes state with `query=prompt` and `intent`/`target_entity` as `None`, passing unparsed query directly to the graph without CLI arguments for `novel_id` or spoiler bounds (`--until`, `--mode`) (G-02, §3.3). | §0.2, §3.2 S0, §3.2 S3, §3.3, §3.6 |
-| `src/config.py` | **Replace / Split** | • Implements a single flat `pydantic_settings.BaseSettings` loading only `.env` and `configs/config.yaml`.<br>• No multi-novel isolation or loading of `configs/genres/<genre>.yaml` or `configs/novels/<id>.yaml` (G-21).<br>• Missing config fields: `FALLBACK_MODEL`, `DAILY_SPEND_CAP`, `LONG_CONTEXT_MODEL`, prompt versions, spend approval thresholds.<br>• Import-time execution of `Settings()` and YAML parsing (G-12). | §0.2, §3.2, §3.11, §3.12 |
+| `src/config.py` | **Replace / Split [not listed in §0.2 (inferred)]** | • Implements a single flat `pydantic_settings.BaseSettings` loading only `.env` and `configs/config.yaml`.<br>• No multi-novel isolation or loading of `configs/genres/<genre>.yaml` or `configs/novels/<id>.yaml` (G-21).<br>• Missing config fields: configured fallback model (§3.3; proposed name `FALLBACK_MODEL`), daily spend cap (§3.7; proposed name `DAILY_SPEND_CAP`), `LONG_CONTEXT_MODEL` (§3.12), prompt versions (§3.5), spend approval thresholds (§3.12).<br>• Import-time execution of `Settings()` and YAML parsing (G-12). | §3.2, §3.11, §3.12 (not in §0.2) |
 | `src/agents/graph_workflow.py` | **Replace** | • Instantiates `SQLiteLedger()` and `QdrantManager()` eagerly at import time (G-12).<br>• Heuristic keyword-based routing in `router_node` (`"mốc"`, `"thời gian"`, etc.) instead of typed Pydantic-AI `RouterDecision` on local Qwen (G-02).<br>• `router_node` assigns `state["target_entity"] = state["query"]`, which breaks entity resolution (G-02).<br>• `timeline_node` performs synchronous HTTP `httpx.Client.post()` directly to OpenRouter without retrieval or citations (G-01, ADR-01).<br>• `deep_dive_node` executes SQL `LIKE %name%` without alias normalization; falls back to LLM memory ("tri thức nền tảng") on miss (G-01); concatenates all ledger rows without context budget cap (G-07).<br>• Lacks `bound`, `resolve_entities`, `gate`, `verify` (with spoiler scan), `plan_long`, `map_arcs`, `reduce` nodes.<br>• Lacks LangGraph `SqliteSaver` checkpointer and thread-isolated memory. | §0.2, §3.1, §3.3, §3.4, §3.12 |
-| `src/agents/pydantic_agents.py` | **Replace / Evolve** | • Uses deprecated Pydantic-AI API: `OpenAIModel(base_url=...)`, `result_type=...`, and reads `.data` (G-09).<br>• Hardcodes static prompt strings in Python code instead of loading versioned Markdown templates from `prompts/<name>/<version>.md` with Jinja2 placeholders (G-13, §3.5).<br>• Instantiates models at import time with fallback dummy keys (`"sk-dummy"`, `"ollama"`) rather than lazy factories (G-12).<br>• Missing agents: router, entity adjudicator, arc boundary reviewer, prefix summarizer, long-context map/reduce agents. | §0.2, §3.3, §3.5, §3.9, §3.12 |
-| `src/ingestion/pydantic_extractor.py` | **Replace** (Stage S1) | • Hard-truncates text at `text[:9000]`, dropping 20–25% of chapter content (G-06).<br>• No token counting or 2-part splitting with overlap for chapters > 7,000 tokens (§3.2 S1).<br>• Dumps ad-hoc JSON files to `./data/extracted_json` rather than storing structured records in SQLite `extractions` table with input hashing and transaction rollbacks (G-03).<br>• Reads `result.data` (superseded API; should be `result.output`).<br>• Lacks code-side verification of verbatim quotes (`partial_ratio >= 85`) against source text. | §0.2, §3.2 S1, §3.9 |
+| `src/agents/pydantic_agents.py` | **Replace / Evolve [not listed in §0.2 (inferred)]** | • Uses deprecated Pydantic-AI API: `OpenAIModel(base_url=...)`, `result_type=...`, and reads `.data` (G-09).<br>• Hardcodes static prompt strings in Python code instead of loading versioned Markdown templates from `prompts/<name>/<version>.md` with Jinja2 placeholders (G-13, §3.5).<br>• Instantiates models at import time with fallback dummy keys (`"sk-dummy"`, `"ollama"`) rather than lazy factories (G-12).<br>• Missing agents: router, entity adjudicator, arc boundary reviewer, prefix summarizer, long-context map/reduce agents. | §3.3, §3.5, §3.9, §3.12 (not in §0.2) |
+| `src/ingestion/pydantic_extractor.py` | **Replace (Stage S1) [not listed in §0.2 (inferred)]** | • Hard-truncates text at `text[:9000]`, dropping 20–25% of chapter content (G-06).<br>• No token counting or 2-part splitting with overlap for chapters > 7,000 tokens (§3.2 S1).<br>• Dumps ad-hoc JSON files to `./data/extracted_json` rather than storing structured records in SQLite `extractions` table with input hashing and transaction rollbacks (G-03).<br>• Reads `result.data` (superseded API; should be `result.output`).<br>• Lacks code-side verification of verbatim quotes (`partial_ratio >= 85`) against source text. | §3.2 S1, §3.9 (not in §0.2) |
 | `src/schemas/extraction.py` | **Evolve** | • `EntityCategory` is a hardcoded Python `Enum` (xianxia-specific: character, weapon_treasure, puppet_beast, technique, dungeon) rather than a profile-validated string against `configs/genres/<genre>.yaml` (G-21, §3.11).<br>• `RawEntityAction` lacks `event_type: LifecycleEventType`, `holder: Optional[str]`, `same_as: Optional[str]`, `evidence: str` (≤25 words), and length limits (`description` ≤ 400, `evidence` ≤ 200) (G-04, §3.2 S1).<br>• `ChapterExtraction` flags differ: prototype uses `is_map_change`, `is_realm_breakthrough`, `is_major_conflict`, whereas v3 specifies `location_change: bool`, `mc_realm: Optional[str]`, `realm_breakthrough: bool`, `major_conflict: bool`.<br>• Lacks code-side validators for category membership, evidence fuzzy match, and `chapter_id` overwrite from S0. | §0.2, §3.2 S1, §3.11 |
 | `src/schemas/lifecycle.py` | **Evolve** | • `LifecycleEventType` lacks `USED_IN_BATTLE`, `REVEALED_IDENTITY`, `MENTIONED` and still retains `CLASH` (G-04, §3.2).<br>• `EntityLifecycleRecord` lacks `novel_id`, `ordinal`, `evidence`, `holder_entity_id`, and `realm_rank` (which is required by SQLite `entity_events`). | §0.2, §3.2 S3 |
 | `src/schemas/arc.py` | **Evolve** | • Lacks `novel_id`, `prompt_version`, `model`, and alignment with SQLite `arcs` table (`start_chapter`, `end_chapter`, `payload JSON`, `prompt_version`, `model`).<br>• Fields do not match S6 macro synthesizer input/output contract. | §0.2, §3.2 S6 |
-| `src/schemas/state.py` | **Replace** | • Prototype `AgentState` contains only `query`, `intent`, `target_entity`, `target_aspect`, `retrieved_events`, `retrieved_arcs`, `final_output`, `errors`.<br>• Blueprint requires `QueryState(TypedDict, total=False)` containing `novel_id`, `chapter_max`, `mode`, `lc_plan`, `query`, `thread_id`, `decision: RouterDecision`, `entity_ids`, `unresolved_mentions`, `evidence: EvidencePack`, `answer: Answer`, `leak_report: LeakReport`, `errors`. | §0.2, §3.3, §3.12 |
+| `src/schemas/state.py` | **Replace [not listed in §0.2 (inferred)]** | • Prototype `AgentState` contains only `query`, `intent`, `target_entity`, `target_aspect`, `retrieved_events`, `retrieved_arcs`, `final_output`, `errors`.<br>• Blueprint requires `QueryState(TypedDict, total=False)` containing `novel_id`, `chapter_max`, `mode`, `lc_plan`, `query`, `thread_id`, `decision: RouterDecision`, `entity_ids`, `unresolved_mentions`, `evidence: EvidencePack`, `answer: Answer`, `leak_report: LeakReport`, `errors`. | §3.3, §3.12 (not in §0.2) |
 | `src/storage/qdrant_client.py` | **Replace** | • Hardcodes single-novel collections: `pntt_chapters`, `pntt_arcs`, `pntt_entities` (G-21). Blueprint requires 2 shared collections: `xn_chunks` and `xn_arcs` with `novel_id` tenant payload index.<br>• Only configures dense vectors (size 1024); lacks sparse vector configuration for BGE-M3 hybrid search (G-08, ADR-03).<br>• Lacks deterministic UUID5 point ID generation (`uuid5(NAMESPACE, f"{novel_id}:{kind}:{chapter_id}:{chunk_no}")`).<br>• Eagerly connects in `__init__` rather than using lazy factory connection (G-12).<br>• Lacks tenant filtering (`novel_id == X`) and range filtering (`chapter_id <= chapter_max`). | §0.2, §3.2 S4, §3.4 L1, §3.11 |
 | `src/storage/sqlite_ledger.py` | **Replace** | • Only creates a single table `entity_events` with auto-increment ID, missing composite unique key `(novel_id, chapter_id, entity_id, event_type, ordinal)` (G-03).<br>• Missing the other 14 SQLite tables defined in blueprint §3.2 (out of 15 total tables: `novels`, `chapters`, `extractions`, `entities`, `entity_aliases`, `entity_links`, `entity_events`, `arcs`, `entity_arc_digests`, `arc_prefix_summaries`, `jobs`, `llm_runs`, `answer_cache`, `lc_map_cache`, `feedback`).<br>• Does not enable `PRAGMA journal_mode=WAL` or `PRAGMA foreign_keys=ON`.<br>• Query method uses substring `LIKE %name%` with no spoiler filter (`chapter_id <= chapter_max`), violating L1 spoiler control. | §0.2, §3.2, §3.4 L1 |
 | `src/timeline/arc_detector.py` | **Replace** | • Greedy linear segmentation: splits whenever `score >= 0.60` and `length >= 30`.<br>• Completely ignores `max_arc_length = 90` configured in YAML (G-11).<br>• Missing centered 5-chapter smoothing window (§3.2 S5).<br>• Missing dynamic programming optimization maximizing cumulative score within length bounds.<br>• Missing local LLM boundary review step using micro-summaries ±5 chapters. | §0.2, §3.2 S5 |
@@ -40,7 +40,7 @@ The prototype in `src/` represents a rapid architectural spike (commit `8894ce7`
 3. **`.gitignore`**:
    - Verified present on disk. Correctly excludes `.env`, `data/`, `*.db`, `qdrant_storage/`, Python cache files, and IDE directories. The blueprint item in Phase 1 table "Day 1 .gitignore" is already accomplished.
 4. **`.env.example`**:
-   - Referenced by `README.md`, but its contents were not reviewed.
+   - Referenced by `README.md`; the blueprint does not name it.
 5. **Missing Directories & Baseline Files**:
    - `data/` directory is absent; `data/novels/pntt1/raw/chapter_N.md` does not exist, so assumption A-03 cannot yet be empirically validated.
    - `prompts/` directory does not exist (all prompts are embedded in Python strings).
@@ -70,6 +70,7 @@ flowchart TD
 
     Sprint1 -->|derived data flow §3.1: S0, S1, S3 to S4| Sprint2
     Sprint1 -->|derived data flow §3.1: S1 flags & S3 ledger to S5| Sprint3
+    Sprint2 -->|derived data flow §3.1: query graph S2-T4 to S3-T5| Sprint3
     Sprint2 & Sprint3 -->|derived data flow §3.1: full pipeline ready| Sprint4
     Sprint4 -->|derived data flow §3.12: raw text & ledger to long-context| Sprint5
 ```
@@ -83,7 +84,7 @@ flowchart TD
 #### Task Ordering & File Matrix
 - **S1-T1: Project Setup & Config Split** (§3.9, §3.11, §0.2, ADR-05)
   - *Files created:* `configs/genres/xianxia.yaml`, `configs/novels/pntt1.yaml`, `pyproject.toml` (subject to OQ-01, OQ-02), `src/xn/__init__.py` (proposal).
-  - *Files changed:* `configs/config.yaml`, `docker-compose.yml` (remove Redis service), `src/config.py`; proposed change: `.env.example` (proposal, not in blueprint; tied to OQ-10).
+  - *Files changed / subject to OQ-02:* `configs/config.yaml`, `docker-compose.yml` (remove Redis service per §0.2/ADR-05; upgrade Qdrant image per §0.2/§3.9 with target version subject to OQ-08), `src/config.py`, `requirements.txt` (subject to OQ-02); proposed change: `.env.example` (proposal, not in blueprint; tied to OQ-10).
   - *Dependencies:* None.
 - **S1-T2: SQLite Database Schema & Repository Layer** (§3.2, §3.4 L1, §3.7)
   - *Files created:* `src/xn/storage/database.py` (proposal), `src/xn/storage/repository.py` (proposal), `tests/unit/test_repository_guards.py` (proposal).
@@ -107,7 +108,7 @@ flowchart TD
 - **S1-T6: Pipeline Stage S3 — Idempotent Ledger Write** (§3.2 S3, G-03, G-04)
   - *Files created:* `src/xn/pipeline/s3_ledger.py` (proposal), `src/xn/schemas/lifecycle.py` (proposal), `src/xn/pipeline/runner.py` (proposal).
   - *Files changed/deleted:* Supersedes `src/schemas/lifecycle.py`.
-  - *Details:* Writes `entity_events` with unique key `(novel_id, chapter_id, entity_id, event_type, ordinal)`. Per-chapter transactions. Records job status in `jobs`.
+  - *Details:* Writes `entity_events` with unique key `(novel_id, chapter_id, entity_id, event_type, ordinal)`. Per-chapter transactions. Records job status in `jobs`. Executes `xn run --novel pntt1 --stage s1 --from 1 --to 2673 [--stale-only]` CLI runner logic (§3.2).
   - *Dependencies:* S1-T2, S1-T5 (derived from data flow: writes resolved entity events to ledger).
 - **S1-T7: Extractor Benchmark (qwen2.5:14b vs qwen3:14b)** (Phase 2 table, Phase 4 Sprint 1, BP-OQ-1)
   - *Task:* Benchmark on 50 chapters for schema success rate, entity recall, s/chapter, and VRAM footprint. Choose production local model.
@@ -115,7 +116,7 @@ flowchart TD
 - **S1-T8: Grounded Query Graph (Ledger Slice)** (§3.3, §3.4, ADR-01, ADR-02)
   - *Files created:* `src/xn/graph/workflow.py` (proposal), `src/xn/graph/nodes/route.py` (proposal), `src/xn/graph/nodes/bound.py` (proposal), `src/xn/graph/nodes/resolve.py` (proposal), `src/xn/graph/nodes/retrieve.py` (proposal), `src/xn/graph/nodes/gate.py` (proposal), `src/xn/graph/nodes/synthesize.py` (proposal), `src/xn/graph/nodes/verify.py` (proposal), `src/xn/schemas/state.py` (proposal), `src/xn/cli/main.py` (proposal), `prompts/router/v1.md` (proposal), `prompts/synthesize_compact/v1.md` (proposal).
   - *Files changed/deleted:* Supersedes `src/agents/graph_workflow.py`, `src/agents/pydantic_agents.py`, `src/cli.py`, `src/schemas/state.py`.
-  - *Details:* LangGraph flow: `route` → `bound` → `resolve_entities` → `retrieve` (ledger-only) → `gate` → `synthesize` → `verify`. Verifies citations exist in evidence and are ≤ N.
+  - *Details:* LangGraph flow: `route` → `bound` → `resolve_entities` → `retrieve` (ledger-only) → `gate` → `synthesize` → `verify`. Verifies citations exist in evidence and are ≤ N. Implements initial CLI query command.
   - *Dependencies:* S1-T2, S1-T6 (derived from data flow: queries populated ledger).
 - **S1-T9: Gold Set Annotation & Eval Harness** (§3.8, OQ-09, OQ-14)
   - *Files created:* `eval/pntt1/` gold assets (20 chapters, 80 alias pairs, 15 Q&A, 10 spoiler probes per blueprint Phase 4), `tests/eval/test_gold.py` (proposal).
@@ -157,9 +158,9 @@ flowchart TD
   - *Details:* Wire `factual_qa` and `compare` intents into LangGraph. Reranker score threshold $\ge 0.3$ in `gate`.
   - *Dependencies:* S1-T8, S2-T3 (derived from data flow: integrates hybrid retriever into query graph).
 - **S2-T5: Reading Progress & Bound Resolution CLI** (§3.4 L1, §3.6)
-  - *Files changed:* `src/xn/cli/main.py` (proposal), `src/xn/storage/repository.py` (proposal).
-  - *Details:* Implement `xn progress <novel_id> <N>` command; update `novels.reader_progress`. Implement deterministic resolution: explicit `--until` > query hint > `reader_progress` > `total_chapters`.
-  - *Dependencies:* S1-T2, S1-T8 (derived: adds CLI command and bound methods to existing CLI/repository).
+  - *Files changed:* `src/xn/cli/main.py` (proposal), `src/xn/storage/repository.py` (proposal), `src/xn/graph/nodes/bound.py` (proposal: update bound resolution to integrate `novels.reader_progress` via `xn progress`).
+  - *Details:* Implement `xn progress <novel_id> <N>` command (§3.4); update `novels.reader_progress`. Implement deterministic resolution: explicit `--until` > query hint > `reader_progress` > `total_chapters`.
+  - *Dependencies:* S1-T2, S1-T8 (derived: adds CLI command and bound methods to existing CLI/repository/bound node).
 - **S2-T6: L5 Spoiler Leak Detection & Mitigation** (§3.4 L5, R-01, R-02)
   - *Files created:* `src/xn/graph/nodes/spoiler_scan.py` (proposal), `tests/unit/test_spoiler_scan.py` (proposal).
   - *Files changed:* `src/xn/graph/nodes/verify.py` (proposal).
@@ -172,7 +173,7 @@ flowchart TD
 3. Factual QA p95 latency $\le 15$ s.
 
 #### Parallelism & Ordering Constraints
-- *Parallel groups:* S2-T1/S2-T2 (vector storage and chunk embedding) and S2-T5 (reading progress CLI command and repository update) touch disjoint files and have no dependency path between them, so they can run in parallel.
+- *Parallel groups:* S2-T1/S2-T2 (vector storage and chunk embedding) and S2-T5 (reading progress CLI command and repository/bound update) touch disjoint files and have no dependency path between them, so they can run in parallel.
 - *Internal constraints:* S4 embedding (S2-T2) must unload Ollama to avoid 16 GB VRAM thrashing on RTX 5070 Ti (§3.9). Query reranker (S2-T3) must precede `factual_qa` gate wiring (S2-T4). S2-T6 integrates into the verify node after bound resolution in S2-T5 is ready.
 
 ---
@@ -185,24 +186,25 @@ flowchart TD
 - **S3-T1: Pipeline Stage S5 — Smoothed DP Arc Segmentation** (§3.2 S5, G-11, OQ-04)
   - *Files created:* `src/xn/pipeline/s5_segment.py` (proposal), `prompts/s5_boundary_review/v1.md` (proposal).
   - *Files changed/deleted:* Supersedes `src/timeline/arc_detector.py`.
-  - *Details:* Chapter score $s_i = \sum w \cdot \text{flag}$; centered smoothing window 5; DP segmentation picking boundaries subject to $30 \le \text{len} \le 90$; local LLM reviews boundary with micro-summaries $\pm 5$ chapters (shift $\le 5$). Writes to `chapters.arc_id` and `arcs`.
+  - *Details:* Chapter score $s_i = \sum w \cdot \text{flag}$; centered smoothing window 5; DP segmentation picking boundaries subject to $30 \le \text{len} \le 90$; local LLM reviews boundary with micro-summaries $\pm 5$ chapters (shift $\le 5$). Output storage for S5 boundaries is an inference (inferred: records boundaries to `chapters.arc_id`; S6 writes full `StoryArc` JSON to `arcs`, §3.1, §3.2 S6). Whether S5 writes placeholder rows to `arcs` or stores boundaries via stage jobs / in-memory is an open question (OQ-05).
   - *Dependencies:* S1-T4, S1-T6 (derived from data flow, §3.1 diagram: requires S1 extraction flags across all chapters in range).
 - **S3-T2: Pipeline Stage S6 — Macro StoryArc Synthesis** (§3.2 S6)
   - *Files created:* `src/xn/pipeline/s6_synthesize.py` (proposal), `src/xn/schemas/arc.py` (proposal), `prompts/s6_arc_synthesize/v1.md` (proposal).
+  - *Files changed / used:* `src/xn/storage/qdrant.py` (proposal: writes arc vector to `xn_arcs` collection).
   - *Files changed/deleted:* Supersedes `src/schemas/arc.py`.
   - *Details:* Calls OpenRouter macro model with concatenated micro-summaries (~12k tokens in); writes `StoryArc` JSON to SQLite `arcs` and embeds arc summary into Qdrant `xn_arcs`.
-  - *Dependencies:* S3-T1 (derived from data flow: synthesizes arcs segmented in S5).
-- **S3-T3: Pipeline Stage S7 — Entity×Arc Digests** (§3.2 S7, G-07)
+  - *Dependencies:* S3-T1, S2-T1 (derived from data flow: S3-T1 provides segmented arcs; S2-T1 initializes Qdrant manager and `xn_arcs` collection to which S6 writes arc vectors, §3.1, §3.2 S6).
+- **S3-T3: Pipeline Stage S7 — Entity×Arc Digests & Prefix Digests** (§3.2 S7, §3.4 L3, G-07)
   - *Files created:* `src/xn/pipeline/s7_digest.py` (proposal), `prompts/s7_digest/v1.md` (proposal).
-  - *Details:* For each (entity, arc) with $\ge 3$ events: local LLM produces 80–150 word digest. Stored in `entity_arc_digests`.
+  - *Details:* For each (entity, arc) with $\ge 3$ events: local LLM produces 80–150 word digest, stored in `entity_arc_digests` (§3.2 S7). Also precomputes prefix entity digests (`upto_chapter`) at spoiler checkpoints (§3.2 S7, §3.4 L3, Phase 4 Sprint 3).
   - *Dependencies:* S1-T6, S3-T1 (derived from data flow: events from ledger grouped by arc boundaries).
-- **S3-T4: Arc Prefix Summaries (L2/L3 Spoiler Safety)** (§3.2 S7, §3.4 L2, L3)
+- **S3-T4: Arc Prefix Summaries (L2 Spoiler Safety)** (§3.2 S7, §3.4 L2)
   - *Files created:* `src/xn/pipeline/prefix_summaries.py` (proposal).
-  - *Details:* Precompute prefix summaries every 10 chapters for active arcs using local model; store in `arc_prefix_summaries`. Query-time snap down to nearest 10-chapter checkpoint + append raw micro-summaries.
+  - *Details:* Precompute prefix summaries every 10 chapters using local model; store in `arc_prefix_summaries` (§3.4 L2, §3.9). Query-time snap down to nearest 10-chapter checkpoint + append raw micro-summaries.
   - *Dependencies:* S1-T4, S3-T1 (derived from data flow: micro-summaries grouped by arc boundaries).
 - **S3-T5: Query Graph Integration (Timeline & Deep-Dive Budgeting)** (§3.3, §3.4)
   - *Files changed:* `src/xn/graph/nodes/retrieve.py` (proposal), `src/xn/graph/nodes/synthesize.py` (proposal).
-  - *Details:* Timeline intent uses arcs fully $\le N$ + prefix summary of current arc. Deep-dive uses entity×arc digests (prefix-safe) + top-25 ranked events + top-8 chunks. Strict 20k-token evidence budget enforcement.
+  - *Details:* Timeline intent uses arcs fully $\le N$ + prefix summary of current arc from S3-T4 (§3.4 L2). Deep-dive uses entity×arc digests (full digest if arc ends $\le N$, prefix digest `upto_chapter` from S3-T3 if arc straddles $N$, §3.4 L3) + top-25 ranked events + top-8 chunks. Strict 20k-token evidence budget enforcement.
   - *Dependencies:* S2-T4, S3-T2, S3-T3, S3-T4 (derived from data flow: integrates arc summaries and digests into retrieval under 20k token cap).
 
 #### Sprint 3 Acceptance Criteria (copied from blueprint Phase 4)
@@ -235,9 +237,9 @@ flowchart TD
 - **S4-T4: CI Automation & Quality Gates** (§3.5, §3.8, §3.9, OQ-03, OQ-10)
   - *Files used / changed:* `tests/eval/test_gold.py` (proposal; regression gate command is `pytest tests/eval -m gold --novel pntt1` per §3.5, failing if any metric drops > 2 points vs `eval/{novel_id}/baseline.json`; blueprint §3.8 explicitly notes eval runs on demand, not in CI). Proposed change: `README.md` (proposal, not in blueprint; tied to OQ-10).
   - *Dependencies:* S4-T2 (derived: requires `baseline.json` established in S4-T2).
-- **S4-T5: FastAPI Service & SSE Streaming Endpoint** (§3.6)
+- **S4-T5: FastAPI Service & SSE Streaming Endpoint** (§3.6, Phase 4 Sprint 4)
   - *Files created:* `src/xn/api/app.py` (proposal), `src/xn/api/routes.py` (proposal), `src/xn/api/schemas.py` (proposal).
-  - *Details:* Expose `/v1/novels`, `/v1/novels/{id}/query` with SSE (`Accept: text/event-stream`), `/v1/novels/{id}/progress`. Single-flight stage runs.
+  - *Details:* Expose all nine endpoints defined in blueprint §3.6 table: (1) `GET /v1/novels`; (2) `PUT /v1/novels/{novel_id}/progress`; (3) `POST /v1/novels/{novel_id}/query` (SSE streaming); (4) `POST /v1/novels/{novel_id}/query/{thread_id}/resume`; (5) `GET /v1/novels/{novel_id}/entities?q=&until=`; (6) `GET /v1/novels/{novel_id}/entities/{id}/timeline?until=`; (7) `GET /v1/novels/{novel_id}/arcs?until=`; (8) `POST /v1/novels/{novel_id}/pipeline/runs`; (9) `GET /v1/pipeline/runs/{run_id}`. Single-flight stage runs.
   - *Dependencies:* S4-T1 (derived: wraps completed query graph and pipeline execution).
 - **S4-T6: Multi-Novel Onboarding Validation (Second Novel Proof)** (§3.11, G-21)
   - *Files created:* `configs/novels/<id>.yaml` (for a second novel, e.g. a sample novel config), `data/novels/<id>/raw/` (sample 200 ch).
@@ -276,7 +278,7 @@ flowchart TD
   - *Dependencies:* S5-T1 (derived: requires model context window and pricing cache).
 - **S5-T3: Cost Approval Interrupt Mechanism** (§3.6, §3.12)
   - *Files changed:* `src/xn/graph/workflow.py` (proposal), `src/xn/cli/main.py` (proposal), `src/xn/api/routes.py` (proposal).
-  - *Details:* If `est_cost_usd > approval_threshold_usd` (default $0.50), trigger LangGraph `interrupt()`. CLI prompts `[y/N]` (or `--yes`); API exposes `/query/{thread_id}/resume`.
+  - *Details:* If `est_cost_usd > approval_threshold_usd` (default $0.50), trigger LangGraph `interrupt()`. CLI prompts `[y/N]` (or `--yes`); API exposes `/query/{thread_id}/resume`. Implements `xn ask --novel pntt1 --mode long` CLI command trigger (§3.12).
   - *Dependencies:* S5-T2 (derived: triggers interrupt based on planner's estimated cost).
 - **S5-T4: Single-Pass & Map-Reduce Engine** (§3.12)
   - *Files created:* `src/xn/graph/long_context/engine.py` (proposal), `prompts/lc_map/v1.md` (proposal), `prompts/lc_reduce/v1.md` (proposal).
@@ -286,7 +288,7 @@ flowchart TD
   - *Files created:* `src/xn/graph/long_context/verify.py` (proposal).
   - *Files changed:* `src/xn/graph/nodes/verify.py` (proposal: integrate long-context checks).
   - *Details:* Validates that cited chapters are a subset of chapters sent; verifies verbatim quotes against `clean_text` (partial_ratio $\ge 90$); executes L5 spoiler scan on final report; logs egress payload chapters to `llm_runs`.
-  - *Dependencies:* S5-T4 (derived: verifies claims, quotes, and spoiler scan on engine report output).
+  - *Dependencies:* S5-T4, S2-T6 (derived from data flow: S5-T4 provides engine report output; S2-T6 provides the L5 spoiler scan reused on the rendered report, §3.4 L5, §3.12).
 - **S5-T6: Long-Context Gold Evaluation (10 Probes)** (§3.8, §3.12, OQ-14)
   - *Files created / changed:* `eval/pntt1/` gold assets (updated with 10 long-context deep-dive probes per blueprint §3.8).
   - *Task:* Evaluate 10 deep-dives (protagonist, 4 major pháp bảo/khôi lỗi, 5 minor entities). Run pairwise judge vs. compact mode.
@@ -305,7 +307,7 @@ flowchart TD
 
 ## 3. Comprehensive File-by-File Table
 
-> **Note on file naming:** Directory layout is from blueprint §3.9; individual filenames within packages/directories are proposals by this plan, not blueprint decisions. The "Name source" column explicitly distinguishes between exact paths specified in the blueprint ("blueprint") and filenames proposed by this plan ("proposed").
+> **Note on file naming:** Directory layout is from blueprint §3.9; individual filenames within packages/directories are proposals by this plan, not blueprint decisions. The "Name source" column explicitly distinguishes between exact paths specified in the blueprint ("blueprint"), existing files not named by the blueprint ("existing file, not named by blueprint"), and filenames proposed by this plan ("proposed").
 
 Repository files and planned assets mapped to sprint tasks and blueprint specifications:
 
@@ -313,15 +315,15 @@ Repository files and planned assets mapped to sprint tasks and blueprint specifi
 |---|---|---|---|---|
 | `docs/IMPLEMENTATION_PLAN.md` | **Create** | Current Task | Brief / Complete v3 Plan | proposed |
 | `docker-compose.yml` | **Change** | S1-T1 | §0.2, §3.9, ADR-05 | blueprint |
-| `requirements.txt` | **Change** | S1-T1 | §3.9 (or OQ-02) | blueprint |
+| `requirements.txt` | **Change** | S1-T1 | §3.9 (or OQ-02) | existing file, not named by blueprint |
 | `pyproject.toml` | **Create** | S1-T1 | §3.9 | blueprint |
-| `.env.example` | **Change (proposal, not in blueprint; tied to OQ-10)** | S1-T1 | §3.9 (OQ-10) | blueprint |
+| `.env.example` | **Change (proposal, not in blueprint; tied to OQ-10)** | S1-T1 | §3.9 (OQ-10) | existing file, not named by blueprint |
 | `configs/config.yaml` | **Change** | S1-T1 | §3.5, §3.9, §3.11 | blueprint |
 | `configs/genres/xianxia.yaml` | **Create** | S1-T1 | §3.11 | blueprint |
 | `configs/novels/<id>.yaml` (e.g. `pntt1.yaml`) | **Create** | S1-T1, S4-T6 | §3.11 | blueprint |
 | `data/novels/<id>/raw/` (e.g. `chapter_N.md`) | **Read / Create** | S1-T3, S4-T6 | §3.1, §3.2 S0, §3.11 | blueprint |
 | `ollama/Modelfile.qwen14b-12k` | **Create** | S1-T4 | §3.9 | blueprint |
-| `src/config.py` | **Change / Move** | S1-T1 | §3.2, §3.11 | blueprint |
+| `src/config.py` | **Change / Move** | S1-T1 | §3.2, §3.11 | existing file, not named by blueprint |
 | `src/xn/__init__.py` | **Create** | S1-T1 | §3.9 | proposed |
 | `src/xn/storage/database.py` | **Create** | S1-T2 | §3.2 | proposed |
 | `src/xn/storage/repository.py` | **Create** | S1-T2, S2-T5 | §3.2, §3.4 L1 | proposed |
@@ -331,7 +333,7 @@ Repository files and planned assets mapped to sprint tasks and blueprint specifi
 | `src/schemas/extraction.py` | **Delete** | S1-T4 | §0.2, §3.2 S1 | blueprint |
 | `prompts/s1_extract/v1.md` | **Create** | S1-T4 | §3.2 S1, §3.5 | proposed |
 | `src/xn/pipeline/s1_extract.py` | **Create** | S1-T4 | §3.2 S1 | proposed |
-| `src/ingestion/pydantic_extractor.py` | **Delete** | S1-T4 | §0.2, §3.2 S1 | blueprint |
+| `src/ingestion/pydantic_extractor.py` | **Delete** | S1-T4 | §0.2, §3.2 S1 | existing file, not named by blueprint |
 | `src/xn/pipeline/s2_resolve.py` | **Create** | S1-T5 | §3.2 S2 | proposed |
 | `prompts/s2_adjudicate/v1.md` | **Create** | S1-T5 | §3.2 S2, §3.5 | proposed |
 | `src/xn/schemas/lifecycle.py` | **Create** | S1-T6 | §3.2 S3 | proposed |
@@ -339,11 +341,11 @@ Repository files and planned assets mapped to sprint tasks and blueprint specifi
 | `src/xn/pipeline/s3_ledger.py` | **Create** | S1-T6 | §3.2 S3 | proposed |
 | `src/xn/pipeline/runner.py` | **Create** | S1-T6 | §3.2 | proposed |
 | `src/xn/schemas/state.py` | **Create** | S1-T8 | §3.3 | proposed |
-| `src/schemas/state.py` | **Delete** | S1-T8 | §0.2, §3.3 | blueprint |
+| `src/schemas/state.py` | **Delete** | S1-T8 | §0.2, §3.3 | existing file, not named by blueprint |
 | `prompts/router/v1.md` | **Create** | S1-T8 | §3.3, §3.5 | proposed |
 | `prompts/synthesize_compact/v1.md` | **Create** | S1-T8 | §3.3, §3.5 | proposed |
 | `src/xn/graph/nodes/route.py` | **Create / Change** | S1-T8, S2-T4 | §3.3 | proposed |
-| `src/xn/graph/nodes/bound.py` | **Create** | S1-T8 | §3.3, §3.4 L1 | proposed |
+| `src/xn/graph/nodes/bound.py` | **Create / Change** | S1-T8, S2-T5 | §3.3, §3.4 L1 | proposed |
 | `src/xn/graph/nodes/resolve.py` | **Create** | S1-T8 | §3.3 | proposed |
 | `src/xn/graph/nodes/retrieve.py` | **Create / Change** | S1-T8, S2-T3, S2-T4, S3-T5 | §3.3 | proposed |
 | `src/xn/graph/nodes/gate.py` | **Create / Change** | S1-T8, S2-T4 | §3.3 | proposed |
@@ -351,7 +353,7 @@ Repository files and planned assets mapped to sprint tasks and blueprint specifi
 | `src/xn/graph/nodes/verify.py` | **Create / Change** | S1-T8, S2-T6, S5-T5 | §3.3, §3.4 L5 | proposed |
 | `src/xn/graph/workflow.py` | **Create / Change** | S1-T8, S2-T4, S5-T3 | §3.3 | proposed |
 | `src/agents/graph_workflow.py` | **Delete** | S1-T8 | §0.2, §3.3 | blueprint |
-| `src/agents/pydantic_agents.py` | **Delete** | S1-T8 | §0.2, §3.3 | blueprint |
+| `src/agents/pydantic_agents.py` | **Delete** | S1-T8 | §0.2, §3.3 | existing file, not named by blueprint |
 | `src/xn/cli/main.py` | **Create / Change** | S1-T8, S2-T5, S5-T3 | §3.2, §3.6 | proposed |
 | `src/cli.py` | **Delete** | S1-T8 | §0.2, §3.6 | blueprint |
 | `eval/pntt1/` gold assets | **Create / Change** | S1-T9, S4-T2, S5-T6 | §3.8, §3.9, OQ-14 | blueprint |
@@ -359,7 +361,7 @@ Repository files and planned assets mapped to sprint tasks and blueprint specifi
 | `tests/unit/test_repository_guards.py` | **Create** | S1-T2 | §3.4 L1, §3.7 | proposed |
 | `tests/unit/test_s0_parse.py` | **Create** | S1-T3 | §3.2 S0 | proposed |
 | `tests/eval/test_gold.py` | **Create / Change** | S1-T9, S4-T2, S4-T4 | §3.5, §3.8 | proposed |
-| `src/xn/storage/qdrant.py` | **Create** | S2-T1 | §3.2 S4, §3.11 | proposed |
+| `src/xn/storage/qdrant.py` | **Create / Change** | S2-T1, S3-T2 | §3.2 S4, §3.11 | proposed |
 | `src/storage/qdrant_client.py` | **Delete** | S2-T1 | §0.2, §3.2 S4 | blueprint |
 | `tests/integration/test_tenant_isolation.py` | **Create / Change** | S2-T1, S4-T6 | §3.7, §3.11 | proposed |
 | `src/xn/pipeline/s4_embed.py` | **Create** | S2-T2 | §3.2 S4 | proposed |
@@ -382,7 +384,7 @@ Repository files and planned assets mapped to sprint tasks and blueprint specifi
 | `src/xn/api/routes.py` | **Create / Change** | S4-T5, S5-T3 | §3.6 | proposed |
 | `src/xn/api/schemas.py` | **Create** | S4-T5 | §3.6 | proposed |
 | `src/xn/ui/` | **Create** | S4-T7 | §3.6 | proposed |
-| `README.md` | **Change (proposal, not in blueprint; tied to OQ-10)** | S4-T4 | §0.1, §3.1 (OQ-10) | blueprint |
+| `README.md` | **Change (proposal, not in blueprint; tied to OQ-10)** | S4-T4 | §0.1, §3.1 (OQ-10) | existing file, not named by blueprint |
 | `src/xn/graph/long_context/pricing.py` | **Create** | S5-T1 | §3.12 | proposed |
 | `src/xn/schemas/long_context.py` | **Create** | S5-T2 | §3.12 | proposed |
 | `src/xn/graph/long_context/planner.py` | **Create** | S5-T2 | §3.12 | proposed |
@@ -410,7 +412,7 @@ Comprehensive mapping of all assumptions (A-01..A-08), accepted risks (R-01..R-0
 | **R-01** | Paraphrased spoilers without future names/realms bypass L5 scan | **Accepted Risk** | Low-probability leak where model mentions future plot points using vague language. Mitigated by prompt rule, 30 spoiler probes, and user feedback loop. | S2-T6, S4-T2 | Zero-leak gate on 30 spoiler probes; continuous prompt hardening. |
 | **R-02** | Cloud model's parametric knowledge of popular novels | **Accepted Risk** | Model could answer from pre-training memory rather than retrieved evidence. Mitigated by evidence-only prompt, L5 scan, and citation checks (§3.7, R-02). | S1-T8, S2-T4, S3-T5 | Evidence-only prompt + L5 scan + citation checks; invalid citations are stripped. |
 | **R-03** | No cross-novel entity linking for sequels | **Accepted Risk** | Characters appearing across sequels (blueprint §3.11, R-03: sequels sharing characters, e.g. `pntt2`) treated as separate entities. Multi-novel links deferred; `series_id` reserved in `novels` table. | S4-T6 | Revisit when onboarding *Phàm Nhân Tu Tiên 2*. |
-| **R-04** | Long-context mode costs up to several dollars per protagonist report | **Accepted Risk** | Risk of unexpected API expenditure. Mitigated by opt-in flag, cost estimation, interactive confirmation threshold ($0.50), daily spend cap, and caching. | S5-T2, S5-T3 | Mandatory cost calculation before model invocation; `interrupt()` gate. |
+| **R-04** | Long-context mode costs up to several dollars per protagonist report | **Accepted Risk** | Risk of unexpected API expenditure. Mitigated by opt-in per query, plan + approval above threshold ($0.50), daily cap, no-training providers, egress log (R-04, §3.12). | S5-T2, S5-T3 | Mandatory cost calculation before model invocation; `interrupt()` gate. |
 | **BP-OQ-1** | Extractor model: `qwen2.5:14b` vs `qwen3:14b` (non-thinking) | **Blueprint OQ** | Influences schema success rate, entity recall, s/chapter, and VRAM. | S1-T4, S1-T7 | Sprint 1 benchmark across 50 chapters comparing schema success rate, entity recall, s/chapter, and VRAM. |
 | **BP-OQ-2** | Cleaning patterns for *Phàm Nhân Tu Tiên 1* | **Blueprint OQ** | Incomplete cleaning patterns permit scraping watermarks into `clean_text` and vector embeddings. | S1-T3 (S0 Parse & Clean) | Inspect 10 sample raw chapters provided by owner in Sprint 1 to extract repeating site markers. |
 
@@ -465,8 +467,8 @@ The following genuine ambiguities, contradictions, and underspecified items are 
 - **Options named/apparent:** None named in blueprint.
 
 ### OQ-05: `jobs` Table Primary Key vs. Macro-Stages & Prefix Summaries
-- **Question:** How should multi-chapter stages (S5 Arc Segmentation, S6 Arc Synthesis, S7 Entity Digests) and arc prefix summaries be keyed in the `jobs` table?
-- **Why it matters:** Blueprint §3.2 specifies the `jobs` schema as: `PRIMARY KEY(novel_id, chapter_id, stage)`. However, Stage S5 operates novel-wide; Stage S6 operates per arc span; Stage S7 operates per `(entity_id, arc_id)`; and arc prefix summaries operate per `(arc_id, upto_chapter)`. Recording non-chapter stages in `jobs` requires sentinel values (e.g. `chapter_id = 0` or `end_chapter`), which risks key collisions and semantic ambiguity. Furthermore, arc prefix summaries have no assigned stage identifier (e.g. `s6_prefix` vs `s8`).
+- **Question:** How should multi-chapter stages (S5 Arc Segmentation, S6 Arc Synthesis, S7 Entity Digests) and arc prefix summaries be keyed in the `jobs` table, and where does S5 store arc boundaries prior to S6?
+- **Why it matters:** Blueprint §3.2 specifies the `jobs` schema as: `PRIMARY KEY(novel_id, chapter_id, stage)`. However, Stage S5 operates novel-wide; Stage S6 operates per arc span; Stage S7 operates per `(entity_id, arc_id)`; and arc prefix summaries operate per `(arc_id, upto_chapter)`. Recording non-chapter stages in `jobs` requires sentinel values (e.g. `chapter_id = 0` or `end_chapter`), which risks key collisions and semantic ambiguity. Furthermore, arc prefix summaries have no assigned stage identifier (e.g. `s6_prefix` vs `s8`), and whether S5 stores boundaries in `chapters.arc_id`, placeholder rows in `arcs`, or via in-memory state is unsettled.
 - **Which task it blocks:** S1-T2 (Database schema), S1-T6 (Pipeline runner), S3-T1..S3-T4.
 - **Options named/apparent:** None named in blueprint.
 
@@ -493,9 +495,9 @@ The following genuine ambiguities, contradictions, and underspecified items are 
 ### OQ-08: Missing Concrete Configuration Values in `configs/config.yaml`
 - **Question:** What are the exact model IDs and limits for parameters left unspecified or marked `[verify]` in blueprint v3?
 - **Why it matters:**
-  - `FALLBACK_MODEL`: Unspecified. OpenRouter fallback model name when primary encounters 429/5xx (§3.3).
-  - `DAILY_SPEND_CAP`: Unspecified. Dollar ceiling for cloud spend checks (§3.7).
-  - `DEEP_DIVE_MODEL` and `LONG_CONTEXT_MODEL`: Unspecified. `configs/config.yaml` sets `deepseek/deepseek-chat` for `macro_synthesizer` and `deep_dive_evaluator`, while blueprint §3.12 and assumption A-08 require a model with a $\ge 1\text{M}$-token context window for long-context mode (`LONG_CONTEXT_MODEL`).
+  - Configured fallback model (§3.3; proposed identifier `FALLBACK_MODEL`): Unspecified in blueprint; blueprint states "then the configured fallback model" when OpenRouter encounters 429/5xx after 3 retries.
+  - Daily spend cap (§3.7; proposed identifier `DAILY_SPEND_CAP`): Unspecified in blueprint; blueprint states "daily spend cap checked against llm_runs.cost_usd" without specifying the dollar ceiling.
+  - `LONG_CONTEXT_MODEL` (§3.12): Unspecified model identifier in `configs/config.yaml`; `configs/config.yaml` sets `deepseek/deepseek-chat` for `macro_synthesizer` and `deep_dive_evaluator`, while blueprint §3.12 and assumption A-08 require a model with a $\ge 1\text{M}$-token context window for long-context mode (`LONG_CONTEXT_MODEL`).
   - Python version target: Unspecified (blueprint §3.9 specifies `uv` + `pyproject.toml` + `uv.lock`, but does not pin a Python minor version).
   - Qdrant target version: Unspecified (prototype `docker-compose.yml` pins `v1.12.0`; blueprint §3.9 notes `[verify version at pin time]`).
   - Observability platform: Unspecified (blueprint §3.8 notes self-hosted Langfuse vs Logfire, `[verify current API]`).
@@ -514,7 +516,7 @@ The following genuine ambiguities, contradictions, and underspecified items are 
   - Blueprint title is `"Architecture Blueprint v3.1"` while the revision table lists Rev 3.2 (dated 2026-10-30).
   - Blueprint file is `ARCHITECTURE_BLUEPRINT_v3.md`, but `README.md` references `ARCHITECTURE_BLUEPRINT.md` (v2), which is absent.
   - `README.md` describes v2 architecture (LangGraph batch ingestion loop, Redis, old layout).
-  - `.env.example` is referenced by `README.md`, but its contents were not reviewed.
+  - `README.md` references `.env.example`; the blueprint does not name it.
 - **Which task it blocks:** S1-T1, S4-T4 (Documentation alignment).
 - **Options named/apparent:** None named in blueprint.
 
@@ -542,6 +544,12 @@ The following genuine ambiguities, contradictions, and underspecified items are 
 - **Which task it blocks:** S1-T9, S4-T2, S5-T6.
 - **Options named/apparent:** None named in blueprint.
 
+### OQ-15: Sprint Ownership of Auxiliary CLI Commands (`xn status`, `xn novel add`, `xn entities`)
+- **Question:** Which sprints own the implementation of auxiliary CLI commands: `xn status` (§3.10), `xn novel add` (§3.11), and `xn entities suspect|merge|split` (§3.10)?
+- **Why it matters:** The blueprint defines `xn run` (§3.2, required in Sprint 1), `xn progress` (§3.4, explicitly named in Phase 4 Sprint 2), and `xn ask` (§3.12, required in Phase 4 Sprint 5 for long-context queries). However, Phase 4 does not assign sprints for `xn status` (§3.10), `xn novel add` (§3.11), or `xn entities suspect|merge|split` (§3.10).
+- **Which task it blocks:** S1-T8, S4-T6, CLI completion.
+- **Options named/apparent:** None named in blueprint; sprint ownership is unsettled.
+
 ---
 
 ## 6. Owner-Action Items (Blocked from Automation)
@@ -553,7 +561,7 @@ The following activities cannot be executed by automated subagents (`agy-coder` 
 2. **Executing Dependency Lock Commands (`uv lock`):**
    - Subagents cannot run `uv lock`, `pip install`, or activate Python virtual environments. The owner must generate `uv.lock` or run package installations.
 3. **Local Ollama Runtime & Model Setup:**
-   - Downloading base weights (`ollama pull qwen2.5:14b`, `ollama pull qwen3:14b`), building the custom Modelfile (`ollama create qwen14b-12k -f ollama/Modelfile.qwen14b-12k`), and setting host environment variables (`OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_NUM_PARALLEL=2`, `OLLAMA_KEEP_ALIVE=30m`).
+   - Downloading base weights (`ollama pull qwen2.5:14b`, `ollama pull qwen3:14b`), building the custom Modelfile from `ollama/Modelfile.qwen14b-12k` (§3.9), and setting host environment variables (`OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_NUM_PARALLEL=2`, `OLLAMA_KEEP_ALIVE=30m`).
 4. **Supplying Raw Source Data (`chapter_N.md`):**
    - The repository currently lacks novel raw text files (`data/novels/pntt1/raw/`). The owner must provide the raw Vietnamese Markdown chapter files.
 5. **Hand-Annotating Gold Sets:**
@@ -576,7 +584,7 @@ The following items are explicitly out of scope for this implementation plan:
 3. **Modifying Architecture Blueprint:**
    - No edits to `ARCHITECTURE_BLUEPRINT_v3.md`.
 4. **Unilateral Decision-Making on Open Questions:**
-   - Open questions `OQ-01` through `OQ-14` and `BP-OQ-1` / `BP-OQ-2` are cataloged for owner resolution without assuming outcomes.
+   - Open questions `OQ-01` through `OQ-15` and `BP-OQ-1` / `BP-OQ-2` are cataloged for owner resolution without assuming outcomes.
 5. **Multi-User Authentication & SaaS Tenancy:**
    - Multi-user authentication, cloud SaaS tenant isolation, or public internet exposure (single user local-first per A-01; note that per-novel tenancy in SQLite and Qdrant is in scope per §3.11, G-21).
 6. **Cross-Novel Sequel Entity Linking:**
