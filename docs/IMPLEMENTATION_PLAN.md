@@ -2,8 +2,8 @@
 
 > **Document purpose:** Detailed engineering implementation plan for the **XN-Agent** system, derived from `ARCHITECTURE_BLUEPRINT_v3.md` (superseding v2) compared against the prototype codebase in `src/`.
 > **Baseline reference:** `ARCHITECTURE_BLUEPRINT_v3.md` (Rev 3.2, 2026-10-30).
-> **Domain terms:** Vietnamese仙侠/修真 domain terms (*cảnh giới, pháp bảo, linh thú, khôi lỗi, công pháp, bí cảnh, quyển*) are preserved as in the blueprint.
-> **Constraint:** Purely technical and faithful to the blueprint. Any underspecified or conflicting requirements are cataloged as formal Open Questions (`OQ-n`) without inventing unilateral decisions.
+> **Domain terms:** Vietnamese domain terms (*cảnh giới, pháp bảo, linh thú, khôi lỗi, công pháp, bí cảnh, quyển*) are preserved as in the blueprint.
+> **Constraint:** Purely technical and faithful to the blueprint. Any underspecified or conflicting requirements are cataloged as formal Open Questions (`OQ-n`, `BP-OQ-n`) without inventing unilateral decisions.
 
 ---
 
@@ -25,7 +25,7 @@ The prototype in `src/` represents a rapid architectural spike (commit `8894ce7`
 | `src/schemas/arc.py` | **Evolve** | • Lacks `novel_id`, `prompt_version`, `model`, and alignment with SQLite `arcs` table (`start_chapter`, `end_chapter`, `payload JSON`, `prompt_version`, `model`).<br>• Fields do not match S6 macro synthesizer input/output contract. | §0.2, §3.2 S6 |
 | `src/schemas/state.py` | **Replace** | • Prototype `AgentState` contains only `query`, `intent`, `target_entity`, `target_aspect`, `retrieved_events`, `retrieved_arcs`, `final_output`, `errors`.<br>• Blueprint requires `QueryState(TypedDict, total=False)` containing `novel_id`, `chapter_max`, `mode`, `lc_plan`, `query`, `thread_id`, `decision: RouterDecision`, `entity_ids`, `unresolved_mentions`, `evidence: EvidencePack`, `answer: Answer`, `leak_report: LeakReport`, `errors`. | §0.2, §3.3, §3.12 |
 | `src/storage/qdrant_client.py` | **Replace** | • Hardcodes single-novel collections: `pntt_chapters`, `pntt_arcs`, `pntt_entities` (G-21). Blueprint requires 2 shared collections: `xn_chunks` and `xn_arcs` with `novel_id` tenant payload index.<br>• Only configures dense vectors (size 1024); lacks sparse vector configuration for BGE-M3 hybrid search (G-08, ADR-03).<br>• Lacks deterministic UUID5 point ID generation (`uuid5(NAMESPACE, f"{novel_id}:{kind}:{chapter_id}:{chunk_no}")`).<br>• Eagerly connects in `__init__` rather than using lazy factory connection (G-12).<br>• Lacks tenant filtering (`novel_id == X`) and range filtering (`chapter_id <= chapter_max`). | §0.2, §3.2 S4, §3.4 L1, §3.11 |
-| `src/storage/sqlite_ledger.py` | **Replace** | • Only creates a single table `entity_events` with auto-increment ID, missing composite unique key `(novel_id, chapter_id, entity_id, event_type, ordinal)` (G-03).<br>• Missing 13 SQLite tables: `novels`, `chapters`, `extractions`, `entities`, `entity_aliases`, `entity_links`, `arcs`, `entity_arc_digests`, `arc_prefix_summaries`, `jobs`, `llm_runs`, `answer_cache`, `lc_map_cache`, `feedback`.<br>• Does not enable `PRAGMA journal_mode=WAL` or `PRAGMA foreign_keys=ON`.<br>• Query method uses substring `LIKE %name%` with no spoiler filter (`chapter_id <= chapter_max`), violating L1 spoiler control. | §0.2, §3.2, §3.4 L1 |
+| `src/storage/sqlite_ledger.py` | **Replace** | • Only creates a single table `entity_events` with auto-increment ID, missing composite unique key `(novel_id, chapter_id, entity_id, event_type, ordinal)` (G-03).<br>• Missing the other 14 SQLite tables defined in blueprint §3.2 (out of 15 total tables: `novels`, `chapters`, `extractions`, `entities`, `entity_aliases`, `entity_links`, `entity_events`, `arcs`, `entity_arc_digests`, `arc_prefix_summaries`, `jobs`, `llm_runs`, `answer_cache`, `lc_map_cache`, `feedback`).<br>• Does not enable `PRAGMA journal_mode=WAL` or `PRAGMA foreign_keys=ON`.<br>• Query method uses substring `LIKE %name%` with no spoiler filter (`chapter_id <= chapter_max`), violating L1 spoiler control. | §0.2, §3.2, §3.4 L1 |
 | `src/timeline/arc_detector.py` | **Replace** | • Greedy linear segmentation: splits whenever `score >= 0.60` and `length >= 30`.<br>• Completely ignores `max_arc_length = 90` configured in YAML (G-11).<br>• Missing centered 5-chapter smoothing window (§3.2 S5).<br>• Missing dynamic programming optimization maximizing cumulative score within length bounds.<br>• Missing local LLM boundary review step using micro-summaries ±5 chapters. | §0.2, §3.2 S5 |
 
 ### 1.2 Configuration, Environment & Infrastructure Audit
@@ -39,7 +39,9 @@ The prototype in `src/` represents a rapid architectural spike (commit `8894ce7`
    - Blueprint §3.9 specifies migration to `uv` + `pyproject.toml` + `uv.lock`.
 3. **`.gitignore`**:
    - Verified present on disk. Correctly excludes `.env`, `data/`, `*.db`, `qdrant_storage/`, Python cache files, and IDE directories. The blueprint item in Phase 1 table "Day 1 .gitignore" is already accomplished.
-4. **Missing Directories & Baseline Files**:
+4. **`.env.example`**:
+   - Referenced by `README.md`, but its contents were not reviewed.
+5. **Missing Directories & Baseline Files**:
    - `data/` directory is absent; `data/novels/pntt1/raw/chapter_N.md` does not exist, so assumption A-03 cannot yet be empirically validated.
    - `prompts/` directory does not exist (all prompts are embedded in Python strings).
    - `configs/genres/` and `configs/novels/` directories do not exist.
@@ -53,6 +55,8 @@ The prototype in `src/` represents a rapid architectural spike (commit `8894ce7`
 ## 2. Build Order & Sprint Breakdown (Phase 4: Sprints 1 → 5)
 
 The project follows a 5-sprint progression (2 weeks per sprint) based on Phase 4 of `ARCHITECTURE_BLUEPRINT_v3.md`.
+
+> **Note on inter-sprint dependencies:** Dependencies connecting stages across sprints (e.g. S1-T6 to S2-T1, or S1-T4/S1-T6 to S3-T1) are derived from the underlying data-flow architecture specified in blueprint §3.1; the blueprint text does not specify sprint-level completion gates.
 
 ```mermaid
 flowchart TD
@@ -68,7 +72,7 @@ flowchart TD
     end
 
     subgraph Sprint2["Sprint 2: Retrieval & Spoiler Layers L1–L5"]
-        S1_T6 --> S2_T1["S2-T1: Qdrant Multi-tenant Setup"]
+        S1_T6 -->|derived data flow §3.1| S2_T1["S2-T1: Qdrant Multi-tenant Setup"]
         S2_T1 --> S2_T2["S2-T2: S4 Chunk & Embed (BGE-M3)"]
         S2_T2 --> S2_T3["S2-T3: Hybrid Retrieval & Reranker"]
         S2_T3 --> S2_T4["S2-T4: Expand Query Graph (Factual QA, Compare)"]
@@ -77,7 +81,7 @@ flowchart TD
     end
 
     subgraph Sprint3["Sprint 3: Arcs, Digests & Prefix Views"]
-        S1_T4 --> S3_T1["S3-T1: S5 Smoothed DP Arc Segmentation"]
+        S1_T4 & S1_T6 -->|derived data flow §3.1| S3_T1["S3-T1: S5 Smoothed DP Arc Segmentation"]
         S3_T1 --> S3_T2["S3-T2: S6 Macro StoryArc Synthesis"]
         S1_T6 & S3_T1 --> S3_T3["S3-T3: S7 Entity×Arc Digests"]
         S3_T1 --> S3_T4["S3-T4: Arc Prefix Summaries (L2/L3)"]
@@ -113,12 +117,12 @@ flowchart TD
 #### Task Ordering & File Matrix
 - **S1-T1: Project Setup & Config Split** (§3.9, §3.11, §0.2, ADR-05)
   - *Files created:* `configs/genres/xianxia.yaml`, `configs/novels/pntt1.yaml`, `pyproject.toml` (subject to OQ-01, OQ-02).
-  - *Files changed:* `configs/config.yaml`, `docker-compose.yml` (remove Redis service), `.env.example`.
+  - *Files changed:* `configs/config.yaml`, `docker-compose.yml` (remove Redis service); proposed change: `.env.example` (proposal, not in blueprint; tied to OQ-10).
   - *Dependencies:* None.
 - **S1-T2: SQLite Database Schema & Repository Layer** (§3.2, §3.4 L1, §3.7)
   - *Files created:* `src/xn/storage/database.py`, `src/xn/storage/repository.py`, `tests/unit/test_repository_guards.py`.
   - *Files changed/deleted:* Supersedes `src/storage/sqlite_ledger.py`.
-  - *Details:* 14 tables with `novel_id` scoping; WAL mode; foreign keys; repository methods strictly require `novel_id` and `chapter_max`. Unit test asserts no method accepts a missing bound.
+  - *Details:* 15 tables with `novel_id` scoping (`novels`, `chapters`, `extractions`, `entities`, `entity_aliases`, `entity_links`, `entity_events`, `arcs`, `entity_arc_digests`, `arc_prefix_summaries`, `jobs`, `llm_runs`, `answer_cache`, `lc_map_cache`, `feedback`); WAL mode; foreign keys; repository methods strictly require `novel_id` and `chapter_max`. Unit test asserts no method accepts a missing bound.
   - *Dependencies:* S1-T1.
 - **S1-T3: Pipeline Stage S0 — Parse & Clean** (§3.2 S0, G-10, G-15)
   - *Files created:* `src/xn/pipeline/s0_parse.py`, `tests/unit/test_s0_parse.py`.
@@ -137,7 +141,7 @@ flowchart TD
   - *Files created:* `src/xn/pipeline/s3_ledger.py`, `src/xn/schemas/lifecycle.py`, `src/xn/pipeline/runner.py`.
   - *Details:* Writes `entity_events` with unique key `(novel_id, chapter_id, entity_id, event_type, ordinal)`. Per-chapter transactions. Records job status in `jobs`.
   - *Dependencies:* S1-T2, S1-T5.
-- **S1-T7: Extractor Benchmark (qwen2.5:14b vs qwen3:14b)** (§3.2, §3.9)
+- **S1-T7: Extractor Benchmark (qwen2.5:14b vs qwen3:14b)** (§3.2, §3.9, BP-OQ-1)
   - *Task:* Benchmark on 50 chapters for schema success rate, entity recall, s/chapter, and VRAM footprint. Choose production local model.
   - *Dependencies:* S1-T4.
 - **S1-T8: Grounded Query Graph (Ledger Slice)** (§3.3, §3.4, ADR-01, ADR-02)
@@ -145,15 +149,15 @@ flowchart TD
   - *Files changed/deleted:* Supersedes `src/agents/graph_workflow.py`, `src/agents/pydantic_agents.py`, `src/cli.py`.
   - *Details:* LangGraph flow: `route` → `bound` → `resolve_entities` → `retrieve` (ledger-only) → `gate` → `synthesize` → `verify`. Verifies citations exist in evidence and are ≤ N.
   - *Dependencies:* S1-T2, S1-T6.
-- **S1-T9: Gold Set Annotation & Eval Harness** (§3.8)
-  - *Files created:* `eval/pntt1/gold_chapters.json` (20 chapters), `eval/pntt1/gold_aliases.json` (80 pairs), `eval/pntt1/gold_qa.json` (15 Q&A), `eval/pntt1/gold_spoilers.json` (10 probes), `tests/eval/test_gold.py`.
+- **S1-T9: Gold Set Annotation & Eval Harness** (§3.8, OQ-09, OQ-14)
+  - *Files created:* `eval/pntt1/` gold assets (20 chapters, 80 alias pairs, 15 Q&A, 10 spoiler probes per blueprint Phase 4), `tests/eval/test_gold.py`.
   - *Dependencies:* S1-T6, S1-T8.
 
 #### Sprint 1 Acceptance Criteria (copied from blueprint Phase 4)
 1. Two consecutive ingest runs give identical row counts.
 2. Deep-dive on 3 entities cites only chapters $\le N$.
 3. Extraction recall $\ge 0.80$.
-4. Measured s/chapter recorded in this doc's cost table.
+4. Measured s/chapter recorded in the blueprint's §3.9 cost table ("Time & cost model for pntt1").
 
 #### Parallelism & Ordering Constraints
 - *Parallel groups:* S1-T2 (Storage) and S1-T3 (S0 Parse) touch disjoint files and run in parallel. S1-T7 (Benchmark) runs in parallel with S1-T8 (Query Graph scaffolding) once S1-T4 is done.
@@ -170,14 +174,14 @@ flowchart TD
   - *Files created:* `src/xn/storage/qdrant.py`, `tests/integration/test_tenant_isolation.py`.
   - *Files changed/deleted:* Supersedes `src/storage/qdrant_client.py`.
   - *Details:* Manage shared collections `xn_chunks` and `xn_arcs`. Setup dense (1024 cosine) and sparse vectors. Payload indexes on `novel_id` (tenant), `chapter_id`, `arc_id`. Deterministic UUID5 point IDs.
-  - *Dependencies:* Sprint 1 complete.
+  - *Dependencies:* S1-T6 (derived from data flow, §3.1 diagram; not explicitly stated in blueprint).
 - **S2-T2: Pipeline Stage S4 — Chunk & Embed** (§3.2 S4, §3.9)
   - *Files created:* `src/xn/pipeline/s4_embed.py`.
   - *Details:* Runs in a separate GPU window (Ollama stopped). Paragraph chunks ~450 tokens (60 overlap) + micro-summaries. BGE-M3 dense + sparse vectors written to `xn_chunks`.
   - *Dependencies:* S2-T1.
-- **S2-T3: Hybrid Retrieval & Reranker** (§3.2 S4, §3.3)
+- **S2-T3: Hybrid Retrieval & Reranker** (§3.2 S4, §3.3, §3.9)
   - *Files created:* `src/xn/storage/retriever.py`.
-  - *Details:* Qdrant query API: dense k=40 + sparse k=40 prefetch → RRF fusion → hard filter `novel_id == X AND chapter_id <= chapter_max` → rerank top-30 with `bge-reranker-v2-m3` on CPU/GPU to top-8.
+  - *Details:* Qdrant query API: dense k=40 + sparse k=40 prefetch → RRF fusion → hard filter `novel_id == X AND chapter_id <= chapter_max` → rerank top-30 with `bge-reranker-v2-m3` fp16 on GPU (~1.2 GB) to top-8 (BGE-M3 query encoding on CPU, §3.9).
   - *Dependencies:* S2-T2.
 - **S2-T4: Expand Query Graph (Factual QA, Compare)** (§3.3)
   - *Files changed:* `src/xn/graph/nodes/route.py`, `src/xn/graph/nodes/retrieve.py`, `src/xn/graph/nodes/gate.py`, `src/xn/graph/nodes/synthesize.py`.
@@ -209,11 +213,11 @@ flowchart TD
 *Goal:* Build macro-level story structures (S5–S7) and spoiler-safe prefix summaries, enabling bounded deep-dives and timeline queries.
 
 #### Task Ordering & File Matrix
-- **S3-T1: Pipeline Stage S5 — Smoothed DP Arc Segmentation** (§3.2 S5, G-11)
+- **S3-T1: Pipeline Stage S5 — Smoothed DP Arc Segmentation** (§3.2 S5, G-11, OQ-04)
   - *Files created:* `src/xn/pipeline/s5_segment.py`, `prompts/s5_boundary_review/v1.md`.
   - *Files changed/deleted:* Supersedes `src/timeline/arc_detector.py`.
   - *Details:* Chapter score $s_i = \sum w \cdot \text{flag}$; centered smoothing window 5; DP segmentation picking boundaries subject to $30 \le \text{len} \le 90$; local LLM reviews boundary with micro-summaries $\pm 5$ chapters (shift $\le 5$). Writes to `chapters.arc_id` and `arcs`.
-  - *Dependencies:* Sprint 2 complete (requires S1 extraction flags).
+  - *Dependencies:* S1-T4, S1-T6 (derived from data flow, §3.1 diagram; requires S1 extraction flags across all chapters in range).
 - **S3-T2: Pipeline Stage S6 — Macro StoryArc Synthesis** (§3.2 S6)
   - *Files created:* `src/xn/pipeline/s6_synthesize.py`, `src/xn/schemas/arc.py`, `prompts/s6_arc_synthesize/v1.md`.
   - *Details:* Calls OpenRouter macro model with concatenated micro-summaries (~12k tokens in); writes `StoryArc` JSON to SQLite `arcs` and embeds arc summary into Qdrant `xn_arcs`.
@@ -221,7 +225,7 @@ flowchart TD
 - **S3-T3: Pipeline Stage S7 — Entity×Arc Digests** (§3.2 S7, G-07)
   - *Files created:* `src/xn/pipeline/s7_digest.py`, `prompts/s7_digest/v1.md`.
   - *Details:* For each (entity, arc) with $\ge 3$ events: local LLM produces 80–150 word digest. Stored in `entity_arc_digests`.
-  - *Dependencies:* S3-T1, Sprint 1 S3 ledger.
+  - *Dependencies:* S3-T1, S1-T6.
 - **S3-T4: Arc Prefix Summaries (L2/L3 Spoiler Safety)** (§3.2 S7, §3.4 L2, L3)
   - *Files created:* `src/xn/pipeline/prefix_summaries.py`.
   - *Details:* Precompute prefix summaries every 10 chapters for active arcs using local model; store in `arc_prefix_summaries`. Query-time snap down to nearest 10-chapter checkpoint + append raw micro-summaries.
@@ -250,24 +254,23 @@ flowchart TD
 - **S4-T1: Full Ingestion Run on `pntt1` (Ch. 1–2,673)** (§3.2, §3.9, §3.10)
   - *Task:* Execute S0 → S7 over entire novel using 2-slot Ollama concurrency. Monitor and clear failure queue (`jobs.status = 'failed'`). Verify wall-clock time $\le 20$ h.
   - *Dependencies:* Sprint 3 complete.
-- **S4-T2: Full Evaluation Suite & Benchmark** (§3.8)
-  - *Files created:* `eval/pntt1/gold_chapters_40.json`, `eval/pntt1/gold_aliases_150.json`, `eval/pntt1/gold_qa_40.json`, `eval/pntt1/gold_spoilers_30.json`, `eval/pntt1/baseline.json`.
+- **S4-T2: Full Evaluation Suite & Benchmark** (§3.8, OQ-09, OQ-14)
+  - *Files created:* `eval/pntt1/` gold assets (40 annotated chapters, 150 alias pairs, 40 Q&A, 30 spoiler probes per blueprint §3.8), `eval/pntt1/baseline.json`.
   - *Task:* Run full evaluation against §3.8 thresholds (entity recall $\ge 0.85$, precision $\ge 0.90$, event accuracy $\ge 0.75$, flag F1 $\ge 0.80$, alias F1 $\ge 0.90$, boundary F1 $\ge 0.80$, RAGAS faithfulness $\ge 0.85$, context recall $\ge 0.80$, citation hit rate $\ge 0.80$, 0 leaks on 30 spoiler probes).
   - *Dependencies:* S4-T1.
 - **S4-T3: LLMOps Tracing & SQL Telemetry Views** (§3.5, §3.8, G-13)
   - *Files created:* `src/xn/telemetry/tracing.py`, `src/xn/storage/views.sql`.
   - *Details:* Pydantic-AI OpenTelemetry instrumentation to Langfuse/Logfire. SQL views for retry rate per prompt, failed chapters, stage cost/tokens, grounding ratio, spoiler hits.
   - *Dependencies:* S4-T1.
-- **S4-T4: CI Automation & Quality Gates** (§3.5, §3.8, §3.9)
-  - *Files created:* `tests/integration/test_regression.py`.
-  - *Details:* Pytest regression gate asserting no metric drops > 2 points vs `baseline.json`. Repository tenant & boundary isolation unit tests.
+- **S4-T4: CI Automation & Quality Gates** (§3.5, §3.8, §3.9, OQ-03, OQ-10)
+  - *Files created / used:* `tests/eval/` (per blueprint §3.5: regression gate command is `pytest tests/eval -m gold --novel pntt1`, failing if any metric drops > 2 points vs `eval/{novel_id}/baseline.json`; blueprint §3.8 explicitly notes eval runs on demand, not in CI). Unit & integration tests in `tests/unit/` and `tests/integration/`. Proposed change: `README.md` (proposal, not in blueprint; tied to OQ-10).
   - *Dependencies:* S4-T2.
 - **S4-T5: FastAPI Service & SSE Streaming Endpoint** (§3.6)
   - *Files created:* `src/xn/api/app.py`, `src/xn/api/routes.py`, `src/xn/api/schemas.py`.
   - *Details:* Expose `/v1/novels`, `/v1/novels/{id}/query` with SSE (`Accept: text/event-stream`), `/v1/novels/{id}/progress`. Single-flight stage runs.
   - *Dependencies:* S4-T1.
 - **S4-T6: Multi-Novel Onboarding Validation (Second Novel Proof)** (§3.11, G-21)
-  - *Files created:* `configs/novels/second_novel.yaml`, `data/novels/second_novel/raw/` (sample 200 ch).
+  - *Files created:* `configs/novels/<id>.yaml` (for a second novel, e.g. a sample novel config), `data/novels/<id>/raw/` (sample 200 ch).
   - *Task:* Onboard a 200-chapter sample novel using configuration only. Verify zero code changes. Run cross-novel bleed test asserting queries on novel A never return novel B records.
   - *Dependencies:* S4-T5.
 - **S4-T7: (Optional) Local Web UI with Reading Progress Slider** (§3.6)
@@ -292,7 +295,7 @@ flowchart TD
 *Goal:* Implement raw-chapter reading for deep-dive queries using a $\ge 1\text{M}$-context cloud model with cost pre-estimation, user confirmation interrupts, map-reduce arc execution, and quote verification.
 
 #### Task Ordering & File Matrix
-- **S5-T1: OpenRouter Model Catalog & Pricing Integration** (§3.12)
+- **S5-T1: OpenRouter Model Catalog & Pricing Integration** (§3.12, A-08)
   - *Files created:* `src/xn/graph/long_context/pricing.py`.
   - *Details:* Fetch OpenRouter model list at startup; cache `context_length` and per-token pricing for `LONG_CONTEXT_MODEL`. Sized budget = 70% of context window.
   - *Dependencies:* Sprint 4 complete.
@@ -312,8 +315,8 @@ flowchart TD
   - *Files created:* `src/xn/graph/long_context/verify.py`.
   - *Details:* Validates that cited chapters are a subset of chapters sent; verifies verbatim quotes against `clean_text` (partial_ratio $\ge 90$); executes L5 spoiler scan on final report; logs egress payload chapters to `llm_runs`.
   - *Dependencies:* S5-T4.
-- **S5-T6: Long-Context Gold Evaluation (10 Probes)** (§3.8, §3.12)
-  - *Files created:* `eval/pntt1/gold_long_context.json`.
+- **S5-T6: Long-Context Gold Evaluation (10 Probes)** (§3.8, §3.12, OQ-14)
+  - *Files created:* `eval/pntt1/` gold assets (10 long-context deep-dive probes per blueprint §3.8).
   - *Task:* Evaluate 10 deep-dives (protagonist, 4 major pháp bảo/khôi lỗi, 5 minor entities). Run pairwise judge vs. compact mode.
   - *Dependencies:* S5-T5.
 
@@ -331,7 +334,7 @@ flowchart TD
 
 ## 3. Comprehensive File-by-File Table
 
-Every file in the repository (existing, modified, or to be created) mapped to its sprint task and blueprint specification:
+Repository files and planned assets mapped to sprint tasks and blueprint specifications:
 
 | File Path | Action | Sprint / Task | Source Blueprint Section |
 |---|---|---|---|
@@ -339,10 +342,11 @@ Every file in the repository (existing, modified, or to be created) mapped to it
 | `docker-compose.yml` | **Change** | S1-T1, S2-T1 | §0.2, §3.9, ADR-05 |
 | `requirements.txt` | **Change** | S1-T1 | §3.9 (or OQ-02) |
 | `pyproject.toml` | **Create** | S1-T1 | §3.9 |
-| `.env.example` | **Change** | S1-T1 | §3.9 |
+| `.env.example` | **Change (proposal, not in blueprint; tied to OQ-10)** | S1-T1 | §3.9 (OQ-10) |
 | `configs/config.yaml` | **Change** | S1-T1 | §3.5, §3.9, §3.11 |
 | `configs/genres/xianxia.yaml` | **Create** | S1-T1 | §3.11 |
-| `configs/novels/pntt1.yaml` | **Create** | S1-T1 | §3.11 |
+| `configs/novels/<id>.yaml` (e.g. `pntt1.yaml`) | **Create** | S1-T1, S4-T6 | §3.11 |
+| `data/novels/<id>/raw/` | **Create** | S1-T3, S4-T6 | §3.1, §3.2 S0, §3.11 |
 | `ollama/Modelfile.qwen14b-12k` | **Create** | S1-T4 | §3.9 |
 | `src/config.py` | **Change / Move** | S1-T1 | §3.2, §3.11 |
 | `src/xn/__init__.py` | **Create** | S1-T1 | §3.9 |
@@ -377,13 +381,11 @@ Every file in the repository (existing, modified, or to be created) mapped to it
 | `src/agents/pydantic_agents.py` | **Delete** | S1-T8 | §0.2, §3.3 |
 | `src/xn/cli/main.py` | **Create** | S1-T8 | §3.2, §3.6 |
 | `src/cli.py` | **Delete** | S1-T8 | §0.2, §3.6 |
-| `eval/pntt1/gold_chapters.json` | **Create** | S1-T9 | §3.8 |
-| `eval/pntt1/gold_aliases.json` | **Create** | S1-T9 | §3.8 |
-| `eval/pntt1/gold_qa.json` | **Create** | S1-T9 | §3.8 |
-| `eval/pntt1/gold_spoilers.json` | **Create** | S1-T9 | §3.8 |
+| `eval/pntt1/` gold assets | **Create** | S1-T9, S4-T2, S5-T6 | §3.8, §3.9, OQ-14 |
+| `eval/pntt1/baseline.json` | **Create** | S4-T2 | §3.5, §3.8, §3.9 |
 | `tests/unit/test_repository_guards.py` | **Create** | S1-T2 | §3.4 L1, §3.7 |
 | `tests/unit/test_s0_parse.py` | **Create** | S1-T3 | §3.2 S0 |
-| `tests/eval/test_gold.py` | **Create** | S1-T9, S4-T2 | §3.8 |
+| `tests/eval/test_gold.py` | **Create** | S1-T9, S4-T2, S4-T4 | §3.5, §3.8 |
 | `src/xn/storage/qdrant.py` | **Create** | S2-T1 | §3.2 S4, §3.11 |
 | `src/storage/qdrant_client.py` | **Delete** | S2-T1 | §0.2, §3.2 S4 |
 | `tests/integration/test_tenant_isolation.py` | **Create** | S2-T1, S4-T6 | §3.7, §3.11 |
@@ -401,15 +403,13 @@ Every file in the repository (existing, modified, or to be created) mapped to it
 | `src/xn/pipeline/s7_digest.py` | **Create** | S3-T3 | §3.2 S7 |
 | `prompts/s7_digest/v1.md` | **Create** | S3-T3 | §3.2 S7, §3.5 |
 | `src/xn/pipeline/prefix_summaries.py` | **Create** | S3-T4 | §3.2 S7, §3.4 L2, L3 |
-| `eval/pntt1/baseline.json` | **Create** | S4-T2 | §3.5, §3.8 |
 | `src/xn/telemetry/tracing.py` | **Create** | S4-T3 | §3.8 |
 | `src/xn/storage/views.sql` | **Create** | S4-T3 | §3.8 |
-| `tests/integration/test_regression.py` | **Create** | S4-T4 | §3.5, §3.8 |
 | `src/xn/api/app.py` | **Create** | S4-T5 | §3.6 |
 | `src/xn/api/routes.py` | **Create** | S4-T5 | §3.6 |
 | `src/xn/api/schemas.py` | **Create** | S4-T5 | §3.6 |
-| `configs/novels/second_novel.yaml` | **Create** | S4-T6 | §3.11 |
-| `README.md` | **Change** | S4-T4 | §0.1, §3.1 |
+| `src/xn/ui/` | **Create** | S4-T7 | §3.6 |
+| `README.md` | **Change (proposal, not in blueprint; tied to OQ-10)** | S4-T4 | §0.1, §3.1 (OQ-10) |
 | `src/xn/graph/long_context/pricing.py` | **Create** | S5-T1 | §3.12 |
 | `src/xn/schemas/long_context.py` | **Create** | S5-T2 | §3.12 |
 | `src/xn/graph/long_context/planner.py` | **Create** | S5-T2 | §3.12 |
@@ -417,7 +417,6 @@ Every file in the repository (existing, modified, or to be created) mapped to it
 | `prompts/lc_reduce/v1.md` | **Create** | S5-T4 | §3.12, §3.5 |
 | `src/xn/graph/long_context/engine.py` | **Create** | S5-T4 | §3.12 |
 | `src/xn/graph/long_context/verify.py` | **Create** | S5-T5 | §3.12 |
-| `eval/pntt1/gold_long_context.json` | **Create** | S5-T6 | §3.8, §3.12 |
 
 ---
 
@@ -428,25 +427,39 @@ Comprehensive mapping of all assumptions (A-01..A-08), accepted risks (R-01..R-0
 | ID | Topic / Item | Status / Category | Impact on System Architecture & Work | Blocked / Affected Tasks | Validation Strategy ("Validate by") |
 |---|---|---|---|---|---|
 | **A-01** | Single user, local only | **Assumed** | No multi-user tenancy, auth tokens, or session locking. SQLite single-writer lock is sufficient. If violated, API, database layer, and job runner must be redesigned. | S4-T5 (FastAPI), S1-T2 (DB), CLI | Confirm with owner prior to Sprint 4 API deployment. |
-| **A-02** | RTX 5070 Ti 16 GB VRAM | **Confirmed** | Strictly constrains GPU resident models. Qwen 14B Q4_K_M (12.1 GB) and BGE-M3 (4–5 GB) cannot run simultaneously. S4 embedding must unload Ollama. Query time requires CPU query encoding or dynamic offloading. | S1-T4, S2-T2, S2-T3, S3-T1 | Validated by confirmed hardware spec; monitor VRAM during S1-T7 benchmark. |
+| **A-02** | RTX 5070 Ti 16 GB VRAM | **Confirmed** | Strictly constrains GPU resident models. Total ingestion VRAM estimate in blueprint §3.9 is ≈ 12.1 GB (Qwen 14B Q4_K_M alone is ~9.0 GB, plus KV cache and buffers) and BGE-M3 requires ≈ 4–5 GB, so they cannot run simultaneously. S4 embedding must run with Ollama unloaded. Query time keeps Qwen 14B and bge-reranker-v2-m3 (~1.2 GB) on GPU, with BGE-M3 query encoding on CPU (~0.3 s). | S1-T4, S2-T2, S2-T3, S3-T1 | Validated by confirmed hardware spec; monitor VRAM during S1-T7 benchmark. |
 | **A-03** | Source format is `chapter_N.md` with potential site noise | **Confirmed format**; noise level unknown | Scraped text hygiene dictates S0 cleaning regexes. Injected URLs or site watermarks (>5% repetition) must be stripped to prevent schema pollution or embedding degradation. | S1-T3 (S0 Parse & Clean) | Inspect 10 random raw chapters provided by owner in Sprint 1. |
 | **A-04** | Egress: summaries/short chunks to OpenRouter; raw chapters only in opt-in long-context mode | **Confirmed** | Strict enforcement of two egress classes (`compact` vs `long_context`). Compact mode sends only summaries, events, and $\le 8$ chunks of $\le 450$ tokens. Long-context sends raw chapters $\le N$ for one entity only upon explicit user confirmation. | S1-T8, S2-T4, S5-T4, S5-T5 | Code rule in OpenRouter client wrapper; assert chapter lists logged to `llm_runs.payload_chapters`. |
 | **A-05** | Throughput ~2,500/50 tok/s on 5070 Ti; pricing & versions as marked `[verify]` | **Estimate** | Ingestion runtime (11–17 h) and cost models depend on prefill/decode speeds. Divergence alters batch slot sizing (`NUM_PARALLEL=2` vs `1`) or prompt context (`num_ctx 12288` vs `10240`). | S1-T4, S1-T7, S4-T1 | Measure exact throughput on 50 chapters during S1-T7 benchmark; verify docs/pricing at pin time. |
 | **A-06** | Arcs of 30–90 chapters fit *Phàm Nhân Tu Tiên* | **Assumed** | DP segmentation constraints ($30 \le \text{len} \le 90$) depend on narrative pace. If arcs naturally exceed 90 chapters, artificial splits occur; if shorter, climax events are fragmented. | S3-T1 (S5 Arc Segmentation) | Compare segmented boundaries against the novel's published volume (*quyển*) and story structure. |
-| **A-07** | Hidden identities revealed explicitly in text (`REVEALED_IDENTITY`) | **Assumed** | If identity reveals happen implicitly without a clear reveal scene, S1/S2 will fail to populate `entity_links`, leaving character timelines split. | S1-T4 (S1), S1-T5 (S2), S2-T6 (L5) | Evaluate on gold set containing known reveals (e.g. Hàn Lập aliases) and add manual links to `pntt1.yaml`. |
+| **A-07** | Hidden identities revealed explicitly in text (`REVEALED_IDENTITY`) | **Assumed** | If identity reveals happen implicitly without a clear reveal scene, S1/S2 will fail to populate `entity_links`, leaving character timelines split. (Note: "Hàn Lập" and "Thanh Trúc Phong Vân Kiếm" appear in `src/schemas/extraction.py` description as examples). | S1-T4 (S1), S1-T5 (S2), S2-T6 (L5) | Evaluate on gold set containing known reveals and add manual links to `configs/novels/pntt1.yaml`. |
 | **A-08** | $\ge 1\text{M}$-context model available on OpenRouter at target pricing | **Assumed** `[verify]` | If a $\ge 1\text{M}$ model is unavailable or prohibitively costly, long-context mode requires smaller batches, higher latency, or fallback to compact mode. | S5-T1, S5-T2, S5-T4 | Query OpenRouter model catalog at pin time during Sprint 5 planning. |
 | **R-01** | Paraphrased spoilers without future names/realms bypass L5 scan | **Accepted Risk** | Low-probability leak where model mentions future plot points using vague language. Mitigated by prompt rule, 30 spoiler probes, and user feedback loop. | S2-T6, S4-T2 | Zero-leak gate on 30 spoiler probes; continuous prompt hardening. |
 | **R-02** | Cloud model's parametric knowledge of popular novels | **Accepted Risk** | Model could answer from pre-training memory rather than retrieved evidence. Mitigated by evidence-only prompt, strict citation enforcement, and stripping uncited claims. | S1-T8, S2-T4, S3-T5 | Automated grounding verification; claims without evidence quotes are stripped. |
-| **R-03** | No cross-novel entity linking for sequels | **Accepted Risk** | Protagonists appearing in sequels (e.g. *Tiên Giới Thiên*) treated as separate entities. Multi-novel links deferred; `series_id` reserved in `novels` table. | S4-T6 | Revisit when onboarding *Phàm Nhân Tu Tiên 2*. |
+| **R-03** | No cross-novel entity linking for sequels | **Accepted Risk** | Characters appearing across sequels (blueprint §3.11, R-03: sequels sharing characters, e.g. `pntt2`) treated as separate entities. Multi-novel links deferred; `series_id` reserved in `novels` table. | S4-T6 | Revisit when onboarding *Phàm Nhân Tu Tiên 2*. |
 | **R-04** | Long-context mode costs up to several dollars per protagonist report | **Accepted Risk** | Risk of unexpected API expenditure. Mitigated by opt-in flag, cost estimation, interactive confirmation threshold ($0.50), daily spend cap, and caching. | S5-T2, S5-T3 | Mandatory cost calculation before model invocation; `interrupt()` gate. |
-| **OQ-BP-1** | Extractor model: `qwen2.5:14b` vs `qwen3:14b` (non-thinking) | **Blueprint OQ** | Influences extraction JSON adherence, VRAM usage, and throughput. | S1-T4, S1-T7 | Sprint 1 benchmark across 50 chapters comparing schema success rate, entity recall, and tokens/sec. |
+| **BP-OQ-1** | Extractor model: `qwen2.5:14b` vs `qwen3:14b` (non-thinking) | **Blueprint OQ** | Influences extraction JSON adherence, VRAM usage, and throughput. | S1-T4, S1-T7 | Sprint 1 benchmark across 50 chapters comparing schema success rate, entity recall, and tokens/sec. |
 | **BP-OQ-2** | Cleaning patterns for *Phàm Nhân Tu Tiên 1* | **Blueprint OQ** | Incomplete cleaning patterns permit scraping watermarks into `clean_text` and vector embeddings. | S1-T3 (S0 Parse & Clean) | Inspect 10 sample raw chapters provided by owner in Sprint 1 to extract repeating site markers. |
 
 ---
 
-## 5. Formal Open Questions List (`OQ-n`)
+## 5. Formal Open Questions List (`OQ-n`, `BP-OQ-n`)
 
 The following genuine ambiguities, contradictions, and underspecified items are formally recorded. As mandated, no unilateral decisions are made.
+
+### BP-OQ-1: Extractor Model Selection (`qwen2.5:14b` vs `qwen3:14b`)
+- **Source:** Blueprint §6 "Open questions".
+- **Question:** Which local extractor model (`qwen2.5:14b` vs `qwen3:14b` non-thinking) should be locked in the Modelfile?
+- **Why it matters:** Blueprint §3.9 notes Qwen2.5-14B has 48 layers while Qwen3-14B has 40 layers (`[verify]`). The choice affects JSON schema compliance, extraction recall, VRAM consumption, and decoding speed.
+- **Which task it blocks:** S1-T4, S1-T7.
+- **Options named in blueprint:** `qwen2.5:14b` vs `qwen3:14b` (non-thinking), settled by 50-chapter benchmark in Sprint 1 (§3.2, §6).
+
+### BP-OQ-2: Source Text Cleaning Patterns for *Phàm Nhân Tu Tiên 1*
+- **Source:** Blueprint §6 "Open questions".
+- **Question:** What are the exact regex cleaning patterns for `pntt1` in `configs/novels/pntt1.yaml`?
+- **Why it matters:** Stage S0 removes scraping noise and watermarks repeating in > 5% of chapters. Concrete patterns cannot be finalized without inspecting actual source Markdown files.
+- **Which task it blocks:** S1-T3.
+- **Options named in blueprint:** Settle after inspecting sample source files in Sprint 1 (§3.2 S0, §6).
 
 ### OQ-01: Package Layout vs. Verifier Command Conflict
 - **Question:** Should the repository migrate to package layout `src/xn/` (with invocations `python -m xn run...`) as mandated by blueprint §3.9, or maintain the flat `src/` layout (with imports `from src.storage...` and `python -m src.cli...`)?
@@ -476,58 +489,51 @@ The following genuine ambiguities, contradictions, and underspecified items are 
 - **Question:** What is the exact mathematical formulation and penalty structure for Stage S5 Dynamic Programming arc segmentation, and how are prototype parameters reconciled?
 - **Why it matters:** Blueprint §3.2 S5 specifies: `"DP picks boundaries maximizing Σ scores subject to min_len ≤ len ≤ max_len"`. Maximizing pure sum of scores without a boundary cut penalty or length penalty incentivizes creating as many boundaries as possible (cutting every arc at `min_len`). Additionally, prototype `ArcDetector` (`src/timeline/arc_detector.py`) uses `score_threshold = 0.60` and requires `time_skip_years >= 5.0` to award the 0.10 time skip weight, neither of which is specified in blueprint v3.
 - **Which task it blocks:** S3-T1 (S5 Arc Segmentation implementation).
-- **Options named/apparent:**
-  - *Option A:* Formulate DP with a transition cost / penalty per boundary cut, or maximize average score density.
-  - *Option B:* Constrained dynamic programming fixing total arc count $K$ based on novel length, optimizing changepoint score variance.
+- **Options named/apparent:** None named in blueprint.
 
 ### OQ-05: `jobs` Table Primary Key vs. Macro-Stages & Prefix Summaries
 - **Question:** How should multi-chapter stages (S5 Arc Segmentation, S6 Arc Synthesis, S7 Entity Digests) and arc prefix summaries be keyed in the `jobs` table?
 - **Why it matters:** Blueprint §3.2 specifies the `jobs` schema as: `PRIMARY KEY(novel_id, chapter_id, stage)`. However, Stage S5 operates novel-wide; Stage S6 operates per arc span; Stage S7 operates per `(entity_id, arc_id)`; and arc prefix summaries operate per `(arc_id, upto_chapter)`. Recording non-chapter stages in `jobs` requires sentinel values (e.g. `chapter_id = 0` or `end_chapter`), which risks key collisions and semantic ambiguity. Furthermore, arc prefix summaries have no assigned stage identifier (e.g. `s6_prefix` vs `s8`).
 - **Which task it blocks:** S1-T2 (Database schema), S1-T6 (Pipeline runner), S3-T1..S3-T4.
-- **Options named/apparent:**
-  - *Option A:* Refactor `jobs` PK to `(novel_id, stage, target_type, target_id)` where `target_type` is `'chapter'|'arc'|'novel'|'entity_arc'`.
-  - *Option B:* Keep `(novel_id, chapter_id, stage)` and define conventional integer mappings (e.g. `chapter_id = end_chapter` for S6/prefix, with stage IDs `'s5_segment'`, `'s6_synthesize'`, `'s6_prefix'`, `'s7_digest'`).
+- **Options named/apparent:** None named in blueprint.
 
 ### OQ-06: Undefined Referenced Schemas and Data Types
 - **Question:** What are the exact field definitions and serialization schemas for types referenced in the blueprint but omitted from code listings?
 - **Why it matters:** Multiple critical data contracts are referenced without schema definitions:
-  - `Answer`: Referenced in §3.3 as `Answer(markdown, citations)`. Additional fields (e.g. `grounding_ratio`, `unresolved_mentions`, `suggested_followups`) are implied by SSE events (§3.6) but not defined.
+  - `Answer`: Referenced in §3.3 as `Answer(markdown, citations)`. Additional fields (e.g. `grounding_ratio`, `spoiler_scan`, `tokens`, `cost_usd`) are shown in the SSE done event (§3.6) but the `Answer` model fields are not defined.
   - `EvidencePack`: Structure for aggregating retrieved events, arc summaries, prefix digests, and vector chunks under the 20k token budget.
   - `LeakReport`: Structure returned by L5 spoiler scanner (detected terms, source chapter, redactions).
   - `Batch`: Field types in `LongContextPlan` (`arc_id: int`, `chapters_full: list[int]`, `chapters_excerpt: list[int]`, `input_tokens: int`, `cached: bool`).
   - `Coverage`: Exact structure in `DeepDiveReport` (`chapters_read: int`, `arcs_missing: list[int]`, `excerpt_ratio: float`).
-  - `Claim`: Fields beyond `text`, `chapters`, `quote`.
-  - Realm ladder representation: Format in `configs/novels/pntt1.yaml` (ordered list vs hierarchy) and exact algorithm mapping extracted text strings (e.g., *"Trúc Cơ kỳ tầng ba"*) to an integer `realm_rank` (§3.2 S2/S3 "normalized later").
+  - Realm ladder representation: Format in `configs/novels/pntt1.yaml` (ordered list vs hierarchy) and exact algorithm mapping extracted text strings to an integer `realm_rank` (§3.2 S2/S3 "normalized later").
   - `data_version` in `answer_cache` key: How `data_version` is calculated and updated (ingest timestamp vs git hash vs job counter).
   - Display name calculation: Algorithm and caching for "most frequent alias with first_chapter ≤ N" (§3.4 L4).
 - **Which task it blocks:** S1-T2, S1-T8, S2-T6, S5-T2, S5-T4.
-- **Options named/apparent:** Formalize Pydantic models and helper functions during Sprint 1 foundational tasks.
+- **Options named/apparent:** None named in blueprint.
 
 ### OQ-07: Sprint 1 Gate Reranker Dependency vs. Sprint 2 Delivery
 - **Question:** How should the query `gate` evaluate evidence sufficiency in Sprint 1 before the vector store and reranker (Stage S4) are implemented in Sprint 2?
 - **Why it matters:** Blueprint §3.3 states the `gate` rule: `"deep_dive: ≥ 1 resolved entity and ≥ 3 events; others: top reranker score ≥ 0.3"`. In Sprint 1, BGE-M3 and `bge-reranker-v2-m3` do not exist. If non-deep-dive intents (`factual_qa`, `timeline`) are active in Sprint 1, the reranker check cannot execute.
 - **Which task it blocks:** S1-T8 (Sprint 1 Query Graph).
-- **Options named/apparent:**
-  - *Option A:* Limit Sprint 1 query graph strictly to `deep_dive` intent on the ledger; activate `factual_qa`, `compare`, and reranker gating in Sprint 2.
-  - *Option B:* Use a temporary heuristic score for non-deep-dive intents in Sprint 1.
+- **Options named/apparent:** None named in blueprint.
 
 ### OQ-08: Missing Concrete Configuration Values in `configs/config.yaml`
 - **Question:** What are the exact model IDs and limits for parameters left unspecified or marked `[verify]` in blueprint v3?
 - **Why it matters:**
-  - `FALLBACK_MODEL`: Fallback model name on OpenRouter when primary encounters 429/5xx (e.g., `anthropic/claude-3.5-sonnet`, `deepseek/deepseek-chat`, or `openai/gpt-4o-mini`).
-  - `DAILY_SPEND_CAP`: Dollar ceiling for cloud spend checks (§3.7).
-  - `DEEP_DIVE_MODEL` and `LONG_CONTEXT_MODEL`: Current default `deepseek/deepseek-chat` in `configs/config.yaml` has a 64k context window, failing the $\ge 1\text{M}$ context window requirement of A-08 and §3.12. Needs selection (e.g. `google/gemini-1.5-pro` or `google/gemini-1.5-flash`).
-  - Python version target: Unpinned (e.g. 3.11 vs 3.12 on Windows).
-  - Qdrant target version: Prototype pins `v1.12.0`; blueprint notes `[verify version at pin time]`.
-  - Observability platform: Self-hosted Langfuse vs Logfire (§3.8 `[verify current API]`).
+  - `FALLBACK_MODEL`: Unspecified. OpenRouter fallback model name when primary encounters 429/5xx (§3.3).
+  - `DAILY_SPEND_CAP`: Unspecified. Dollar ceiling for cloud spend checks (§3.7).
+  - `DEEP_DIVE_MODEL` and `LONG_CONTEXT_MODEL`: Unspecified. `configs/config.yaml` sets `deepseek/deepseek-chat` for `macro_synthesizer` and `deep_dive_evaluator`, while blueprint §3.12 and assumption A-08 require a model with a $\ge 1\text{M}$-token context window for long-context mode (`LONG_CONTEXT_MODEL`).
+  - Python version target: Unspecified (blueprint §3.9 specifies `uv` + `pyproject.toml` + `uv.lock`, but does not pin a Python minor version).
+  - Qdrant target version: Unspecified (prototype `docker-compose.yml` pins `v1.12.0`; blueprint §3.9 notes `[verify version at pin time]`).
+  - Observability platform: Unspecified (blueprint §3.8 notes self-hosted Langfuse vs Logfire, `[verify current API]`).
 - **Which task it blocks:** S1-T1, S4-T3, S5-T1.
-- **Options named/apparent:** Set defaults in `configs/config.yaml` subject to owner confirmation.
+- **Options named/apparent:** None named in blueprint; values are unspecified.
 
 ### OQ-09: Reconciliation of Sprint 1 vs. Section 3.8 Gold Set Criteria
 - **Question:** What are the authoritative gold set sizes and evaluation thresholds for Sprint 1 vs Sprint 4?
 - **Why it matters:** Blueprint Phase 4 Sprint 1 specifies: `"Gold: 20 chapters, 80 alias pairs, 15 Q&A, 10 spoiler probes"` with acceptance criterion `"extraction recall ≥ 0.80"`. However, §3.8 table specifies: 40 annotated chapters, 150 alias pairs, 40 Q&A, 30 spoiler probes, with entity recall $\ge 0.85$ and precision $\ge 0.90$.
 - **Which task it blocks:** S1-T9 (Gold Set Annotation), S4-T2 (Full Evaluation).
-- **Options named/apparent:** Treat the 20-chapter / recall $\ge 0.80$ set as a Sprint 1 thin-slice milestone, expanding to the full 40-chapter / recall $\ge 0.85$ gold set in Sprint 4.
+- **Options named/apparent:** None named in blueprint.
 
 ### OQ-10: Documentation & Repository Housekeeping Discrepancies
 - **Question:** How should document versioning and missing referenced artifacts be reconciled?
@@ -535,23 +541,33 @@ The following genuine ambiguities, contradictions, and underspecified items are 
   - Blueprint title is `"Architecture Blueprint v3.1"` while the revision table lists Rev 3.2 (dated 2026-10-30).
   - Blueprint file is `ARCHITECTURE_BLUEPRINT_v3.md`, but `README.md` references `ARCHITECTURE_BLUEPRINT.md` (v2), which is absent.
   - `README.md` describes v2 architecture (LangGraph batch ingestion loop, Redis, old layout).
-  - `.env.example` exists on disk but contains v2 settings, lacking v3 variables (`LONG_CONTEXT_MODEL`, `FALLBACK_MODEL`, `DAILY_SPEND_CAP`).
+  - `.env.example` is referenced by `README.md`, but its contents were not reviewed.
 - **Which task it blocks:** S1-T1, S4-T4 (Documentation alignment).
+- **Options named/apparent:** None named in blueprint.
 
 ### OQ-11: Formal Tracking of Unconfirmed Assumptions (A-01, A-05..A-08)
 - **Question:** What is the owner sign-off mechanism for unconfirmed assumptions (A-01 single user, A-05 throughput/pricing, A-06 arc lengths 30–90, A-07 explicit identity reveals, A-08 1M-context model availability)?
 - **Why it matters:** Foundational engineering decisions (single-user SQLite concurrency, DP arc parameters, long-context map-reduce architecture) depend directly on these assumptions holding true.
 - **Which task it blocks:** Sprint milestone sign-offs.
+- **Options named/apparent:** None named in blueprint.
 
 ### OQ-12: Unicode Canonicalization & Tone Mark Standardization
 - **Question:** What exact normalization standard should be enforced across raw text, seed aliases, and query processing?
 - **Why it matters:** Vietnamese text commonly suffers from tone-mark placement divergence (e.g. *"hòa"* vs *"hoà"*, combining vs composed Unicode). While S0 specifies NFC normalization, query parsing and alias matching must share an identical normalization function to avoid false entity mismatches.
 - **Which task it blocks:** S1-T3, S1-T5, S1-T8.
+- **Options named/apparent:** None named in blueprint.
 
-### OQ-13: Handling of Non-contiguous Chapter Numbering in Scraped Source Text
-- **Question:** If the raw chapter corpus contains gaps or fractional chapter files (e.g. `chapter_102.5.md` or missing chapter 452), does Stage S0 fail hard or quarantine the missing range?
-- **Why it matters:** Blueprint §3.2 S0 states: `"fail the run if any number in 1..total_chapters is missing or duplicated (report list)"`. Web novel scraper outputs frequently have numbering anomalies or skipped chapters. A hard failure halts the entire pipeline before any processing can occur.
+### OQ-13: Handling of Non-Matching Filenames in Raw Chapter Directory
+- **Question:** How should files in `data/novels/{novel_id}/raw/` that do not match `^chapter_(\d+)\.md$` (e.g., non-integer files like `chapter_102.5.md`, auxiliary text files, or metadata files) be treated by Stage S0?
+- **Why it matters:** Blueprint §3.2 S0 specifies `"Accept only files matching ^chapter_(\d+)\.md$"` and §3.2/§3.10 explicitly state that missing or duplicate numbers in $1..\text{total\_chapters}$ abort the run with a reported list. However, the blueprint does not specify whether non-matching filenames in the raw directory are skipped silently, logged as warnings, or cause the parser to reject the input directory.
 - **Which task it blocks:** S1-T3 (S0 Parse & Clean).
+- **Options named/apparent:** None named in blueprint.
+
+### OQ-14: Gold Evaluation Asset Layout and File Format Specification
+- **Question:** What is the exact file naming, layout, and schema for gold assets under `eval/{novel_id}/`?
+- **Why it matters:** Blueprint §3.9 layout specifies `eval/pntt1/{gold,baseline.json}` and §3.8 specifies asset quantities (40 annotated chapters, 150 alias pairs, 40 Q&A, 30 spoiler probes, 10 long-context deep-dives), but does not specify individual filenames or data schemas for storing the gold sets.
+- **Which task it blocks:** S1-T9, S4-T2, S5-T6.
+- **Options named/apparent:** None named in blueprint.
 
 ---
 
@@ -572,7 +588,7 @@ The following activities cannot be executed by automated subagents (`agy-coder` 
 6. **Approving CI Workflow Modifications:**
    - Creating or editing files in `.github/workflows/` requires explicit owner authorization and action per `CLAUDE.md`.
 7. **Configuring OpenRouter Account & Spend Limits:**
-   - Setting `OPENROUTER_API_KEY`, configuring provider data training opt-out settings, and establishing credit balance and monthly limits.
+   - Setting `OPENROUTER_API_KEY`, configuring provider data training opt-out settings, and configuring daily spend cap (§3.7).
 
 ---
 
@@ -587,10 +603,10 @@ The following items are explicitly out of scope for this implementation plan:
 3. **Modifying Architecture Blueprint:**
    - No edits to `ARCHITECTURE_BLUEPRINT_v3.md`.
 4. **Unilateral Decision-Making on Open Questions:**
-   - Open questions OQ-01 through OQ-13 are cataloged for owner resolution without assuming outcomes.
-5. **Multi-User Authentication & Web Security:**
-   - Role-based access control, user authentication, multi-tenant database isolation, and public internet hardening (single-user local-first per A-01).
+   - Open questions `OQ-01` through `OQ-14` and `BP-OQ-1` / `BP-OQ-2` are cataloged for owner resolution without assuming outcomes.
+5. **Multi-User Authentication & SaaS Tenancy:**
+   - Multi-user authentication, cloud SaaS tenant isolation, or public internet exposure (single user local-first per A-01; note that per-novel tenancy in SQLite and Qdrant is in scope per §3.11, G-21).
 6. **Cross-Novel Sequel Entity Linking:**
-   - Cross-novel character tracking between sequels (e.g. *Phàm Nhân Tu Tiên 1* and *Tiên Giới Thiên*) is deferred per R-03 (`series_id` reserved).
+   - Cross-novel character tracking between sequels (e.g. `pntt1` and `pntt2`) is deferred per blueprint §3.11 and R-03 (`series_id` reserved in `novels` table).
 7. **Non-Vietnamese Language Processing:**
    - Parsing raw Chinese web texts or supporting other language translations. Only Vietnamese Markdown chapters are in scope.
