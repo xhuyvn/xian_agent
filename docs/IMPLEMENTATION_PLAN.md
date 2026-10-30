@@ -15,9 +15,9 @@ The prototype in `src/` represents a rapid architectural spike (commit `8894ce7`
 
 | Prototype File | Blueprint §0.2 Disposition | Concrete Gaps & Deficiencies Found in Code | Blueprint Reference |
 |---|---|---|---|
-| `src/cli.py` | **Replace** (Ingest loop & query handling) | • Flat `src.` imports (`from src.ingestion...`) rather than blueprint package namespace `src.xn...`.<br>• Uses `sorted(glob.glob(os.path.join(raw_dir, "*.txt")))` sorting lexically rather than extracting integer $N$ from `^chapter_(\d+)\.md$` (G-10: `chapter_10` sorts before `chapter_2`).<br>• Ingest loop has no stage isolation, job state tracking, input hashing, or per-chapter transactions (G-03, G-19).<br>• Hardcodes `LifecycleEventType.CLASH` for every entity extracted (G-04).<br>• CLI options lack `--novel`, `--stage`, `--from`, `--to`, `--stale-only`, `--until`, `--full`, `--mode`.<br>• Query passes raw prompt directly into `target_entity` without routing or alias resolution (G-02). | §0.2, §3.2 S0, §3.2 S3, §3.3, §3.6 |
+| `src/cli.py` | **Replace** (Ingest loop & query handling) | • Flat `src.` imports (`from src.ingestion...`) rather than blueprint package namespace `src.xn...`.<br>• Uses `sorted(glob.glob(os.path.join(raw_dir, "*.txt")))` sorting lexically rather than extracting integer $N$ from `^chapter_(\d+)\.md$` (G-10: `chapter_10` sorts before `chapter_2`).<br>• Ingest loop has no stage isolation, job state tracking, input hashing, or per-chapter transactions (G-03, G-19).<br>• Hardcodes `LifecycleEventType.CLASH` for every entity extracted (G-04).<br>• CLI options lack `--novel`, `--stage`, `--from`, `--to`, `--stale-only`, `--until`, `--full`, `--mode`.<br>• Query command initializes state with `query=prompt` and `intent`/`target_entity` as `None`, passing unparsed query directly to the graph without CLI arguments for `novel_id` or spoiler bounds (`--until`, `--mode`) (G-02, §3.3). | §0.2, §3.2 S0, §3.2 S3, §3.3, §3.6 |
 | `src/config.py` | **Replace / Split** | • Implements a single flat `pydantic_settings.BaseSettings` loading only `.env` and `configs/config.yaml`.<br>• No multi-novel isolation or loading of `configs/genres/<genre>.yaml` or `configs/novels/<id>.yaml` (G-21).<br>• Missing config fields: `FALLBACK_MODEL`, `DAILY_SPEND_CAP`, `LONG_CONTEXT_MODEL`, prompt versions, spend approval thresholds.<br>• Import-time execution of `Settings()` and YAML parsing (G-12). | §0.2, §3.2, §3.11, §3.12 |
-| `src/agents/graph_workflow.py` | **Replace** | • Instantiates `SQLiteLedger()` and `QdrantManager()` eagerly at import time (G-12).<br>• Heuristic keyword-based routing in `router_node` (`"mốc"`, `"thời gian"`, etc.) instead of typed Pydantic-AI `RouterDecision` on local Qwen (G-02).<br>• Assigns `state["target_entity"] = state["query"]`, which breaks entity resolution (G-02).<br>• `timeline_node` performs synchronous HTTP `httpx.Client.post()` directly to OpenRouter without retrieval or citations (G-01, ADR-01).<br>• `deep_dive_node` executes SQL `LIKE %name%` without alias normalization; falls back to LLM memory ("tri thức nền tảng") on miss (G-01); concatenates all ledger rows without context budget cap (G-07).<br>• Lacks `bound`, `resolve_entities`, `gate`, `verify` (with spoiler scan), `plan_long`, `map_arcs`, `reduce` nodes.<br>• Lacks LangGraph `SqliteSaver` checkpointer and thread-isolated memory. | §0.2, §3.1, §3.3, §3.4, §3.12 |
+| `src/agents/graph_workflow.py` | **Replace** | • Instantiates `SQLiteLedger()` and `QdrantManager()` eagerly at import time (G-12).<br>• Heuristic keyword-based routing in `router_node` (`"mốc"`, `"thời gian"`, etc.) instead of typed Pydantic-AI `RouterDecision` on local Qwen (G-02).<br>• `router_node` assigns `state["target_entity"] = state["query"]`, which breaks entity resolution (G-02).<br>• `timeline_node` performs synchronous HTTP `httpx.Client.post()` directly to OpenRouter without retrieval or citations (G-01, ADR-01).<br>• `deep_dive_node` executes SQL `LIKE %name%` without alias normalization; falls back to LLM memory ("tri thức nền tảng") on miss (G-01); concatenates all ledger rows without context budget cap (G-07).<br>• Lacks `bound`, `resolve_entities`, `gate`, `verify` (with spoiler scan), `plan_long`, `map_arcs`, `reduce` nodes.<br>• Lacks LangGraph `SqliteSaver` checkpointer and thread-isolated memory. | §0.2, §3.1, §3.3, §3.4, §3.12 |
 | `src/agents/pydantic_agents.py` | **Replace / Evolve** | • Uses deprecated Pydantic-AI API: `OpenAIModel(base_url=...)`, `result_type=...`, and reads `.data` (G-09).<br>• Hardcodes static prompt strings in Python code instead of loading versioned Markdown templates from `prompts/<name>/<version>.md` with Jinja2 placeholders (G-13, §3.5).<br>• Instantiates models at import time with fallback dummy keys (`"sk-dummy"`, `"ollama"`) rather than lazy factories (G-12).<br>• Missing agents: router, entity adjudicator, arc boundary reviewer, prefix summarizer, long-context map/reduce agents. | §0.2, §3.3, §3.5, §3.9, §3.12 |
 | `src/ingestion/pydantic_extractor.py` | **Replace** (Stage S1) | • Hard-truncates text at `text[:9000]`, dropping 20–25% of chapter content (G-06).<br>• No token counting or 2-part splitting with overlap for chapters > 7,000 tokens (§3.2 S1).<br>• Dumps ad-hoc JSON files to `./data/extracted_json` rather than storing structured records in SQLite `extractions` table with input hashing and transaction rollbacks (G-03).<br>• Reads `result.data` (superseded API; should be `result.output`).<br>• Lacks code-side verification of verbatim quotes (`partial_ratio >= 85`) against source text. | §0.2, §3.2 S1, §3.9 |
 | `src/schemas/extraction.py` | **Evolve** | • `EntityCategory` is a hardcoded Python `Enum` (xianxia-specific: character, weapon_treasure, puppet_beast, technique, dungeon) rather than a profile-validated string against `configs/genres/<genre>.yaml` (G-21, §3.11).<br>• `RawEntityAction` lacks `event_type: LifecycleEventType`, `holder: Optional[str]`, `same_as: Optional[str]`, `evidence: str` (≤25 words), and length limits (`description` ≤ 400, `evidence` ≤ 200) (G-04, §3.2 S1).<br>• `ChapterExtraction` flags differ: prototype uses `is_map_change`, `is_realm_breakthrough`, `is_major_conflict`, whereas v3 specifies `location_change: bool`, `mc_realm: Optional[str]`, `realm_breakthrough: bool`, `major_conflict: bool`.<br>• Lacks code-side validators for category membership, evidence fuzzy match, and `chapter_id` overwrite from S0. | §0.2, §3.2 S1, §3.11 |
@@ -56,56 +56,22 @@ The prototype in `src/` represents a rapid architectural spike (commit `8894ce7`
 
 The project follows a 5-sprint progression (2 weeks per sprint) based on Phase 4 of `ARCHITECTURE_BLUEPRINT_v3.md`.
 
-> **Note on inter-sprint dependencies:** Dependencies connecting stages across sprints (e.g. S1-T6 to S2-T1, or S1-T4/S1-T6 to S3-T1) are derived from the underlying data-flow architecture specified in blueprint §3.1; the blueprint text does not specify sprint-level completion gates.
+> **Note on file naming:** The directory layout (`src/xn/{schemas,pipeline,storage,graph,api,cli}/`, `prompts/<name>/<version>.md`, `eval/pntt1/{gold,baseline.json}`, `configs/{config.yaml,genres/xianxia.yaml,novels/pntt1.yaml}`, `data/novels/pntt1/raw/chapter_N.md`, `ollama/Modelfile.qwen14b-12k`) is taken directly from blueprint §3.9. Specific module, prompt, and test filenames within those directories (e.g., `s0_parse.py`, `database.py`, `repository.py`, `nodes/route.py`, `prompts/s1_extract/v1.md`, `test_*.py`) are proposals by this implementation plan, not blueprint decisions.
+>
+> **Note on inter-sprint dependencies:** Dependencies connecting stages across sprints are derived from the underlying data-flow architecture in blueprint §3.1 and §3.2; the blueprint text does not specify sprint-level completion gates.
 
 ```mermaid
 flowchart TD
-    subgraph Sprint1["Sprint 1: Foundations & Thin Slice (Ch. 1–100)"]
-        S1_T1["S1-T1: Project Setup & Config Split"] --> S1_T2["S1-T2: SQLite Schema & Repo Layer"]
-        S1_T1 --> S1_T3["S1-T3: S0 Parse & Clean"]
-        S1_T2 & S1_T3 --> S1_T4["S1-T4: S1 Extract (Qwen 14B)"]
-        S1_T4 --> S1_T5["S1-T5: S2 Entity Resolution"]
-        S1_T5 --> S1_T6["S1-T6: S3 Ledger Write"]
-        S1_T4 --> S1_T7["S1-T7: Benchmark Qwen2.5 vs Qwen3"]
-        S1_T2 & S1_T6 --> S1_T8["S1-T8: Query Graph (Ledger Slice)"]
-        S1_T8 --> S1_T9["S1-T9: Gold Set 20-ch & Eval"]
-    end
+    Sprint1["Sprint 1: Foundations & Thin Slice (Ch. 1–100)"]
+    Sprint2["Sprint 2: Retrieval & Spoiler Layers L1–L5"]
+    Sprint3["Sprint 3: Arcs, Digests & Prefix Views"]
+    Sprint4["Sprint 4: Full Run, LLMOps & Multi-Novel Proof"]
+    Sprint5["Sprint 5: Long-Context Deep-Dive (§3.12)"]
 
-    subgraph Sprint2["Sprint 2: Retrieval & Spoiler Layers L1–L5"]
-        S1_T6 -->|derived data flow §3.1| S2_T1["S2-T1: Qdrant Multi-tenant Setup"]
-        S2_T1 --> S2_T2["S2-T2: S4 Chunk & Embed (BGE-M3)"]
-        S2_T2 --> S2_T3["S2-T3: Hybrid Retrieval & Reranker"]
-        S2_T3 --> S2_T4["S2-T4: Expand Query Graph (Factual QA, Compare)"]
-        S1_T8 --> S2_T5["S2-T5: Reading Progress & Bound Resolution"]
-        S2_T4 & S2_T5 --> S2_T6["S2-T6: L5 Spoiler Scan & Redaction"]
-    end
-
-    subgraph Sprint3["Sprint 3: Arcs, Digests & Prefix Views"]
-        S1_T4 & S1_T6 -->|derived data flow §3.1| S3_T1["S3-T1: S5 Smoothed DP Arc Segmentation"]
-        S3_T1 --> S3_T2["S3-T2: S6 Macro StoryArc Synthesis"]
-        S1_T6 & S3_T1 --> S3_T3["S3-T3: S7 Entity×Arc Digests"]
-        S3_T1 --> S3_T4["S3-T4: Arc Prefix Summaries (L2/L3)"]
-        S3_T2 & S3_T3 & S3_T4 --> S3_T5["S3-T5: Timeline & Deep-Dive Budgeting (20k cap)"]
-    end
-
-    subgraph Sprint4["Sprint 4: Full Run, LLMOps & Multi-Novel Proof"]
-        S2_T6 & S3_T5 --> S4_T1["S4-T1: Full Ingestion Run (2,673 ch)"]
-        S4_T1 --> S4_T2["S4-T2: Complete Gold Set (40 ch) & Eval"]
-        S4_T2 --> S4_T3["S4-T3: LLMOps Tracing & SQL Views"]
-        S4_T3 --> S4_T4["S4-T4: CI Automation & Quality Gates"]
-        S4_T4 --> S4_T5["S4-T5: FastAPI Service & SSE Streaming"]
-        S4_T5 --> S4_T6["S4-T6: Onboard Second Novel (Zero Code)"]
-        S4_T5 -.-> S4_T7["S4-T7: (Optional) Local Web UI"]
-    end
-
-    subgraph Sprint5["Sprint 5: Long-Context Deep-Dive (§3.12)"]
-        S4_T1 --> S5_T1["S5-T1: Model Catalog & Pricing Fetch"]
-        S5_T1 --> S5_T2["S5-T2: plan_long Packer & Excerpt Builder"]
-        S5_T2 --> S5_T3["S5-T3: Cost Approval Interrupt (CLI/API)"]
-        S5_T3 --> S5_T4["S5-T4: Single-Pass & map_arcs Subgraph"]
-        S5_T4 --> S5_T5["S5-T5: Long-Context Verifier & Quote Check"]
-        S5_T5 --> S5_T6["S5-T6: 10 Long-Context Gold Deep-Dives"]
-    end
+    Sprint1 -->|derived data flow §3.1: S0, S1, S3 to S4| Sprint2
+    Sprint1 -->|derived data flow §3.1: S1 flags & S3 ledger to S5| Sprint3
+    Sprint2 & Sprint3 -->|derived data flow §3.1: full pipeline ready| Sprint4
+    Sprint4 -->|derived data flow §3.12: raw text & ledger to long-context| Sprint5
 ```
 
 ---
@@ -116,42 +82,44 @@ flowchart TD
 
 #### Task Ordering & File Matrix
 - **S1-T1: Project Setup & Config Split** (§3.9, §3.11, §0.2, ADR-05)
-  - *Files created:* `configs/genres/xianxia.yaml`, `configs/novels/pntt1.yaml`, `pyproject.toml` (subject to OQ-01, OQ-02).
-  - *Files changed:* `configs/config.yaml`, `docker-compose.yml` (remove Redis service); proposed change: `.env.example` (proposal, not in blueprint; tied to OQ-10).
+  - *Files created:* `configs/genres/xianxia.yaml`, `configs/novels/pntt1.yaml`, `pyproject.toml` (subject to OQ-01, OQ-02), `src/xn/__init__.py` (proposal).
+  - *Files changed:* `configs/config.yaml`, `docker-compose.yml` (remove Redis service), `src/config.py`; proposed change: `.env.example` (proposal, not in blueprint; tied to OQ-10).
   - *Dependencies:* None.
 - **S1-T2: SQLite Database Schema & Repository Layer** (§3.2, §3.4 L1, §3.7)
-  - *Files created:* `src/xn/storage/database.py`, `src/xn/storage/repository.py`, `tests/unit/test_repository_guards.py`.
+  - *Files created:* `src/xn/storage/database.py` (proposal), `src/xn/storage/repository.py` (proposal), `tests/unit/test_repository_guards.py` (proposal).
   - *Files changed/deleted:* Supersedes `src/storage/sqlite_ledger.py`.
   - *Details:* 15 tables with `novel_id` scoping (`novels`, `chapters`, `extractions`, `entities`, `entity_aliases`, `entity_links`, `entity_events`, `arcs`, `entity_arc_digests`, `arc_prefix_summaries`, `jobs`, `llm_runs`, `answer_cache`, `lc_map_cache`, `feedback`); WAL mode; foreign keys; repository methods strictly require `novel_id` and `chapter_max`. Unit test asserts no method accepts a missing bound.
-  - *Dependencies:* S1-T1.
+  - *Dependencies:* S1-T1 (derived).
 - **S1-T3: Pipeline Stage S0 — Parse & Clean** (§3.2 S0, G-10, G-15)
-  - *Files created:* `src/xn/pipeline/s0_parse.py`, `tests/unit/test_s0_parse.py`.
+  - *Files created:* `src/xn/pipeline/s0_parse.py` (proposal), `tests/unit/test_s0_parse.py` (proposal).
+  - *Files read:* `data/novels/pntt1/raw/chapter_N.md`.
   - *Details:* Match `^chapter_(\d+)\.md$`; integer sort; contiguity check; Markdown → plain text via `markdown-it-py`; NFC normalization; watermark line removal (> 5% repetition).
-  - *Dependencies:* S1-T1.
+  - *Dependencies:* S1-T1 (derived).
 - **S1-T4: Pipeline Stage S1 — Extract (Ollama Qwen 14B)** (§3.2 S1, §3.5, §3.9, G-06)
-  - *Files created:* `src/xn/pipeline/s1_extract.py`, `src/xn/schemas/extraction.py`, `prompts/s1_extract/v1.md`, `ollama/Modelfile.qwen14b-12k`.
-  - *Files changed/deleted:* Supersedes `src/ingestion/pydantic_extractor.py`.
+  - *Files created:* `src/xn/pipeline/s1_extract.py` (proposal), `src/xn/schemas/extraction.py`, `prompts/s1_extract/v1.md` (proposal), `ollama/Modelfile.qwen14b-12k`.
+  - *Files changed/deleted:* Supersedes `src/ingestion/pydantic_extractor.py` and `src/schemas/extraction.py`.
   - *Details:* Pydantic-AI agent on local Qwen; `num_ctx 12288`; 2-part split with 300-token overlap for chapters > 7,000 tokens; code-side fuzzy validation of `evidence` quote (partial_ratio ≥ 85) against `clean_text`.
-  - *Dependencies:* S1-T2, S1-T3.
+  - *Dependencies:* S1-T2, S1-T3 (derived from data flow: S0 text output, extractions schema and table).
 - **S1-T5: Pipeline Stage S2 — Entity Resolution** (§3.2 S2, §3.4 L4, G-05)
-  - *Files created:* `src/xn/pipeline/s2_resolve.py`, `prompts/s2_adjudicate/v1.md`.
+  - *Files created:* `src/xn/pipeline/s2_resolve.py` (proposal), `prompts/s2_adjudicate/v1.md` (proposal).
   - *Details:* Exact normalized → diacritics-stripped → RapidFuzz token_set ≥ 92 → local LLM adjudication (80–92) → new entity. Populate `entities`, `entity_aliases`, and `entity_links` (never merged; spoiler safe).
-  - *Dependencies:* S1-T2, S1-T4.
+  - *Dependencies:* S1-T2, S1-T4 (derived from data flow: resolves entities from S1 extracted events).
 - **S1-T6: Pipeline Stage S3 — Idempotent Ledger Write** (§3.2 S3, G-03, G-04)
-  - *Files created:* `src/xn/pipeline/s3_ledger.py`, `src/xn/schemas/lifecycle.py`, `src/xn/pipeline/runner.py`.
+  - *Files created:* `src/xn/pipeline/s3_ledger.py` (proposal), `src/xn/schemas/lifecycle.py` (proposal), `src/xn/pipeline/runner.py` (proposal).
+  - *Files changed/deleted:* Supersedes `src/schemas/lifecycle.py`.
   - *Details:* Writes `entity_events` with unique key `(novel_id, chapter_id, entity_id, event_type, ordinal)`. Per-chapter transactions. Records job status in `jobs`.
-  - *Dependencies:* S1-T2, S1-T5.
-- **S1-T7: Extractor Benchmark (qwen2.5:14b vs qwen3:14b)** (§3.2, §3.9, BP-OQ-1)
+  - *Dependencies:* S1-T2, S1-T5 (derived from data flow: writes resolved entity events to ledger).
+- **S1-T7: Extractor Benchmark (qwen2.5:14b vs qwen3:14b)** (Phase 2 table, Phase 4 Sprint 1, BP-OQ-1)
   - *Task:* Benchmark on 50 chapters for schema success rate, entity recall, s/chapter, and VRAM footprint. Choose production local model.
-  - *Dependencies:* S1-T4.
+  - *Dependencies:* S1-T4 (derived: requires working S1 extractor and Modelfile).
 - **S1-T8: Grounded Query Graph (Ledger Slice)** (§3.3, §3.4, ADR-01, ADR-02)
-  - *Files created:* `src/xn/graph/workflow.py`, `src/xn/graph/nodes/route.py`, `src/xn/graph/nodes/bound.py`, `src/xn/graph/nodes/resolve.py`, `src/xn/graph/nodes/retrieve.py`, `src/xn/graph/nodes/gate.py`, `src/xn/graph/nodes/synthesize.py`, `src/xn/graph/nodes/verify.py`, `src/xn/schemas/state.py`, `src/xn/cli/main.py`, `prompts/router/v1.md`, `prompts/synthesize_compact/v1.md`.
-  - *Files changed/deleted:* Supersedes `src/agents/graph_workflow.py`, `src/agents/pydantic_agents.py`, `src/cli.py`.
+  - *Files created:* `src/xn/graph/workflow.py` (proposal), `src/xn/graph/nodes/route.py` (proposal), `src/xn/graph/nodes/bound.py` (proposal), `src/xn/graph/nodes/resolve.py` (proposal), `src/xn/graph/nodes/retrieve.py` (proposal), `src/xn/graph/nodes/gate.py` (proposal), `src/xn/graph/nodes/synthesize.py` (proposal), `src/xn/graph/nodes/verify.py` (proposal), `src/xn/schemas/state.py` (proposal), `src/xn/cli/main.py` (proposal), `prompts/router/v1.md` (proposal), `prompts/synthesize_compact/v1.md` (proposal).
+  - *Files changed/deleted:* Supersedes `src/agents/graph_workflow.py`, `src/agents/pydantic_agents.py`, `src/cli.py`, `src/schemas/state.py`.
   - *Details:* LangGraph flow: `route` → `bound` → `resolve_entities` → `retrieve` (ledger-only) → `gate` → `synthesize` → `verify`. Verifies citations exist in evidence and are ≤ N.
-  - *Dependencies:* S1-T2, S1-T6.
+  - *Dependencies:* S1-T2, S1-T6 (derived from data flow: queries populated ledger).
 - **S1-T9: Gold Set Annotation & Eval Harness** (§3.8, OQ-09, OQ-14)
-  - *Files created:* `eval/pntt1/` gold assets (20 chapters, 80 alias pairs, 15 Q&A, 10 spoiler probes per blueprint Phase 4), `tests/eval/test_gold.py`.
-  - *Dependencies:* S1-T6, S1-T8.
+  - *Files created:* `eval/pntt1/` gold assets (20 chapters, 80 alias pairs, 15 Q&A, 10 spoiler probes per blueprint Phase 4), `tests/eval/test_gold.py` (proposal).
+  - *Dependencies:* S1-T8 (derived: evaluates grounded query graph).
 
 #### Sprint 1 Acceptance Criteria (copied from blueprint Phase 4)
 1. Two consecutive ingest runs give identical row counts.
@@ -160,7 +128,7 @@ flowchart TD
 4. Measured s/chapter recorded in the blueprint's §3.9 cost table ("Time & cost model for pntt1").
 
 #### Parallelism & Ordering Constraints
-- *Parallel groups:* S1-T2 (Storage) and S1-T3 (S0 Parse) touch disjoint files and run in parallel. S1-T7 (Benchmark) runs in parallel with S1-T8 (Query Graph scaffolding) once S1-T4 is done.
+- *Parallel groups:* S1-T2 (Storage) and S1-T3 (S0 Parse) touch disjoint files and have no dependency between them; they can run in parallel once S1-T1 is complete. Once S1-T4 is complete, S1-T7 (Benchmark) can run in parallel with S1-T5 (S2 Resolve), as they touch disjoint files and neither depends on the other.
 - *Internal constraints:* S1-T5 (S2 Resolve) requires S1-T4 extracted events. S1-T8 query graph in Sprint 1 retrieves strictly from the ledger (no S4 Qdrant chunks or reranker exist yet).
 
 ---
@@ -171,31 +139,32 @@ flowchart TD
 
 #### Task Ordering & File Matrix
 - **S2-T1: Qdrant Multi-tenant Setup & Manager** (§3.2, §3.9, §3.11, ADR-03, ADR-06)
-  - *Files created:* `src/xn/storage/qdrant.py`, `tests/integration/test_tenant_isolation.py`.
+  - *Files created:* `src/xn/storage/qdrant.py` (proposal), `tests/integration/test_tenant_isolation.py` (proposal).
   - *Files changed/deleted:* Supersedes `src/storage/qdrant_client.py`.
   - *Details:* Manage shared collections `xn_chunks` and `xn_arcs`. Setup dense (1024 cosine) and sparse vectors. Payload indexes on `novel_id` (tenant), `chapter_id`, `arc_id`. Deterministic UUID5 point IDs.
-  - *Dependencies:* S1-T6 (derived from data flow, §3.1 diagram; not explicitly stated in blueprint).
+  - *Dependencies:* S1-T2 (derived from data flow: storage/repository configuration).
 - **S2-T2: Pipeline Stage S4 — Chunk & Embed** (§3.2 S4, §3.9)
-  - *Files created:* `src/xn/pipeline/s4_embed.py`.
+  - *Files created:* `src/xn/pipeline/s4_embed.py` (proposal).
   - *Details:* Runs in a separate GPU window (Ollama stopped). Paragraph chunks ~450 tokens (60 overlap) + micro-summaries. BGE-M3 dense + sparse vectors written to `xn_chunks`.
-  - *Dependencies:* S2-T1.
+  - *Dependencies:* S1-T3, S2-T1 (derived from data flow: requires S0 clean text and Qdrant collection setup).
 - **S2-T3: Hybrid Retrieval & Reranker** (§3.2 S4, §3.3, §3.9)
-  - *Files created:* `src/xn/storage/retriever.py`.
+  - *Files created:* `src/xn/storage/retriever.py` (proposal).
+  - *Files changed:* `src/xn/graph/nodes/retrieve.py` (proposal: wire hybrid retriever).
   - *Details:* Qdrant query API: dense k=40 + sparse k=40 prefetch → RRF fusion → hard filter `novel_id == X AND chapter_id <= chapter_max` → rerank top-30 with `bge-reranker-v2-m3` fp16 on GPU (~1.2 GB) to top-8 (BGE-M3 query encoding on CPU, §3.9).
-  - *Dependencies:* S2-T2.
+  - *Dependencies:* S2-T2 (derived from data flow: queries chunks embedded in S2-T2).
 - **S2-T4: Expand Query Graph (Factual QA, Compare)** (§3.3)
-  - *Files changed:* `src/xn/graph/nodes/route.py`, `src/xn/graph/nodes/retrieve.py`, `src/xn/graph/nodes/gate.py`, `src/xn/graph/nodes/synthesize.py`.
+  - *Files changed:* `src/xn/graph/nodes/route.py` (proposal), `src/xn/graph/nodes/retrieve.py` (proposal), `src/xn/graph/nodes/gate.py` (proposal), `src/xn/graph/nodes/synthesize.py` (proposal), `src/xn/graph/workflow.py` (proposal).
   - *Details:* Wire `factual_qa` and `compare` intents into LangGraph. Reranker score threshold $\ge 0.3$ in `gate`.
-  - *Dependencies:* S2-T3.
+  - *Dependencies:* S1-T8, S2-T3 (derived from data flow: integrates hybrid retriever into query graph).
 - **S2-T5: Reading Progress & Bound Resolution CLI** (§3.4 L1, §3.6)
-  - *Files changed:* `src/xn/cli/main.py`, `src/xn/storage/repository.py`.
+  - *Files changed:* `src/xn/cli/main.py` (proposal), `src/xn/storage/repository.py` (proposal).
   - *Details:* Implement `xn progress <novel_id> <N>` command; update `novels.reader_progress`. Implement deterministic resolution: explicit `--until` > query hint > `reader_progress` > `total_chapters`.
-  - *Dependencies:* S2-T4.
+  - *Dependencies:* S1-T2, S1-T8 (derived: adds CLI command and bound methods to existing CLI/repository).
 - **S2-T6: L5 Spoiler Leak Detection & Mitigation** (§3.4 L5, R-01, R-02)
-  - *Files created:* `src/xn/graph/nodes/spoiler_scan.py`, `tests/unit/test_spoiler_scan.py`.
-  - *Files changed:* `src/xn/graph/nodes/verify.py`.
+  - *Files created:* `src/xn/graph/nodes/spoiler_scan.py` (proposal), `tests/unit/test_spoiler_scan.py` (proposal).
+  - *Files changed:* `src/xn/graph/nodes/verify.py` (proposal).
   - *Details:* Deterministic scan matching answer text against aliases with `first_chapter > N` and realm names above max `realm_rank` seen $\le N$. Regenerate once with forbidden terms; redact sentence on second failure (`[đã ẩn để tránh tiết lộ]`).
-  - *Dependencies:* S2-T5.
+  - *Dependencies:* S1-T2, S1-T5, S1-T8, S2-T5 (derived from data flow: uses aliases from S2 and resolved bound from S2-T5 in verify node).
 
 #### Sprint 2 Acceptance Criteria (copied from blueprint Phase 4)
 1. Context recall $\ge 0.75$ on 15 Q&A.
@@ -203,8 +172,8 @@ flowchart TD
 3. Factual QA p95 latency $\le 15$ s.
 
 #### Parallelism & Ordering Constraints
-- *Parallel groups:* S2-T1/S2-T2 (Qdrant & Embeddings) can be developed alongside S2-T5/S2-T6 (Spoiler scanning and CLI bounds logic).
-- *Internal constraints:* S4 embedding (S2-T2) must unload Ollama to avoid 16 GB VRAM thrashing on RTX 5070 Ti (§3.9). Query reranker (S2-T3) must precede `factual_qa` gate wiring (S2-T4).
+- *Parallel groups:* S2-T1/S2-T2 (vector storage and chunk embedding) and S2-T5 (reading progress CLI command and repository update) touch disjoint files and have no dependency path between them, so they can run in parallel.
+- *Internal constraints:* S4 embedding (S2-T2) must unload Ollama to avoid 16 GB VRAM thrashing on RTX 5070 Ti (§3.9). Query reranker (S2-T3) must precede `factual_qa` gate wiring (S2-T4). S2-T6 integrates into the verify node after bound resolution in S2-T5 is ready.
 
 ---
 
@@ -214,26 +183,27 @@ flowchart TD
 
 #### Task Ordering & File Matrix
 - **S3-T1: Pipeline Stage S5 — Smoothed DP Arc Segmentation** (§3.2 S5, G-11, OQ-04)
-  - *Files created:* `src/xn/pipeline/s5_segment.py`, `prompts/s5_boundary_review/v1.md`.
+  - *Files created:* `src/xn/pipeline/s5_segment.py` (proposal), `prompts/s5_boundary_review/v1.md` (proposal).
   - *Files changed/deleted:* Supersedes `src/timeline/arc_detector.py`.
   - *Details:* Chapter score $s_i = \sum w \cdot \text{flag}$; centered smoothing window 5; DP segmentation picking boundaries subject to $30 \le \text{len} \le 90$; local LLM reviews boundary with micro-summaries $\pm 5$ chapters (shift $\le 5$). Writes to `chapters.arc_id` and `arcs`.
-  - *Dependencies:* S1-T4, S1-T6 (derived from data flow, §3.1 diagram; requires S1 extraction flags across all chapters in range).
+  - *Dependencies:* S1-T4, S1-T6 (derived from data flow, §3.1 diagram: requires S1 extraction flags across all chapters in range).
 - **S3-T2: Pipeline Stage S6 — Macro StoryArc Synthesis** (§3.2 S6)
-  - *Files created:* `src/xn/pipeline/s6_synthesize.py`, `src/xn/schemas/arc.py`, `prompts/s6_arc_synthesize/v1.md`.
+  - *Files created:* `src/xn/pipeline/s6_synthesize.py` (proposal), `src/xn/schemas/arc.py` (proposal), `prompts/s6_arc_synthesize/v1.md` (proposal).
+  - *Files changed/deleted:* Supersedes `src/schemas/arc.py`.
   - *Details:* Calls OpenRouter macro model with concatenated micro-summaries (~12k tokens in); writes `StoryArc` JSON to SQLite `arcs` and embeds arc summary into Qdrant `xn_arcs`.
-  - *Dependencies:* S3-T1.
+  - *Dependencies:* S3-T1 (derived from data flow: synthesizes arcs segmented in S5).
 - **S3-T3: Pipeline Stage S7 — Entity×Arc Digests** (§3.2 S7, G-07)
-  - *Files created:* `src/xn/pipeline/s7_digest.py`, `prompts/s7_digest/v1.md`.
+  - *Files created:* `src/xn/pipeline/s7_digest.py` (proposal), `prompts/s7_digest/v1.md` (proposal).
   - *Details:* For each (entity, arc) with $\ge 3$ events: local LLM produces 80–150 word digest. Stored in `entity_arc_digests`.
-  - *Dependencies:* S3-T1, S1-T6.
+  - *Dependencies:* S1-T6, S3-T1 (derived from data flow: events from ledger grouped by arc boundaries).
 - **S3-T4: Arc Prefix Summaries (L2/L3 Spoiler Safety)** (§3.2 S7, §3.4 L2, L3)
-  - *Files created:* `src/xn/pipeline/prefix_summaries.py`.
+  - *Files created:* `src/xn/pipeline/prefix_summaries.py` (proposal).
   - *Details:* Precompute prefix summaries every 10 chapters for active arcs using local model; store in `arc_prefix_summaries`. Query-time snap down to nearest 10-chapter checkpoint + append raw micro-summaries.
-  - *Dependencies:* S3-T1.
+  - *Dependencies:* S1-T4, S3-T1 (derived from data flow: micro-summaries grouped by arc boundaries).
 - **S3-T5: Query Graph Integration (Timeline & Deep-Dive Budgeting)** (§3.3, §3.4)
-  - *Files changed:* `src/xn/graph/nodes/retrieve.py`, `src/xn/graph/nodes/synthesize.py`.
+  - *Files changed:* `src/xn/graph/nodes/retrieve.py` (proposal), `src/xn/graph/nodes/synthesize.py` (proposal).
   - *Details:* Timeline intent uses arcs fully $\le N$ + prefix summary of current arc. Deep-dive uses entity×arc digests (prefix-safe) + top-25 ranked events + top-8 chunks. Strict 20k-token evidence budget enforcement.
-  - *Dependencies:* S3-T2, S3-T3, S3-T4.
+  - *Dependencies:* S2-T4, S3-T2, S3-T3, S3-T4 (derived from data flow: integrates arc summaries and digests into retrieval under 20k token cap).
 
 #### Sprint 3 Acceptance Criteria (copied from blueprint Phase 4)
 1. Boundary F1 $\ge 0.80$ on chapters 1–600 ($\pm 3$ chapters).
@@ -241,8 +211,8 @@ flowchart TD
 3. **0 leaks** on arc-straddling probes.
 
 #### Parallelism & Ordering Constraints
-- *Parallel groups:* Once S3-T1 (Arc boundaries) finishes, S3-T2 (Arc synthesis), S3-T3 (Entity digests), and S3-T4 (Prefix summaries) can run in parallel.
-- *Internal constraints:* S5 requires S1 flags across all chapters in range. Prefix summaries strictly require S5 boundary definitions.
+- *Parallel groups:* Once S3-T1 (Arc boundaries) finishes, S3-T2 (Arc synthesis), S3-T3 (Entity digests), and S3-T4 (Prefix summaries) touch disjoint files (`s6_synthesize.py`, `s7_digest.py`, `prefix_summaries.py`, and separate prompt templates) and have no dependency path between them, so they can run in parallel.
+- *Internal constraints:* S5 requires S1 flags across all chapters in range. S3-T5 integrates arc synthesis and digests into query graph once S3-T2, S3-T3, and S3-T4 complete.
 
 ---
 
@@ -253,30 +223,31 @@ flowchart TD
 #### Task Ordering & File Matrix
 - **S4-T1: Full Ingestion Run on `pntt1` (Ch. 1–2,673)** (§3.2, §3.9, §3.10)
   - *Task:* Execute S0 → S7 over entire novel using 2-slot Ollama concurrency. Monitor and clear failure queue (`jobs.status = 'failed'`). Verify wall-clock time $\le 20$ h.
-  - *Dependencies:* Sprint 3 complete.
+  - *Dependencies:* S2-T2, S3-T4 (derived from data flow: full ingestion stages S0–S7 operational).
 - **S4-T2: Full Evaluation Suite & Benchmark** (§3.8, OQ-09, OQ-14)
-  - *Files created:* `eval/pntt1/` gold assets (40 annotated chapters, 150 alias pairs, 40 Q&A, 30 spoiler probes per blueprint §3.8), `eval/pntt1/baseline.json`.
+  - *Files created / changed:* `eval/pntt1/` gold assets (updated to 40 annotated chapters, 150 alias pairs, 40 Q&A, 30 spoiler probes per blueprint §3.8), `eval/pntt1/baseline.json`, `tests/eval/test_gold.py` (proposal: updated test cases).
   - *Task:* Run full evaluation against §3.8 thresholds (entity recall $\ge 0.85$, precision $\ge 0.90$, event accuracy $\ge 0.75$, flag F1 $\ge 0.80$, alias F1 $\ge 0.90$, boundary F1 $\ge 0.80$, RAGAS faithfulness $\ge 0.85$, context recall $\ge 0.80$, citation hit rate $\ge 0.80$, 0 leaks on 30 spoiler probes).
-  - *Dependencies:* S4-T1.
+  - *Dependencies:* S4-T1 (derived: evaluates full novel ingestion output).
 - **S4-T3: LLMOps Tracing & SQL Telemetry Views** (§3.5, §3.8, G-13)
-  - *Files created:* `src/xn/telemetry/tracing.py`, `src/xn/storage/views.sql`.
+  - *Files created:* `src/xn/telemetry/tracing.py` (proposal), `src/xn/storage/views.sql` (proposal).
   - *Details:* Pydantic-AI OpenTelemetry instrumentation to Langfuse/Logfire. SQL views for retry rate per prompt, failed chapters, stage cost/tokens, grounding ratio, spoiler hits.
-  - *Dependencies:* S4-T1.
+  - *Dependencies:* S4-T1 (derived: telemetry and views over full run data).
 - **S4-T4: CI Automation & Quality Gates** (§3.5, §3.8, §3.9, OQ-03, OQ-10)
-  - *Files created / used:* `tests/eval/` (per blueprint §3.5: regression gate command is `pytest tests/eval -m gold --novel pntt1`, failing if any metric drops > 2 points vs `eval/{novel_id}/baseline.json`; blueprint §3.8 explicitly notes eval runs on demand, not in CI). Unit & integration tests in `tests/unit/` and `tests/integration/`. Proposed change: `README.md` (proposal, not in blueprint; tied to OQ-10).
-  - *Dependencies:* S4-T2.
+  - *Files used / changed:* `tests/eval/test_gold.py` (proposal; regression gate command is `pytest tests/eval -m gold --novel pntt1` per §3.5, failing if any metric drops > 2 points vs `eval/{novel_id}/baseline.json`; blueprint §3.8 explicitly notes eval runs on demand, not in CI). Proposed change: `README.md` (proposal, not in blueprint; tied to OQ-10).
+  - *Dependencies:* S4-T2 (derived: requires `baseline.json` established in S4-T2).
 - **S4-T5: FastAPI Service & SSE Streaming Endpoint** (§3.6)
-  - *Files created:* `src/xn/api/app.py`, `src/xn/api/routes.py`, `src/xn/api/schemas.py`.
+  - *Files created:* `src/xn/api/app.py` (proposal), `src/xn/api/routes.py` (proposal), `src/xn/api/schemas.py` (proposal).
   - *Details:* Expose `/v1/novels`, `/v1/novels/{id}/query` with SSE (`Accept: text/event-stream`), `/v1/novels/{id}/progress`. Single-flight stage runs.
-  - *Dependencies:* S4-T1.
+  - *Dependencies:* S4-T1 (derived: wraps completed query graph and pipeline execution).
 - **S4-T6: Multi-Novel Onboarding Validation (Second Novel Proof)** (§3.11, G-21)
   - *Files created:* `configs/novels/<id>.yaml` (for a second novel, e.g. a sample novel config), `data/novels/<id>/raw/` (sample 200 ch).
+  - *Files used / changed:* `tests/integration/test_tenant_isolation.py` (proposal).
   - *Task:* Onboard a 200-chapter sample novel using configuration only. Verify zero code changes. Run cross-novel bleed test asserting queries on novel A never return novel B records.
-  - *Dependencies:* S4-T5.
+  - *Dependencies:* S4-T5 (derived: validates novel-scoped API and isolation).
 - **S4-T7: (Optional) Local Web UI with Reading Progress Slider** (§3.6)
-  - *Files created:* `src/xn/ui/` (static HTML/JS/CSS).
+  - *Files created:* `src/xn/ui/` (proposal: static HTML/JS/CSS).
   - *Details:* Reading-progress slider on every view; citation click opens evidence quote panel; feedback thumbs written to `feedback` table.
-  - *Dependencies:* S4-T5.
+  - *Dependencies:* S4-T5 (derived: connects to FastAPI SSE endpoints).
 
 #### Sprint 4 Acceptance Criteria (copied from blueprint Phase 4)
 1. All §3.8 thresholds met or recorded as accepted risk.
@@ -285,7 +256,7 @@ flowchart TD
 4. `pntt1` cloud spend $\le \$5$.
 
 #### Parallelism & Ordering Constraints
-- *Parallel groups:* S4-T3 (Tracing), S4-T4 (Quality Gates), and S4-T5 (FastAPI) can proceed in parallel once S4-T1 completes. S4-T7 (Web UI) is optional and non-blocking.
+- *Parallel groups:* Once S4-T1 is complete: S4-T2 (Full Evaluation Suite), S4-T3 (LLMOps Tracing & SQL Views), and S4-T5 (FastAPI Service) touch disjoint files (`eval/`, `telemetry/tracing.py` / `views.sql`, `api/`) and have no dependency path between them, so they can run in parallel. S4-T4 proceeds once S4-T2 establishes baseline metrics. S4-T6 proceeds once S4-T5 exposes the API. S4-T7 is optional and non-blocking.
 - *Internal constraints:* S4-T2 (Evaluation) and S4-T6 (Second novel) require completed pipeline data from S4-T1.
 
 ---
@@ -296,29 +267,30 @@ flowchart TD
 
 #### Task Ordering & File Matrix
 - **S5-T1: OpenRouter Model Catalog & Pricing Integration** (§3.12, A-08)
-  - *Files created:* `src/xn/graph/long_context/pricing.py`.
+  - *Files created:* `src/xn/graph/long_context/pricing.py` (proposal).
   - *Details:* Fetch OpenRouter model list at startup; cache `context_length` and per-token pricing for `LONG_CONTEXT_MODEL`. Sized budget = 70% of context window.
-  - *Dependencies:* Sprint 4 complete.
+  - *Dependencies:* S4-T5 (derived: queries OpenRouter API at application startup).
 - **S5-T2: Long-Context Planner (`plan_long`)** (§3.12)
-  - *Files created:* `src/xn/graph/long_context/planner.py`, `src/xn/schemas/long_context.py`.
+  - *Files created:* `src/xn/graph/long_context/planner.py` (proposal), `src/xn/schemas/long_context.py` (proposal).
   - *Details:* Gathers entity events $\le N$; ranks chapters into **key** (full text) vs. **supporting** (excerpts $\pm 2$ paragraphs); selects `single_pass` vs. `map_reduce` (by arc); checks `lc_map_cache`; calculates token/cost estimate.
-  - *Dependencies:* S5-T1.
+  - *Dependencies:* S5-T1 (derived: requires model context window and pricing cache).
 - **S5-T3: Cost Approval Interrupt Mechanism** (§3.6, §3.12)
-  - *Files changed:* `src/xn/graph/workflow.py`, `src/xn/cli/main.py`, `src/xn/api/routes.py`.
+  - *Files changed:* `src/xn/graph/workflow.py` (proposal), `src/xn/cli/main.py` (proposal), `src/xn/api/routes.py` (proposal).
   - *Details:* If `est_cost_usd > approval_threshold_usd` (default $0.50), trigger LangGraph `interrupt()`. CLI prompts `[y/N]` (or `--yes`); API exposes `/query/{thread_id}/resume`.
-  - *Dependencies:* S5-T2.
+  - *Dependencies:* S5-T2 (derived: triggers interrupt based on planner's estimated cost).
 - **S5-T4: Single-Pass & Map-Reduce Engine** (§3.12)
-  - *Files created:* `src/xn/graph/long_context/engine.py`, `prompts/lc_map/v1.md`, `prompts/lc_reduce/v1.md`.
+  - *Files created:* `src/xn/graph/long_context/engine.py` (proposal), `prompts/lc_map/v1.md` (proposal), `prompts/lc_reduce/v1.md` (proposal).
   - *Details:* `map_arcs` with LangGraph `Send` (3 in parallel); outputs cached in `lc_map_cache`; `reduce` synthesizes `DeepDiveReport` from `ArcEntityAnalysis` batches.
-  - *Dependencies:* S5-T3.
+  - *Dependencies:* S5-T3 (derived: execution commences only after approval).
 - **S5-T5: Long-Context Verifier & Quote Matcher** (§3.12)
-  - *Files created:* `src/xn/graph/long_context/verify.py`.
+  - *Files created:* `src/xn/graph/long_context/verify.py` (proposal).
+  - *Files changed:* `src/xn/graph/nodes/verify.py` (proposal: integrate long-context checks).
   - *Details:* Validates that cited chapters are a subset of chapters sent; verifies verbatim quotes against `clean_text` (partial_ratio $\ge 90$); executes L5 spoiler scan on final report; logs egress payload chapters to `llm_runs`.
-  - *Dependencies:* S5-T4.
+  - *Dependencies:* S5-T4 (derived: verifies claims, quotes, and spoiler scan on engine report output).
 - **S5-T6: Long-Context Gold Evaluation (10 Probes)** (§3.8, §3.12, OQ-14)
-  - *Files created:* `eval/pntt1/` gold assets (10 long-context deep-dive probes per blueprint §3.8).
+  - *Files created / changed:* `eval/pntt1/` gold assets (updated with 10 long-context deep-dive probes per blueprint §3.8).
   - *Task:* Evaluate 10 deep-dives (protagonist, 4 major pháp bảo/khôi lỗi, 5 minor entities). Run pairwise judge vs. compact mode.
-  - *Dependencies:* S5-T5.
+  - *Dependencies:* S5-T5 (derived: evaluates completed long-context report outputs).
 
 #### Sprint 5 Acceptance Criteria (copied from blueprint Phase 4)
 1. Minor item single pass $\le 3$ min and $\le \$0.10$ on DeepSeek-class model.
@@ -327,96 +299,97 @@ flowchart TD
 4. §3.8 long-context thresholds met: long-context preferred $\ge 60\%$; citations $\ge 95\%$ valid; quotes $\ge 95\%$ verbatim.
 
 #### Parallelism & Ordering Constraints
-- *Parallel groups:* S5-T1/S5-T2 (Planner) and S5-T5 (Verification & quote matching) can be built concurrently.
-- *Internal constraints:* Execution engine (S5-T4) strictly depends on approval interrupt (S5-T3). Map batch outputs must align to S5 arc boundaries.
+- *Parallel groups:* Tasks in Sprint 5 form a direct sequential execution pipeline (Planner $\to$ Interrupt $\to$ Engine $\to$ Verifier $\to$ Evaluation). No tasks in Sprint 5 can run in parallel as each depends directly on the output of the preceding task.
 
 ---
 
 ## 3. Comprehensive File-by-File Table
 
+> **Note on file naming:** Directory layout is from blueprint §3.9; individual filenames within packages/directories are proposals by this plan, not blueprint decisions. The "Name source" column explicitly distinguishes between exact paths specified in the blueprint ("blueprint") and filenames proposed by this plan ("proposed").
+
 Repository files and planned assets mapped to sprint tasks and blueprint specifications:
 
-| File Path | Action | Sprint / Task | Source Blueprint Section |
-|---|---|---|---|
-| `docs/IMPLEMENTATION_PLAN.md` | **Create** | Current Task | Brief / Complete v3 Plan |
-| `docker-compose.yml` | **Change** | S1-T1, S2-T1 | §0.2, §3.9, ADR-05 |
-| `requirements.txt` | **Change** | S1-T1 | §3.9 (or OQ-02) |
-| `pyproject.toml` | **Create** | S1-T1 | §3.9 |
-| `.env.example` | **Change (proposal, not in blueprint; tied to OQ-10)** | S1-T1 | §3.9 (OQ-10) |
-| `configs/config.yaml` | **Change** | S1-T1 | §3.5, §3.9, §3.11 |
-| `configs/genres/xianxia.yaml` | **Create** | S1-T1 | §3.11 |
-| `configs/novels/<id>.yaml` (e.g. `pntt1.yaml`) | **Create** | S1-T1, S4-T6 | §3.11 |
-| `data/novels/<id>/raw/` | **Create** | S1-T3, S4-T6 | §3.1, §3.2 S0, §3.11 |
-| `ollama/Modelfile.qwen14b-12k` | **Create** | S1-T4 | §3.9 |
-| `src/config.py` | **Change / Move** | S1-T1 | §3.2, §3.11 |
-| `src/xn/__init__.py` | **Create** | S1-T1 | §3.9 |
-| `src/xn/storage/database.py` | **Create** | S1-T2 | §3.2 |
-| `src/xn/storage/repository.py` | **Create** | S1-T2 | §3.2, §3.4 L1 |
-| `src/storage/sqlite_ledger.py` | **Delete** | S1-T2 | §0.2, §3.2 |
-| `src/xn/pipeline/s0_parse.py` | **Create** | S1-T3 | §3.2 S0 |
-| `src/xn/schemas/extraction.py` | **Create** | S1-T4 | §3.2 S1 |
-| `src/schemas/extraction.py` | **Delete** | S1-T4 | §0.2, §3.2 S1 |
-| `prompts/s1_extract/v1.md` | **Create** | S1-T4 | §3.2 S1, §3.5 |
-| `src/xn/pipeline/s1_extract.py` | **Create** | S1-T4 | §3.2 S1 |
-| `src/ingestion/pydantic_extractor.py` | **Delete** | S1-T4 | §0.2, §3.2 S1 |
-| `src/xn/pipeline/s2_resolve.py` | **Create** | S1-T5 | §3.2 S2 |
-| `prompts/s2_adjudicate/v1.md` | **Create** | S1-T5 | §3.2 S2, §3.5 |
-| `src/xn/schemas/lifecycle.py` | **Create** | S1-T6 | §3.2 S3 |
-| `src/schemas/lifecycle.py` | **Delete** | S1-T6 | §0.2, §3.2 S3 |
-| `src/xn/pipeline/s3_ledger.py` | **Create** | S1-T6 | §3.2 S3 |
-| `src/xn/pipeline/runner.py` | **Create** | S1-T6 | §3.2 |
-| `src/xn/schemas/state.py` | **Create** | S1-T8 | §3.3 |
-| `src/schemas/state.py` | **Delete** | S1-T8 | §0.2, §3.3 |
-| `prompts/router/v1.md` | **Create** | S1-T8 | §3.3, §3.5 |
-| `prompts/synthesize_compact/v1.md` | **Create** | S1-T8 | §3.3, §3.5 |
-| `src/xn/graph/nodes/route.py` | **Create** | S1-T8 | §3.3 |
-| `src/xn/graph/nodes/bound.py` | **Create** | S1-T8 | §3.3, §3.4 L1 |
-| `src/xn/graph/nodes/resolve.py` | **Create** | S1-T8 | §3.3 |
-| `src/xn/graph/nodes/retrieve.py` | **Create** | S1-T8, S2-T3, S3-T5 | §3.3 |
-| `src/xn/graph/nodes/gate.py` | **Create** | S1-T8, S2-T4 | §3.3 |
-| `src/xn/graph/nodes/synthesize.py` | **Create** | S1-T8, S3-T5 | §3.3 |
-| `src/xn/graph/nodes/verify.py` | **Create** | S1-T8, S2-T6 | §3.3, §3.4 L5 |
-| `src/xn/graph/workflow.py` | **Create** | S1-T8 | §3.3 |
-| `src/agents/graph_workflow.py` | **Delete** | S1-T8 | §0.2, §3.3 |
-| `src/agents/pydantic_agents.py` | **Delete** | S1-T8 | §0.2, §3.3 |
-| `src/xn/cli/main.py` | **Create** | S1-T8 | §3.2, §3.6 |
-| `src/cli.py` | **Delete** | S1-T8 | §0.2, §3.6 |
-| `eval/pntt1/` gold assets | **Create** | S1-T9, S4-T2, S5-T6 | §3.8, §3.9, OQ-14 |
-| `eval/pntt1/baseline.json` | **Create** | S4-T2 | §3.5, §3.8, §3.9 |
-| `tests/unit/test_repository_guards.py` | **Create** | S1-T2 | §3.4 L1, §3.7 |
-| `tests/unit/test_s0_parse.py` | **Create** | S1-T3 | §3.2 S0 |
-| `tests/eval/test_gold.py` | **Create** | S1-T9, S4-T2, S4-T4 | §3.5, §3.8 |
-| `src/xn/storage/qdrant.py` | **Create** | S2-T1 | §3.2 S4, §3.11 |
-| `src/storage/qdrant_client.py` | **Delete** | S2-T1 | §0.2, §3.2 S4 |
-| `tests/integration/test_tenant_isolation.py` | **Create** | S2-T1, S4-T6 | §3.7, §3.11 |
-| `src/xn/pipeline/s4_embed.py` | **Create** | S2-T2 | §3.2 S4 |
-| `src/xn/storage/retriever.py` | **Create** | S2-T3 | §3.2 S4, §3.3 |
-| `src/xn/graph/nodes/spoiler_scan.py` | **Create** | S2-T6 | §3.4 L5 |
-| `tests/unit/test_spoiler_scan.py` | **Create** | S2-T6 | §3.4 L5 |
-| `src/xn/pipeline/s5_segment.py` | **Create** | S3-T1 | §3.2 S5 |
-| `prompts/s5_boundary_review/v1.md` | **Create** | S3-T1 | §3.2 S5, §3.5 |
-| `src/timeline/arc_detector.py` | **Delete** | S3-T1 | §0.2, §3.2 S5 |
-| `src/xn/schemas/arc.py` | **Create** | S3-T2 | §3.2 S6 |
-| `src/schemas/arc.py` | **Delete** | S3-T2 | §0.2, §3.2 S6 |
-| `prompts/s6_arc_synthesize/v1.md` | **Create** | S3-T2 | §3.2 S6, §3.5 |
-| `src/xn/pipeline/s6_synthesize.py` | **Create** | S3-T2 | §3.2 S6 |
-| `src/xn/pipeline/s7_digest.py` | **Create** | S3-T3 | §3.2 S7 |
-| `prompts/s7_digest/v1.md` | **Create** | S3-T3 | §3.2 S7, §3.5 |
-| `src/xn/pipeline/prefix_summaries.py` | **Create** | S3-T4 | §3.2 S7, §3.4 L2, L3 |
-| `src/xn/telemetry/tracing.py` | **Create** | S4-T3 | §3.8 |
-| `src/xn/storage/views.sql` | **Create** | S4-T3 | §3.8 |
-| `src/xn/api/app.py` | **Create** | S4-T5 | §3.6 |
-| `src/xn/api/routes.py` | **Create** | S4-T5 | §3.6 |
-| `src/xn/api/schemas.py` | **Create** | S4-T5 | §3.6 |
-| `src/xn/ui/` | **Create** | S4-T7 | §3.6 |
-| `README.md` | **Change (proposal, not in blueprint; tied to OQ-10)** | S4-T4 | §0.1, §3.1 (OQ-10) |
-| `src/xn/graph/long_context/pricing.py` | **Create** | S5-T1 | §3.12 |
-| `src/xn/schemas/long_context.py` | **Create** | S5-T2 | §3.12 |
-| `src/xn/graph/long_context/planner.py` | **Create** | S5-T2 | §3.12 |
-| `prompts/lc_map/v1.md` | **Create** | S5-T4 | §3.12, §3.5 |
-| `prompts/lc_reduce/v1.md` | **Create** | S5-T4 | §3.12, §3.5 |
-| `src/xn/graph/long_context/engine.py` | **Create** | S5-T4 | §3.12 |
-| `src/xn/graph/long_context/verify.py` | **Create** | S5-T5 | §3.12 |
+| File Path | Action | Sprint / Task | Source Blueprint Section | Name Source |
+|---|---|---|---|---|
+| `docs/IMPLEMENTATION_PLAN.md` | **Create** | Current Task | Brief / Complete v3 Plan | proposed |
+| `docker-compose.yml` | **Change** | S1-T1 | §0.2, §3.9, ADR-05 | blueprint |
+| `requirements.txt` | **Change** | S1-T1 | §3.9 (or OQ-02) | blueprint |
+| `pyproject.toml` | **Create** | S1-T1 | §3.9 | blueprint |
+| `.env.example` | **Change (proposal, not in blueprint; tied to OQ-10)** | S1-T1 | §3.9 (OQ-10) | blueprint |
+| `configs/config.yaml` | **Change** | S1-T1 | §3.5, §3.9, §3.11 | blueprint |
+| `configs/genres/xianxia.yaml` | **Create** | S1-T1 | §3.11 | blueprint |
+| `configs/novels/<id>.yaml` (e.g. `pntt1.yaml`) | **Create** | S1-T1, S4-T6 | §3.11 | blueprint |
+| `data/novels/<id>/raw/` (e.g. `chapter_N.md`) | **Read / Create** | S1-T3, S4-T6 | §3.1, §3.2 S0, §3.11 | blueprint |
+| `ollama/Modelfile.qwen14b-12k` | **Create** | S1-T4 | §3.9 | blueprint |
+| `src/config.py` | **Change / Move** | S1-T1 | §3.2, §3.11 | blueprint |
+| `src/xn/__init__.py` | **Create** | S1-T1 | §3.9 | proposed |
+| `src/xn/storage/database.py` | **Create** | S1-T2 | §3.2 | proposed |
+| `src/xn/storage/repository.py` | **Create** | S1-T2, S2-T5 | §3.2, §3.4 L1 | proposed |
+| `src/storage/sqlite_ledger.py` | **Delete** | S1-T2 | §0.2, §3.2 | blueprint |
+| `src/xn/pipeline/s0_parse.py` | **Create** | S1-T3 | §3.2 S0 | proposed |
+| `src/xn/schemas/extraction.py` | **Create** | S1-T4 | §3.2 S1 | blueprint |
+| `src/schemas/extraction.py` | **Delete** | S1-T4 | §0.2, §3.2 S1 | blueprint |
+| `prompts/s1_extract/v1.md` | **Create** | S1-T4 | §3.2 S1, §3.5 | proposed |
+| `src/xn/pipeline/s1_extract.py` | **Create** | S1-T4 | §3.2 S1 | proposed |
+| `src/ingestion/pydantic_extractor.py` | **Delete** | S1-T4 | §0.2, §3.2 S1 | blueprint |
+| `src/xn/pipeline/s2_resolve.py` | **Create** | S1-T5 | §3.2 S2 | proposed |
+| `prompts/s2_adjudicate/v1.md` | **Create** | S1-T5 | §3.2 S2, §3.5 | proposed |
+| `src/xn/schemas/lifecycle.py` | **Create** | S1-T6 | §3.2 S3 | proposed |
+| `src/schemas/lifecycle.py` | **Delete** | S1-T6 | §0.2, §3.2 S3 | blueprint |
+| `src/xn/pipeline/s3_ledger.py` | **Create** | S1-T6 | §3.2 S3 | proposed |
+| `src/xn/pipeline/runner.py` | **Create** | S1-T6 | §3.2 | proposed |
+| `src/xn/schemas/state.py` | **Create** | S1-T8 | §3.3 | proposed |
+| `src/schemas/state.py` | **Delete** | S1-T8 | §0.2, §3.3 | blueprint |
+| `prompts/router/v1.md` | **Create** | S1-T8 | §3.3, §3.5 | proposed |
+| `prompts/synthesize_compact/v1.md` | **Create** | S1-T8 | §3.3, §3.5 | proposed |
+| `src/xn/graph/nodes/route.py` | **Create / Change** | S1-T8, S2-T4 | §3.3 | proposed |
+| `src/xn/graph/nodes/bound.py` | **Create** | S1-T8 | §3.3, §3.4 L1 | proposed |
+| `src/xn/graph/nodes/resolve.py` | **Create** | S1-T8 | §3.3 | proposed |
+| `src/xn/graph/nodes/retrieve.py` | **Create / Change** | S1-T8, S2-T3, S2-T4, S3-T5 | §3.3 | proposed |
+| `src/xn/graph/nodes/gate.py` | **Create / Change** | S1-T8, S2-T4 | §3.3 | proposed |
+| `src/xn/graph/nodes/synthesize.py` | **Create / Change** | S1-T8, S2-T4, S3-T5 | §3.3 | proposed |
+| `src/xn/graph/nodes/verify.py` | **Create / Change** | S1-T8, S2-T6, S5-T5 | §3.3, §3.4 L5 | proposed |
+| `src/xn/graph/workflow.py` | **Create / Change** | S1-T8, S2-T4, S5-T3 | §3.3 | proposed |
+| `src/agents/graph_workflow.py` | **Delete** | S1-T8 | §0.2, §3.3 | blueprint |
+| `src/agents/pydantic_agents.py` | **Delete** | S1-T8 | §0.2, §3.3 | blueprint |
+| `src/xn/cli/main.py` | **Create / Change** | S1-T8, S2-T5, S5-T3 | §3.2, §3.6 | proposed |
+| `src/cli.py` | **Delete** | S1-T8 | §0.2, §3.6 | blueprint |
+| `eval/pntt1/` gold assets | **Create / Change** | S1-T9, S4-T2, S5-T6 | §3.8, §3.9, OQ-14 | blueprint |
+| `eval/pntt1/baseline.json` | **Create** | S4-T2 | §3.5, §3.8, §3.9 | blueprint |
+| `tests/unit/test_repository_guards.py` | **Create** | S1-T2 | §3.4 L1, §3.7 | proposed |
+| `tests/unit/test_s0_parse.py` | **Create** | S1-T3 | §3.2 S0 | proposed |
+| `tests/eval/test_gold.py` | **Create / Change** | S1-T9, S4-T2, S4-T4 | §3.5, §3.8 | proposed |
+| `src/xn/storage/qdrant.py` | **Create** | S2-T1 | §3.2 S4, §3.11 | proposed |
+| `src/storage/qdrant_client.py` | **Delete** | S2-T1 | §0.2, §3.2 S4 | blueprint |
+| `tests/integration/test_tenant_isolation.py` | **Create / Change** | S2-T1, S4-T6 | §3.7, §3.11 | proposed |
+| `src/xn/pipeline/s4_embed.py` | **Create** | S2-T2 | §3.2 S4 | proposed |
+| `src/xn/storage/retriever.py` | **Create** | S2-T3 | §3.2 S4, §3.3 | proposed |
+| `src/xn/graph/nodes/spoiler_scan.py` | **Create** | S2-T6 | §3.4 L5 | proposed |
+| `tests/unit/test_spoiler_scan.py` | **Create** | S2-T6 | §3.4 L5 | proposed |
+| `src/xn/pipeline/s5_segment.py` | **Create** | S3-T1 | §3.2 S5 | proposed |
+| `prompts/s5_boundary_review/v1.md` | **Create** | S3-T1 | §3.2 S5, §3.5 | proposed |
+| `src/timeline/arc_detector.py` | **Delete** | S3-T1 | §0.2, §3.2 S5 | blueprint |
+| `src/xn/schemas/arc.py` | **Create** | S3-T2 | §3.2 S6 | proposed |
+| `src/schemas/arc.py` | **Delete** | S3-T2 | §0.2, §3.2 S6 | blueprint |
+| `prompts/s6_arc_synthesize/v1.md` | **Create** | S3-T2 | §3.2 S6, §3.5 | proposed |
+| `src/xn/pipeline/s6_synthesize.py` | **Create** | S3-T2 | §3.2 S6 | proposed |
+| `src/xn/pipeline/s7_digest.py` | **Create** | S3-T3 | §3.2 S7 | proposed |
+| `prompts/s7_digest/v1.md` | **Create** | S3-T3 | §3.2 S7, §3.5 | proposed |
+| `src/xn/pipeline/prefix_summaries.py` | **Create** | S3-T4 | §3.2 S7, §3.4 L2, L3 | proposed |
+| `src/xn/telemetry/tracing.py` | **Create** | S4-T3 | §3.8 | proposed |
+| `src/xn/storage/views.sql` | **Create** | S4-T3 | §3.8 | proposed |
+| `src/xn/api/app.py` | **Create** | S4-T5 | §3.6 | proposed |
+| `src/xn/api/routes.py` | **Create / Change** | S4-T5, S5-T3 | §3.6 | proposed |
+| `src/xn/api/schemas.py` | **Create** | S4-T5 | §3.6 | proposed |
+| `src/xn/ui/` | **Create** | S4-T7 | §3.6 | proposed |
+| `README.md` | **Change (proposal, not in blueprint; tied to OQ-10)** | S4-T4 | §0.1, §3.1 (OQ-10) | blueprint |
+| `src/xn/graph/long_context/pricing.py` | **Create** | S5-T1 | §3.12 | proposed |
+| `src/xn/schemas/long_context.py` | **Create** | S5-T2 | §3.12 | proposed |
+| `src/xn/graph/long_context/planner.py` | **Create** | S5-T2 | §3.12 | proposed |
+| `prompts/lc_map/v1.md` | **Create** | S5-T4 | §3.12, §3.5 | proposed |
+| `prompts/lc_reduce/v1.md` | **Create** | S5-T4 | §3.12, §3.5 | proposed |
+| `src/xn/graph/long_context/engine.py` | **Create** | S5-T4 | §3.12 | proposed |
+| `src/xn/graph/long_context/verify.py` | **Create** | S5-T5 | §3.12 | proposed |
 
 ---
 
@@ -426,7 +399,7 @@ Comprehensive mapping of all assumptions (A-01..A-08), accepted risks (R-01..R-0
 
 | ID | Topic / Item | Status / Category | Impact on System Architecture & Work | Blocked / Affected Tasks | Validation Strategy ("Validate by") |
 |---|---|---|---|---|---|
-| **A-01** | Single user, local only | **Assumed** | No multi-user tenancy, auth tokens, or session locking. SQLite single-writer lock is sufficient. If violated, API, database layer, and job runner must be redesigned. | S4-T5 (FastAPI), S1-T2 (DB), CLI | Confirm with owner prior to Sprint 4 API deployment. |
+| **A-01** | Single user, local only | **Assumed** | If violated, auth and multi-user design needed. | S4-T5 (FastAPI), S1-T2 (DB), CLI | Confirm |
 | **A-02** | RTX 5070 Ti 16 GB VRAM | **Confirmed** | Strictly constrains GPU resident models. Total ingestion VRAM estimate in blueprint §3.9 is ≈ 12.1 GB (Qwen 14B Q4_K_M alone is ~9.0 GB, plus KV cache and buffers) and BGE-M3 requires ≈ 4–5 GB, so they cannot run simultaneously. S4 embedding must run with Ollama unloaded. Query time keeps Qwen 14B and bge-reranker-v2-m3 (~1.2 GB) on GPU, with BGE-M3 query encoding on CPU (~0.3 s). | S1-T4, S2-T2, S2-T3, S3-T1 | Validated by confirmed hardware spec; monitor VRAM during S1-T7 benchmark. |
 | **A-03** | Source format is `chapter_N.md` with potential site noise | **Confirmed format**; noise level unknown | Scraped text hygiene dictates S0 cleaning regexes. Injected URLs or site watermarks (>5% repetition) must be stripped to prevent schema pollution or embedding degradation. | S1-T3 (S0 Parse & Clean) | Inspect 10 random raw chapters provided by owner in Sprint 1. |
 | **A-04** | Egress: summaries/short chunks to OpenRouter; raw chapters only in opt-in long-context mode | **Confirmed** | Strict enforcement of two egress classes (`compact` vs `long_context`). Compact mode sends only summaries, events, and $\le 8$ chunks of $\le 450$ tokens. Long-context sends raw chapters $\le N$ for one entity only upon explicit user confirmation. | S1-T8, S2-T4, S5-T4, S5-T5 | Code rule in OpenRouter client wrapper; assert chapter lists logged to `llm_runs.payload_chapters`. |
@@ -435,10 +408,10 @@ Comprehensive mapping of all assumptions (A-01..A-08), accepted risks (R-01..R-0
 | **A-07** | Hidden identities revealed explicitly in text (`REVEALED_IDENTITY`) | **Assumed** | If identity reveals happen implicitly without a clear reveal scene, S1/S2 will fail to populate `entity_links`, leaving character timelines split. (Note: "Hàn Lập" and "Thanh Trúc Phong Vân Kiếm" appear in `src/schemas/extraction.py` description as examples). | S1-T4 (S1), S1-T5 (S2), S2-T6 (L5) | Evaluate on gold set containing known reveals and add manual links to `configs/novels/pntt1.yaml`. |
 | **A-08** | $\ge 1\text{M}$-context model available on OpenRouter at target pricing | **Assumed** `[verify]` | If a $\ge 1\text{M}$ model is unavailable or prohibitively costly, long-context mode requires smaller batches, higher latency, or fallback to compact mode. | S5-T1, S5-T2, S5-T4 | Query OpenRouter model catalog at pin time during Sprint 5 planning. |
 | **R-01** | Paraphrased spoilers without future names/realms bypass L5 scan | **Accepted Risk** | Low-probability leak where model mentions future plot points using vague language. Mitigated by prompt rule, 30 spoiler probes, and user feedback loop. | S2-T6, S4-T2 | Zero-leak gate on 30 spoiler probes; continuous prompt hardening. |
-| **R-02** | Cloud model's parametric knowledge of popular novels | **Accepted Risk** | Model could answer from pre-training memory rather than retrieved evidence. Mitigated by evidence-only prompt, strict citation enforcement, and stripping uncited claims. | S1-T8, S2-T4, S3-T5 | Automated grounding verification; claims without evidence quotes are stripped. |
+| **R-02** | Cloud model's parametric knowledge of popular novels | **Accepted Risk** | Model could answer from pre-training memory rather than retrieved evidence. Mitigated by evidence-only prompt, L5 scan, and citation checks (§3.7, R-02). | S1-T8, S2-T4, S3-T5 | Evidence-only prompt + L5 scan + citation checks; invalid citations are stripped. |
 | **R-03** | No cross-novel entity linking for sequels | **Accepted Risk** | Characters appearing across sequels (blueprint §3.11, R-03: sequels sharing characters, e.g. `pntt2`) treated as separate entities. Multi-novel links deferred; `series_id` reserved in `novels` table. | S4-T6 | Revisit when onboarding *Phàm Nhân Tu Tiên 2*. |
 | **R-04** | Long-context mode costs up to several dollars per protagonist report | **Accepted Risk** | Risk of unexpected API expenditure. Mitigated by opt-in flag, cost estimation, interactive confirmation threshold ($0.50), daily spend cap, and caching. | S5-T2, S5-T3 | Mandatory cost calculation before model invocation; `interrupt()` gate. |
-| **BP-OQ-1** | Extractor model: `qwen2.5:14b` vs `qwen3:14b` (non-thinking) | **Blueprint OQ** | Influences extraction JSON adherence, VRAM usage, and throughput. | S1-T4, S1-T7 | Sprint 1 benchmark across 50 chapters comparing schema success rate, entity recall, and tokens/sec. |
+| **BP-OQ-1** | Extractor model: `qwen2.5:14b` vs `qwen3:14b` (non-thinking) | **Blueprint OQ** | Influences schema success rate, entity recall, s/chapter, and VRAM. | S1-T4, S1-T7 | Sprint 1 benchmark across 50 chapters comparing schema success rate, entity recall, s/chapter, and VRAM. |
 | **BP-OQ-2** | Cleaning patterns for *Phàm Nhân Tu Tiên 1* | **Blueprint OQ** | Incomplete cleaning patterns permit scraping watermarks into `clean_text` and vector embeddings. | S1-T3 (S0 Parse & Clean) | Inspect 10 sample raw chapters provided by owner in Sprint 1 to extract repeating site markers. |
 
 ---
@@ -448,18 +421,18 @@ Comprehensive mapping of all assumptions (A-01..A-08), accepted risks (R-01..R-0
 The following genuine ambiguities, contradictions, and underspecified items are formally recorded. As mandated, no unilateral decisions are made.
 
 ### BP-OQ-1: Extractor Model Selection (`qwen2.5:14b` vs `qwen3:14b`)
-- **Source:** Blueprint §6 "Open questions".
+- **Source:** Blueprint "Open questions" section (end of document).
 - **Question:** Which local extractor model (`qwen2.5:14b` vs `qwen3:14b` non-thinking) should be locked in the Modelfile?
-- **Why it matters:** Blueprint §3.9 notes Qwen2.5-14B has 48 layers while Qwen3-14B has 40 layers (`[verify]`). The choice affects JSON schema compliance, extraction recall, VRAM consumption, and decoding speed.
+- **Why it matters:** Blueprint §3.9 notes Qwen2.5-14B has 48 layers while Qwen3-14B has 40 layers (`[verify]`). The choice affects schema success, recall, s/chapter, and VRAM (Phase 4 Sprint 1).
 - **Which task it blocks:** S1-T4, S1-T7.
-- **Options named in blueprint:** `qwen2.5:14b` vs `qwen3:14b` (non-thinking), settled by 50-chapter benchmark in Sprint 1 (§3.2, §6).
+- **Options named in blueprint:** `qwen2.5:14b` vs `qwen3:14b` (non-thinking), settled by 50-chapter benchmark in Sprint 1 (Phase 2 table "qwen2.5:14b fixed" row, and Phase 4 Sprint 1).
 
 ### BP-OQ-2: Source Text Cleaning Patterns for *Phàm Nhân Tu Tiên 1*
-- **Source:** Blueprint §6 "Open questions".
+- **Source:** Blueprint "Open questions" section (end of document).
 - **Question:** What are the exact regex cleaning patterns for `pntt1` in `configs/novels/pntt1.yaml`?
 - **Why it matters:** Stage S0 removes scraping noise and watermarks repeating in > 5% of chapters. Concrete patterns cannot be finalized without inspecting actual source Markdown files.
 - **Which task it blocks:** S1-T3.
-- **Options named in blueprint:** Settle after inspecting sample source files in Sprint 1 (§3.2 S0, §6).
+- **Options named in blueprint:** Settle after inspecting sample source files in Sprint 1 (Blueprint "Open questions" section (end of document) and §3.2 S0).
 
 ### OQ-01: Package Layout vs. Verifier Command Conflict
 - **Question:** Should the repository migrate to package layout `src/xn/` (with invocations `python -m xn run...`) as mandated by blueprint §3.9, or maintain the flat `src/` layout (with imports `from src.storage...` and `python -m src.cli...`)?
@@ -503,8 +476,8 @@ The following genuine ambiguities, contradictions, and underspecified items are 
   - `Answer`: Referenced in §3.3 as `Answer(markdown, citations)`. Additional fields (e.g. `grounding_ratio`, `spoiler_scan`, `tokens`, `cost_usd`) are shown in the SSE done event (§3.6) but the `Answer` model fields are not defined.
   - `EvidencePack`: Structure for aggregating retrieved events, arc summaries, prefix digests, and vector chunks under the 20k token budget.
   - `LeakReport`: Structure returned by L5 spoiler scanner (detected terms, source chapter, redactions).
-  - `Batch`: Field types in `LongContextPlan` (`arc_id: int`, `chapters_full: list[int]`, `chapters_excerpt: list[int]`, `input_tokens: int`, `cached: bool`).
-  - `Coverage`: Exact structure in `DeepDiveReport` (`chapters_read: int`, `arcs_missing: list[int]`, `excerpt_ratio: float`).
+  - `Batch`: Structure in `LongContextPlan`; blueprint line 529 only shows field names: `Batch(arc_id, chapters_full, chapters_excerpt, input_tokens, cached)` without Pydantic field types.
+  - `Coverage`: Structure in `DeepDiveReport`; blueprint line 564 only shows description: `Coverage (chapters read, arcs missing, excerpt ratio)` without schema field definitions or types.
   - Realm ladder representation: Format in `configs/novels/pntt1.yaml` (ordered list vs hierarchy) and exact algorithm mapping extracted text strings to an integer `realm_rank` (§3.2 S2/S3 "normalized later").
   - `data_version` in `answer_cache` key: How `data_version` is calculated and updated (ingest timestamp vs git hash vs job counter).
   - Display name calculation: Algorithm and caching for "most frequent alias with first_chapter ≤ N" (§3.4 L4).
