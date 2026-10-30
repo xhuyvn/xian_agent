@@ -1,0 +1,32 @@
+system:
+  novel_name: "Phàm Nhân Tu Tiên 1"
+  author: "Vong Ngữ"
+  total_chapters: 2673
+
+arc_detection:
+  weights:
+    map_change: 0.40
+    realm_breakthrough: 0.30
+    major_conflict: 0.20
+    time_skip: 0.10
+  score_threshold: 0.60
+  min_arc_length: 30
+  max_arc_length: 90
+
+models:
+  local_extractor:
+    name: "qwen2.5:14b"
+    temperature: 0.1
+  macro_synthesizer:
+    name: "deepseek/deepseek-chat"
+    temperature: 0.3
+  deep_dive_evaluator:
+    name: "deepseek/deepseek-chat"
+    temperature: 0.4
+
+qdrant:
+  collections:
+    chapters: "pntt_chapters"
+    arcs: "pntt_arcs"
+    entities: "pntt_entities"
+  vector_size: 1024

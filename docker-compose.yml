@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  qdrant:
+    image: qdrant/qdrant:v1.12.0
+    container_name: xn_agent_qdrant
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - ./data/qdrant_storage:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__STORAGE__PERFORMANCE__MAX_SEARCH_THREADS=4
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: xn_agent_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis_data:/data
+    restart: unless-stopped
