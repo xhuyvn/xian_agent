@@ -8,7 +8,7 @@ Round line: `R-<n> <date>: <what this round had to achieve> -> PASS|FAIL, <n> bl
 
 ## Active
 
-### G-1: S1-T1 project setup and config split (active)
+### G-1: S1-T1 project setup and config split (done)
 Plan: docs/IMPLEMENTATION_PLAN.md, S1-T1.
 Owner decisions: OQ-01 `src/xn/` package layout; OQ-02 `uv` with `pyproject.toml`, `uv.lock` and an exported `requirements.txt`; OQ-08 Python 3.12 (other OQ-08 values stay null). In `pntt1.yaml` the realm ladder, seed aliases and cleaning rules stay empty.
 Done when:
@@ -18,7 +18,7 @@ Done when:
 - A unit test shows the three config levels load and merge
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
-- none yet
+- R-1 2026-10-31: deliver S1-T1 setup and the config split -> PASS, 0 blockers, 6aa3858, 258829 agy tokens
 Sub-goals:
 - none yet
 Changes:
