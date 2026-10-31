@@ -8,6 +8,23 @@ Round line: `R-<n> <date>: <what this round had to achieve> -> PASS|FAIL, <n> bl
 
 ## Active
 
+### G-6: S1-T6 pipeline stage S3, ledger write, and `xn run` (active)
+Plan: docs/IMPLEMENTATION_PLAN.md, S1-T6. Depends on G-2 and G-5.
+Owner decisions: event `id` is `chapter_id * 1000 + position`, so ids repeat exactly across re-runs. `ordinal` counts from 0 within `(chapter, entity, event_type)` in extraction order. `REVEALED_IDENTITY` writes one row, on the `name` entity. A name that normalizes to empty is skipped and logged, matching S2. `realm_rank` is the position in `realm_ladder`, otherwise NULL. The S3 input hash is the extraction payload plus the S2 job's hash, and S3 stops at the first chapter where S2 is not done. `--stale-only` works on S1 and S3 only and redoes chapters with a job row that failed or whose hash or prompt changed, skipping chapters never run. S0 and S2 reject `--stale-only` and `--from` above 1. `--rebuild` (S2 only, plan addition) clears the ledger, then redoes S2. The database is `data/xn.db` (`--db` overrides) and raw text is `data/novels/<id>/raw` (`--raw-dir` overrides). `src/schemas/lifecycle.py` stays until S1-T8 removes `src/cli.py` (plan deviation); `src/storage/sqlite_ledger.py` goes with it. `--all` is out of scope. Two rounds of code: ledger, then runner and CLI.
+Done when:
+- `entity_events` is written with the unique key `(novel_id, chapter_id, entity_id, event_type, ordinal)`, using an explicit, repeatable `id`
+- `event_type` and `holder_entity_id` are correct
+- Each of an event's names maps to exactly one entity; otherwise the chapter fails, leaves no partial rows and is recorded as `failed` in `jobs`
+- Running twice changes no rows, and a changed S1 or S2 input rewrites that chapter only
+- `xn run --novel --stage s0..s3 --from --to [--stale-only]` works, also as `python -m xn`
+- An S0-to-S3 run through the CLI with a fake model, repeated twice, gives identical row counts
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+Sub-goals:
+- none yet
+Changes:
+- 2026-10-31: owner approved the goal and the decisions above
+
 ## Parked
 
 ## Archive
