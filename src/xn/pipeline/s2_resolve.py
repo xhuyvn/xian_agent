@@ -3,13 +3,17 @@ r"""Stage S2: In-memory entity resolver and adjudicator."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import hashlib
+import json
 import logging
+from pathlib import Path
 from typing import Any, Callable
 
 from pydantic_ai import Agent
 import rapidfuzz
 
-from xn.llm import run_logged
+from xn.llm import local_model, run_logged
+from xn.prompts import load_prompt, profile_from_config
 from xn.schemas.extraction import ChapterExtraction, EntityEvent
 from xn.schemas.lifecycle import LifecycleEventType
 from xn.schemas.resolution import AdjudicationDecision
@@ -582,3 +586,264 @@ def make_adjudicator(
         return getattr(result.output, "same_entity", None) is True
 
     return adjudicate
+
+
+@dataclass(frozen=True)
+class S2Result:
+    r"""Result metrics for an S2 pipeline run."""
+
+    processed: int
+    written: int
+    skipped: int
+    failed: int
+    stopped_at: int | None = None  # first chapter the run could not finish, else None
+
+
+class S2StaleError(RuntimeError):
+    r"""Raised when S2 resolution is stale."""
+
+    chapters: list[int]  # the stale chapter ids, sorted
+
+    def __init__(self, chapters: list[int], message: str | None = None) -> None:
+        self.chapters = sorted(chapters)
+        if message is None:
+            message = (
+                f"Stale S2 chapters: {self.chapters}. "
+                f"rebuild=True redoes the novel."
+            )
+        super().__init__(message)
+
+
+def run_s2(
+    repo: Repository,
+    *,
+    novel_id: str,
+    config: dict[str, Any],
+    chapter_to: int | None = None,
+    model: Any = None,
+    prompts_dir: Path = Path("prompts"),
+    rebuild: bool = False,
+) -> S2Result:
+    r"""Run stage S2 entity resolution pipeline."""
+    # 1. Defaults, config extraction, agent and adjudicator construction
+    if chapter_to is None:
+        chapter_to = config["total_chapters"]
+
+    if model is None:
+        model = local_model(config)
+
+    serving_name = config["models"]["local_extractor"]["serving_name"]
+    temperature = config["models"]["local_extractor"].get("temperature", 0.1)
+
+    profile = profile_from_config(config)
+
+    prompts_cfg = config.get("prompts") or {}
+    adjudicate_version = prompts_cfg.get("s2_adjudicate", "v1")
+
+    prompt = load_prompt("s2_adjudicate", adjudicate_version, profile, prompts_dir)
+
+    agent = Agent(
+        model,
+        output_type=AdjudicationDecision,
+        system_prompt=prompt.text,
+        retries=3,
+        model_settings={"temperature": temperature},
+    )
+    adjudicator = make_adjudicator(
+        agent,
+        repo=repo,
+        novel_id=novel_id,
+        serving_name=serving_name,
+        prompt_version=prompt.prompt_version,
+    )
+
+    # 2. Seed aliases and identity links
+    seed_aliases = config.get("seed_aliases") or []
+    identity_links = config.get("identity_links") or []
+
+    # 3. If rebuild, clear resolution
+    if rebuild:
+        repo.clear_resolution(novel_id=novel_id, stage=STAGE)
+
+    # 4. Read chapters and extractions
+    chapters = repo.list_chapters(novel_id=novel_id, chapter_max=chapter_to)
+    extractions = repo.list_extractions(novel_id=novel_id, chapter_max=chapter_to)
+    extractions_by_id = {row["chapter_id"]: row for row in extractions}
+
+    # 5. input_hash computation
+    meta_json = json.dumps(
+        {"seed_aliases": seed_aliases, "identity_links": identity_links},
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+
+    def compute_input_hash(payload_str: str) -> str:
+        return hashlib.sha256((payload_str + "\0" + meta_json).encode("utf-8")).hexdigest()
+
+    # 6. Stale check
+    stale_chapters: list[int] = []
+    saw_not_done = False
+
+    for ch in chapters:
+        cid = ch["chapter_id"]
+        job = repo.get_job(novel_id=novel_id, chapter_id=cid, stage=STAGE)
+        is_done = job is not None and job["status"] == "done"
+
+        if not is_done:
+            saw_not_done = True
+            continue
+
+        is_stale = False
+        if cid not in extractions_by_id:
+            is_stale = True
+        else:
+            payload = extractions_by_id[cid]["payload"]
+            expected_hash = compute_input_hash(payload)
+            if job["input_hash"] != expected_hash:
+                is_stale = True
+            elif job["prompt_version"] != prompt.prompt_version:
+                is_stale = True
+
+        if saw_not_done:
+            is_stale = True
+
+        if is_stale:
+            stale_chapters.append(cid)
+
+    if stale_chapters:
+        raise S2StaleError(stale_chapters)
+
+    # 7. Count skipped done chapters and find start chapter K
+    skipped = 0
+    k: int | None = None
+
+    for ch in chapters:
+        cid = ch["chapter_id"]
+        job = repo.get_job(novel_id=novel_id, chapter_id=cid, stage=STAGE)
+        if job is not None and job["status"] == "done":
+            skipped += 1
+        else:
+            k = cid
+            break
+
+    if k is None:
+        return S2Result(
+            processed=0,
+            written=0,
+            skipped=skipped,
+            failed=0,
+            stopped_at=None,
+        )
+
+    # 8. Build Resolver, register stored aliases, rebuild contexts
+    resolver = Resolver(
+        first_entity_id=repo.next_entity_id(novel_id=novel_id),
+        seed_aliases=seed_aliases,
+        adjudicate=adjudicator,
+    )
+
+    stored_aliases = repo.list_aliases(novel_id=novel_id, chapter_max=k - 1)
+    for al in stored_aliases:
+        resolver.load_alias(
+            alias_norm=al["alias_norm"],
+            entity_id=al["entity_id"],
+            category=al["category"],
+        )
+
+    categories = list(profile.get("categories") or [])
+    earlier_extractions = [
+        ext for ext in extractions if ext["chapter_id"] < k
+    ]
+    for ext_row in earlier_extractions:
+        parsed_ext = ChapterExtraction.model_validate_json(ext_row["payload"])
+        for ev in parsed_ext.events:
+            context = f"{ev.description} | {ev.evidence}"
+            name_entity = resolver.lookup(name=ev.name, category=ev.category)
+            if name_entity is not None:
+                resolver.add_context(entity_id=name_entity, text=context)
+
+            if ev.same_as and ev.event_type == LifecycleEventType.REVEALED_IDENTITY:
+                same_entity = resolver.lookup(name=ev.same_as, category=ev.category)
+                if same_entity is not None:
+                    resolver.add_context(entity_id=same_entity, text=context)
+
+            if ev.holder and "character" in categories:
+                holder_entity = resolver.lookup(name=ev.holder, category="character")
+                if holder_entity is not None:
+                    resolver.add_context(entity_id=holder_entity, text=context)
+
+    # 9. Process chapters from K upward
+    chapters_to_process = [ch for ch in chapters if ch["chapter_id"] >= k]
+    processed = 0
+    written = 0
+    failed = 0
+    stopped_at: int | None = None
+
+    for ch in chapters_to_process:
+        processed += 1
+        cid = ch["chapter_id"]
+
+        if cid not in extractions_by_id:
+            logger.warning("Chapter %d has no extraction; stopping S2", cid)
+            stopped_at = cid
+            break
+
+        ext_row = extractions_by_id[cid]
+        payload = ext_row["payload"]
+        input_hash = compute_input_hash(payload)
+
+        repo.upsert_job(
+            novel_id=novel_id,
+            chapter_id=cid,
+            stage=STAGE,
+            status="running",
+            input_hash=input_hash,
+            prompt_version=prompt.prompt_version,
+            model=serving_name,
+        )
+
+        try:
+            extraction_obj = ChapterExtraction.model_validate_json(payload)
+            writes = resolve_chapter(
+                resolver,
+                extraction_obj,
+                categories=categories,
+                identity_links=identity_links,
+            )
+            repo.save_resolution(
+                novel_id=novel_id,
+                chapter_id=cid,
+                entities=writes.entities,
+                entity_updates=writes.entity_updates,
+                aliases=writes.aliases,
+                links=writes.links,
+                stage=STAGE,
+                input_hash=input_hash,
+                prompt_version=prompt.prompt_version,
+                model=serving_name,
+            )
+            written += 1
+        except Exception as err:
+            logger.error("Chapter %d resolution failed: %s", cid, err)
+            repo.upsert_job(
+                novel_id=novel_id,
+                chapter_id=cid,
+                stage=STAGE,
+                status="failed",
+                input_hash=input_hash,
+                prompt_version=prompt.prompt_version,
+                model=serving_name,
+                error=str(err),
+            )
+            failed += 1
+            stopped_at = cid
+            break
+
+    # 10. Return S2Result
+    return S2Result(
+        processed=processed,
+        written=written,
+        skipped=skipped,
+        failed=failed,
+        stopped_at=stopped_at,
+    )
