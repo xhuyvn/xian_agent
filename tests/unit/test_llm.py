@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import inspect
 from pathlib import Path
 import sqlite3
 import sys
@@ -15,7 +14,7 @@ from pydantic_ai import Agent
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
-from pydantic_ai.usage import Usage
+from pydantic_ai.usage import RequestUsage
 
 from xn.llm import local_model, run_logged
 from xn.storage.database import connect, init_schema
@@ -160,20 +159,7 @@ def test_run_logged_with_retries(repo: Repository, db_conn: sqlite3.Connection) 
         output_tools = getattr(info, "output_tools", None)
         tool_name = output_tools[0].name if output_tools else "final_result"
 
-        sig = inspect.signature(Usage.__init__)
-        params = sig.parameters
-        usage_kwargs: dict[str, Any] = {}
-        if "requests" in params:
-            usage_kwargs["requests"] = 1
-        if "input_tokens" in params:
-            usage_kwargs["input_tokens"] = 10 * attempts
-        if "request_tokens" in params:
-            usage_kwargs["request_tokens"] = 10 * attempts
-        if "output_tokens" in params:
-            usage_kwargs["output_tokens"] = 5 * attempts
-        if "response_tokens" in params:
-            usage_kwargs["response_tokens"] = 5 * attempts
-        usage_obj = Usage(**usage_kwargs)
+        usage_obj = RequestUsage(input_tokens=10 * attempts, output_tokens=5 * attempts)
 
         if attempts == 1:
             part = ToolCallPart(tool_name, {"score": "not_an_int"})
