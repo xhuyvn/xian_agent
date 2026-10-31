@@ -95,7 +95,7 @@ flowchart TD
   - *Files created:* `src/xn/pipeline/s0_parse.py` (proposal), `tests/unit/test_s0_parse.py` (proposal).
   - *Files read:* `data/novels/pntt1/raw/chapter_N.md`.
   - *Details:* Match `^chapter_(\d+)\.md$`; integer sort; contiguity check; Markdown → plain text via `markdown-it-py`; NFC normalization; watermark line removal (> 5% repetition); persists `clean_text`, `sha256`, `token_count` to SQLite `chapters` table and records stage completion in `jobs` (§3.2 S0).
-  - *Dependencies:* S1-T1, S1-T2 (derived from data flow: stores clean text and tokens in `chapters` table and records job status in `jobs` created in S1-T2).
+  - *Dependencies:* S1-T1, S1-T2 (derived from data flow: stores clean text and tokens in `chapters` table and records job status in `jobs` created in S1-T2). Also needs a `novels` row for `pntt1`, which no Sprint 1 task inserts yet (see OQ-15).
 - **S1-T4: Pipeline Stage S1 — Extract (Ollama Qwen 14B)** (§3.2 S1, §3.5, §3.9, G-06)
   - *Files created:* `src/xn/pipeline/s1_extract.py` (proposal), `src/xn/schemas/extraction.py`, `prompts/s1_extract/v1.md` (proposal), `ollama/Modelfile.qwen14b-12k`.
   - *Files changed/deleted:* Supersedes `src/ingestion/pydantic_extractor.py` and `src/schemas/extraction.py`.
@@ -155,14 +155,14 @@ flowchart TD
   - *Files created:* `src/xn/storage/retriever.py` (proposal).
   - *Files changed:* `src/xn/graph/nodes/retrieve.py` (proposal: wire hybrid retriever).
   - *Details:* Qdrant query API: dense k=40 + sparse k=40 prefetch → RRF fusion → hard filter `novel_id == X AND chapter_id <= chapter_max` → rerank top-30 with `bge-reranker-v2-m3` fp16 on GPU (~1.2 GB) to top-8 (BGE-M3 query encoding on CPU, §3.9).
-  - *Dependencies:* S2-T2 (derived from data flow: queries chunks embedded in S2-T2).
+  - *Dependencies:* S1-T8, S2-T2 (derived from data flow: changes the `retrieve` node created in S1-T8 and queries chunks embedded in S2-T2).
 - **S2-T4: Expand Query Graph (Factual QA, Compare)** (§3.3)
   - *Files changed:* `src/xn/graph/nodes/route.py` (proposal), `src/xn/graph/nodes/retrieve.py` (proposal), `src/xn/graph/nodes/gate.py` (proposal), `src/xn/graph/nodes/synthesize.py` (proposal), `src/xn/graph/workflow.py` (proposal).
   - *Details:* Wire `factual_qa` and `compare` intents into LangGraph. Reranker score threshold $\ge 0.3$ in `gate`.
   - *Dependencies:* S1-T8, S2-T3 (derived from data flow: integrates hybrid retriever into query graph).
 - **S2-T5: Reading Progress & Bound Resolution CLI** (§3.4 L1, §3.6)
   - *Files changed:* `src/xn/cli/main.py` (proposal), `src/xn/storage/repository.py` (proposal), `src/xn/graph/nodes/bound.py` (proposal: update bound resolution to integrate `novels.reader_progress` via `xn progress`).
-  - *Details:* Implement `xn progress <novel_id> <N>` command (§3.4); update `novels.reader_progress`. Implement deterministic resolution: explicit `--until` > query hint > `reader_progress` > `total_chapters`.
+  - *Details:* Implement `xn progress <novel_id> <N>` command (§3.4); update `novels.reader_progress`. Implement deterministic resolution (§3.3 `bound`, §3.4): `chapter_max = min(explicit --until or chapter_hint or novels.reader_progress or total_chapters, total_chapters)`; `--full` removes the bound explicitly; the resolved N is printed with every answer.
   - *Dependencies:* S1-T2, S1-T8 (derived: adds CLI command and bound methods to existing CLI/repository/bound node).
 - **S2-T6: L5 Spoiler Leak Detection & Mitigation** (§3.4 L5, R-01, R-02)
   - *Files created:* `src/xn/graph/nodes/spoiler_scan.py` (proposal), `tests/unit/test_spoiler_scan.py` (proposal).
@@ -232,7 +232,7 @@ flowchart TD
 - **S4-T2: Full Evaluation Suite & Benchmark** (§3.8, OQ-09, OQ-14)
   - *Files created / changed:* `eval/pntt1/` gold assets (updated to 40 annotated chapters, 150 alias pairs, 40 Q&A, 30 spoiler probes per blueprint §3.8), `eval/pntt1/baseline.json`, `tests/eval/test_gold.py` (proposal: updated test cases).
   - *Task:* Run full evaluation against §3.8 thresholds (entity recall $\ge 0.85$, precision $\ge 0.90$, event accuracy $\ge 0.75$, flag F1 $\ge 0.80$, alias F1 $\ge 0.90$, boundary F1 $\ge 0.80$, RAGAS faithfulness $\ge 0.85$, context recall $\ge 0.80$, citation hit rate $\ge 0.80$, 0 leaks on 30 spoiler probes).
-  - *Dependencies:* S4-T1, S2-T6, S3-T5 (derived from data flow: evaluates full novel ingestion output, Q&A via query graph S3-T5, and spoiler probes via L5 leak scan S2-T6).
+  - *Dependencies:* S1-T9, S4-T1, S2-T6, S3-T5 (derived from data flow: extends the gold assets and eval harness created in S1-T9, evaluates full novel ingestion output, Q&A via query graph S3-T5, and spoiler probes via L5 leak scan S2-T6).
 - **S4-T3: LLMOps Tracing & SQL Telemetry Views** (§3.5, §3.8, G-13)
   - *Files created:* `src/xn/telemetry/tracing.py` (proposal), `src/xn/storage/views.sql` (proposal).
   - *Details:* Pydantic-AI OpenTelemetry instrumentation to Langfuse/Logfire. SQL views for retry rate per prompt, failed chapters, stage cost/tokens, grounding ratio, spoiler hits.
@@ -551,8 +551,8 @@ The following genuine ambiguities, contradictions, and underspecified items are 
 
 ### OQ-15: Sprint Ownership of Auxiliary CLI Commands (`xn status`, `xn novel add`, `xn entities`)
 - **Question:** Which sprints own the implementation of auxiliary CLI commands: `xn status` (§3.10), `xn novel add` (§3.11), and `xn entities suspect|merge|split` (§3.10)?
-- **Why it matters:** The blueprint defines `xn run` (§3.2, required in Sprint 1), `xn progress` (§3.4, explicitly named in Phase 4 Sprint 2), and `xn ask` (§3.12, required in Phase 4 Sprint 5 for long-context queries). However, Phase 4 does not assign sprints for `xn status` (§3.10), `xn novel add` (§3.11), or `xn entities suspect|merge|split` (§3.10).
-- **Which task it blocks:** S1-T8, S4-T6, CLI completion.
+- **Why it matters:** The blueprint defines `xn run` (§3.2, required in Sprint 1), `xn progress` (§3.4, explicitly named in Phase 4 Sprint 2), and `xn ask` (§3.12, required in Phase 4 Sprint 5 for long-context queries). However, Phase 4 does not assign sprints for `xn status` (§3.10), `xn novel add` (§3.11), or `xn entities suspect|merge|split` (§3.10). `xn novel add` also affects Sprint 1: `chapters.novel_id` references `novels` with `foreign_keys=ON` (§3.2), and the S0 contiguity check needs `total_chapters`, so a `novels` row must exist before S1-T3 runs, and the blueprint names no other way to create it.
+- **Which task it blocks:** S1-T3, S1-T8, S4-T6, CLI completion.
 - **Options named/apparent:** None named in blueprint; sprint ownership is unsettled.
 
 ---
@@ -580,14 +580,14 @@ The following activities cannot be executed by automated subagents (`agy-coder` 
 
 ## 7. Out of Scope / Not Covered by this Document
 
-The following items are explicitly out of scope for this implementation plan:
+Items 1–3 describe this authoring task only: writing this document changed nothing else. They do not limit the §2 tasks, which make the changes they list when executed. Items 4–7 are out of scope for the plan itself.
 
 1. **Modifying Product Source Code or Configuration:**
-   - No edits to `src/`, `configs/`, `docker-compose.yml`, `requirements.txt`, or `.env*`.
+   - This authoring task made no edits to `src/`, `configs/`, `docker-compose.yml`, `requirements.txt`, or `.env*`.
 2. **Modifying Agent Instructions or Governance:**
-   - No edits to `CLAUDE.md`, `.claude/`, or `.github/workflows/`.
+   - This authoring task made no edits to `CLAUDE.md`, `.claude/`, or `.github/workflows/`. Any later change to them needs the owner's explicit request (see OQ-03).
 3. **Modifying Architecture Blueprint:**
-   - No edits to `ARCHITECTURE_BLUEPRINT_v3.md` (except S1-T7 recording empirical benchmark s/chapter into §3.9 cost table per Sprint 1 Acceptance Criterion 4).
+   - This authoring task made no edits to `ARCHITECTURE_BLUEPRINT_v3.md`. S1-T7 will later record empirical benchmark s/chapter into the §3.9 cost table per Sprint 1 Acceptance Criterion 4.
 4. **Unilateral Decision-Making on Open Questions:**
    - Open questions `OQ-01` through `OQ-15` and `BP-OQ-1` / `BP-OQ-2` are cataloged for owner resolution without assuming outcomes.
 5. **Multi-User Authentication & SaaS Tenancy:**
