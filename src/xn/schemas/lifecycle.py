@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Optional
+
+from pydantic import BaseModel
 
 
 class LifecycleEventType(str, Enum):
@@ -17,3 +20,19 @@ class LifecycleEventType(str, Enum):
     FALLEN_OR_SEALED = "FALLEN_OR_SEALED"
     REVEALED_IDENTITY = "REVEALED_IDENTITY"
     MENTIONED = "MENTIONED"
+
+
+class EntityLifecycleRecord(BaseModel):
+    """Lifecycle event record written to the ledger for an entity."""
+
+    novel_id: str
+    id: int
+    chapter_id: int
+    entity_id: int
+    event_type: LifecycleEventType
+    ordinal: int
+    holder_entity_id: Optional[int] = None
+    tier_or_realm: Optional[str] = None
+    realm_rank: Optional[int] = None
+    description: str
+    evidence: Optional[str] = None
