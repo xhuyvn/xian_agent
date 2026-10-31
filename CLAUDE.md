@@ -31,7 +31,8 @@ the owner before coding it yourself.
    acceptance criteria, relevant context (agy does not see this conversation).
 4. **Verify.** Run `verifier` on every finished task: `full` mode on the first pass, then `delta`
    mode with the previous findings and revision. agy reporting success is not evidence; only the
-   verifier's checks are.
+   verifier's checks are. An `interrupted` run goes to the verifier too, which must confirm the
+   work is complete.
 5. **Revise.** On FAIL, fix the `BLOCKER`s and leave `NIT`s for the report. If they are small and
    mechanical (about 30 changed lines in total, no new logic), make them yourself on the task
    branch in its worktree, commit, and re-verify. Otherwise send them back through `agy-coder`.
@@ -42,7 +43,8 @@ the owner before coding it yourself.
 7. **Report.** What changed, check results (actual command + pass/fail), PR link, agy tokens used
    (`runTotalTokens`), open `NIT`s, anything not done or not verified.
 8. **Close.** When the task is finished, tell the owner to start a new session for the next one.
-   Every message in a long session costs more.
+   Every message in a long session costs more. Once its PR is merged, remove each run with
+   `node .claude/scripts/agy-task.mjs cleanup --id <id>`.
 
 ## Goals
 `docs/GOALS.md` records what this project is trying to achieve. Read it at the start of a session.
@@ -52,9 +54,9 @@ Quick one-offs that skip the plan step need no entry.
 - **Each round** is one coding or fix pass plus one verifier pass, and serves one goal. Say which
   goal it serves and what this round must achieve, then put that in the brief and give it to the verifier.
 - **After each round:** add a line to the goal's Rounds list, on the task branch in its worktree,
-  and commit it.
+  and commit it. Finish this before starting the next round, never alongside it.
 - **Changes need the owner's yes.** Creating a goal, or changing or removing a goal or a "Done when"
-  line, needs an explicit yes. Log it under Changes with the date. Mark a goal done only after a PASS.
+  line, needs an explicit yes. Log it under Changes with the date. Mark a goal done only after a PASS, then move it to Archive.
 - **New work found along the way** stays out of the current round. Ask the owner: change this goal,
   add a sub-goal (`G-2.1`), park it, or drop it.
 

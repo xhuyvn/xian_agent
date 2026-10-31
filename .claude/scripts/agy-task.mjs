@@ -8,15 +8,15 @@
 //
 // The brief/feedback is read from stdin (or --brief-file). agy runs headless in accept-edits
 // mode: it can edit files in the worktree but every shell command is auto-denied. Changes are
-// committed on branch agy/<id>; run records live in <repo>/.secretary/runs/<id>/.
+// committed on branch agy/<id>; run records live in .secretary/runs/<id>/ in the main checkout.
 // --fresh starts a new agy conversation on the same worktree instead of resuming the old one.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, appendFileSync } from 'node:fs';
 import { join, dirname, basename, resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { turnUsage } from './agy-usage.mjs';
-import { logEvent, clip } from './activity-log.mjs';
+import { turnUsage, outcomeFor } from './agy-usage.mjs';
+import { logEvent, clip, mainCheckout } from './activity-log.mjs';
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
@@ -115,11 +115,7 @@ function summarize(repo, meta, agyRun, committed) {
   const filesChanged = git(['diff', '--name-only', `${base}..HEAD`], worktree).split(/\r?\n/).filter(Boolean);
   const diffstat = git(['diff', '--shortstat', `${base}..HEAD`], worktree);
   const denied = agyRun.result?.denied_actions || [];
-  let outcome;
-  if (!agyRun.result || agyRun.timedOut || (agyRun.result.status && agyRun.result.status !== 'SUCCESS')) outcome = 'failed';
-  else if (filesChanged.length) outcome = 'changes';
-  else if (denied.length) outcome = 'blocked';
-  else outcome = 'no_changes';
+  const outcome = outcomeFor(agyRun, filesChanged, committed);
 
   const runDir = join(repo, '.secretary', 'runs', meta.id);
   writeFileSync(join(runDir, `diff-${meta.turns}.patch`), git(['diff', `${base}..HEAD`], worktree));
@@ -172,7 +168,9 @@ function ensureIgnored(repo) {
 }
 
 const { command, opts } = parseArgs(process.argv.slice(2));
-const repo = git(['rev-parse', '--show-toplevel'], process.cwd());
+// `here` is where the lead works, which may be a linked worktree; shared state lives in `repo`.
+const here = git(['rev-parse', '--show-toplevel'], process.cwd());
+const repo = mainCheckout(here) ?? here;
 const timeout = Number(opts.timeout || 1200);
 if (opts.effort !== undefined && !EFFORTS.includes(opts.effort)) fail(`--effort must be one of: ${EFFORTS.join(', ')}`);
 
@@ -180,7 +178,7 @@ if (command === 'run') {
   const brief = readBrief(opts).trim();
   if (!brief) fail('brief is empty');
   const agy = findAgy();
-  const base = git(['rev-parse', opts.base || 'HEAD'], repo);
+  const base = git(['rev-parse', opts.base || 'HEAD'], here);
   const id = `${stamp()}-${slugify(opts.slug)}`;
   const branch = `agy/${id}`;
   const worktree = join(dirname(repo), `${basename(repo)}.worktrees`, id);
@@ -227,10 +225,12 @@ if (command === 'run') {
   }), null, 2));
 } else if (command === 'cleanup') {
   if (typeof opts.id !== 'string') fail('--id is required');
-  const meta = JSON.parse(readFileSync(join(repo, '.secretary', 'runs', opts.id, 'meta.json'), 'utf8'));
+  const metaFile = join(repo, '.secretary', 'runs', opts.id, 'meta.json');
+  if (!existsSync(metaFile)) fail(`no run ${opts.id}`);
+  const meta = JSON.parse(readFileSync(metaFile, 'utf8'));
   if (existsSync(meta.worktree)) git(['worktree', 'remove', meta.worktree], repo);
-  const merged = spawnSync('git', ['merge-base', '--is-ancestor', meta.branch, 'HEAD'], { cwd: repo }).status === 0;
-  if (merged) git(['branch', '-d', meta.branch], repo, { allowFail: true });
+  const merged = spawnSync('git', ['merge-base', '--is-ancestor', meta.branch, 'HEAD'], { cwd: here }).status === 0;
+  if (merged) git(['branch', '-d', meta.branch], here, { allowFail: true });
   console.log(JSON.stringify({ id: meta.id, worktreeRemoved: true, branchDeleted: merged, note: merged ? '' : 'branch kept: not merged into HEAD' }, null, 2));
 } else {
   fail('usage: agy-task.mjs run|resume|list|cleanup (see header comment)');

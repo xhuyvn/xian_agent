@@ -5,7 +5,7 @@
 // agy's tools are limited separately (headless agy cannot run shell commands).
 
 import { appendFileSync, mkdirSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 
 const PROTECTED_BRANCHES = ['main', 'master'];
 
@@ -41,6 +41,12 @@ function block(reason) {
   } catch {}
   process.stderr.write(`Blocked by ai-secretary guard: ${reason}.\n`);
   process.exit(2);
+}
+
+// Judge a worktree's files by their path inside it: the worktree itself may live under .claude/.
+function pathInRepo(path) {
+  const clean = posix.normalize(`/${path.replace(/\\/g, '/')}`);
+  return clean.match(/^(?:(?!\/\.claude\/).)*\/\.claude\/worktrees\/[^/]+\/(.+)$/i)?.[1] ?? clean;
 }
 
 function checkPush(cmd) {
@@ -81,9 +87,7 @@ process.stdin.on('end', () => {
   } else {
     const path = String(input.file_path || input.notebook_path || input.path || '');
     if (path && SECRET_PATH.test(path)) block('secret files (.env, keys, credentials) are off limits');
-    // Judge a worktree's files by their path inside it: the worktree itself lives under .claude/.
-    const inRepo = path.replace(/\\/g, '/').replace(/^.*\/\.claude\/worktrees\/[^/]+\//, '');
-    if (path && tool !== 'Read' && tool !== 'Grep' && tool !== 'Glob' && PROTECTED_FILES.test(inRepo)) {
+    if (path && tool !== 'Read' && tool !== 'Grep' && tool !== 'Glob' && PROTECTED_FILES.test(pathInRepo(path))) {
       block('.claude/, .github/workflows/ and CLAUDE.md are owner-managed; ask the owner to change them');
     }
   }
