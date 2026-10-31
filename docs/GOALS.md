@@ -8,34 +8,36 @@ Round line: `R-<n> <date>: <what this round had to achieve> -> PASS|FAIL, <n> bl
 
 ## Active
 
-### G-1: S1-T1 project setup and config split (proposed)
-Plan: docs/IMPLEMENTATION_PLAN.md, S1-T1. The owner must approve this goal before work starts.
-Needs owner decisions: OQ-01 (package layout), OQ-02 (dependency tooling), OQ-08 (Python version).
+### G-1: S1-T1 project setup and config split (active)
+Plan: docs/IMPLEMENTATION_PLAN.md, S1-T1.
+Owner decisions: OQ-01 `src/xn/` package layout; OQ-02 `uv` with `pyproject.toml`, `uv.lock` and an exported `requirements.txt`; OQ-08 Python 3.12 (other OQ-08 values stay null). In `pntt1.yaml` the realm ladder, seed aliases and cleaning rules stay empty.
 Done when:
 - `configs/genres/xianxia.yaml` and `configs/novels/pntt1.yaml` exist, and config is split into global, genre and novel levels
 - The Redis service is removed from `docker-compose.yml`
 - Project layout and dependency files follow the owner's answers to OQ-01, OQ-02 and OQ-08
-- `py -m compileall -q src` passes
+- A unit test shows the three config levels load and merge
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
 - none yet
 Sub-goals:
 - none yet
 Changes:
-- none yet
+- 2026-10-31: owner approved the goal and the decisions above; added the config unit test line and the pytest check
 
-### G-2: S1-T2 SQLite schema and repository layer (proposed)
-Plan: docs/IMPLEMENTATION_PLAN.md, S1-T2. Depends on G-1. The owner must approve this goal before work starts.
-Needs owner decisions: OQ-05 (`jobs` rows for arc-level stages), OQ-06 (undefined types this task needs), and how unit tests join the Project commands.
+### G-2: S1-T2 SQLite schema and repository layer (active)
+Plan: docs/IMPLEMENTATION_PLAN.md, S1-T2. Depends on G-1.
+Owner decisions: OQ-05 deferred to S3-T1 (`jobs` built as in the blueprint, chapter-level stages only for now); OQ-06 deferred (this task needs none of those types); `feedback` gains `novel_id`; tests run with `uv run pytest tests/unit`.
 Done when:
-- All 15 tables in the plan exist with `novel_id` scoping, WAL mode and foreign keys on
-- Repository methods require `novel_id` and `chapter_max`, and a unit test proves no method accepts a missing bound
-- That unit test and `py -m compileall -q src` both pass
+- All 15 tables in the plan exist with `novel_id` scoping, including an added `novel_id` on `feedback`, with WAL mode and foreign keys on
+- Story-content reads require `novel_id` and `chapter_max` and reject `None`; writes and operational methods require `novel_id`, and only the novel list and novel-free `feedback` writes are exempt; `--full` passes `total_chapters`, so a bound is never null
+- A unit test checks every public repository method against that rule and a short exceptions list
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
 - none yet
 Sub-goals:
 - none yet
 Changes:
-- none yet
+- 2026-10-31: owner approved the goal and the decisions above; reworded the table, bound and test lines
 
 ## Parked
 
