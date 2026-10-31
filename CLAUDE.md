@@ -70,9 +70,9 @@ Quick one-offs that skip the plan step need no entry.
   report it; don't work around it.
 
 ## Project commands
-- Install: `py -m pip install -r requirements.txt` (not needed for docs-only tasks)
+- Install: `uv sync` once `pyproject.toml` exists (not needed for docs-only tasks)
 - Checks the verifier must run: `py -m compileall -q src` (use `py`; `python` is a Store stub here)
-- Optional extra checks: none (the repo has no tests yet)
+- Also run `uv run pytest tests/unit` once `tests/unit` exists
 - Base branch: `main`
 - Docs-only tasks: also check every acceptance criterion against the source document and `src/`;
   a passing compile check alone proves nothing about a document.

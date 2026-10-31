@@ -81,7 +81,9 @@ process.stdin.on('end', () => {
   } else {
     const path = String(input.file_path || input.notebook_path || input.path || '');
     if (path && SECRET_PATH.test(path)) block('secret files (.env, keys, credentials) are off limits');
-    if (path && tool !== 'Read' && tool !== 'Grep' && tool !== 'Glob' && PROTECTED_FILES.test(path)) {
+    // Judge a worktree's files by their path inside it: the worktree itself lives under .claude/.
+    const inRepo = path.replace(/\\/g, '/').replace(/^.*\/\.claude\/worktrees\/[^/]+\//, '');
+    if (path && tool !== 'Read' && tool !== 'Grep' && tool !== 'Glob' && PROTECTED_FILES.test(inRepo)) {
       block('.claude/, .github/workflows/ and CLAUDE.md are owner-managed; ask the owner to change them');
     }
   }
