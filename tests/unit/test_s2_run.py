@@ -48,8 +48,13 @@ class Snapshot(_SnapshotBase):
         return tuple.__getitem__(self, key)
 
 
-def snapshot(conn: sqlite3.Connection, novel_id: str) -> Snapshot:
-    r"""Return snapshot of entities, aliases, links, and jobs (without updated_at and attempts) in fixed order."""
+def snapshot(conn: sqlite3.Connection, novel_id: str, *, comparable: bool = False) -> Snapshot:
+    r"""Return snapshot of entities, aliases, links, and jobs in fixed order.
+
+    - Default (comparable=False): jobs query is SELECT * (for before/after checks on one database).
+    - comparable=True: jobs query selects every column except updated_at and attempts (keeping error),
+      for comparing two separate runs across databases.
+    """
     cur = conn.cursor()
     entities = [
         tuple(r)
@@ -72,13 +77,18 @@ def snapshot(conn: sqlite3.Connection, novel_id: str) -> Snapshot:
             (novel_id,),
         ).fetchall()
     ]
+    if comparable:
+        jobs_query = (
+            "SELECT novel_id, chapter_id, stage, status, input_hash, prompt_version, model, error "
+            "FROM jobs WHERE novel_id = ? AND stage = 's2' ORDER BY chapter_id"
+        )
+    else:
+        jobs_query = (
+            "SELECT * FROM jobs WHERE novel_id = ? AND stage = 's2' ORDER BY chapter_id"
+        )
     jobs = [
         tuple(r)
-        for r in cur.execute(
-            "SELECT chapter_id, stage, status, input_hash, prompt_version, model "
-            "FROM jobs WHERE novel_id = ? AND stage = 's2' ORDER BY chapter_id",
-            (novel_id,),
-        ).fetchall()
+        for r in cur.execute(jobs_query, (novel_id,)).fetchall()
     ]
     return Snapshot(entities=entities, aliases=aliases, links=links, jobs=jobs)
 
@@ -394,6 +404,7 @@ def test_second_run_changes_no_row_and_makes_no_model_call(
     res1 = run_s2(repo, novel_id="pntt1", config=cfg, model=FunctionModel(fake1), prompts_dir=PROMPTS_DIR)
     assert res1.written == 2
 
+    # Default comparable=False uses SELECT * on jobs, detecting any change to attempts, updated_at, or error
     snap_before = snapshot(db_conn, "pntt1")
 
     fake2 = FakeAdjudicator()
@@ -531,8 +542,8 @@ def test_resuming_chapter_to_2_then_3(
     assert res_clean.skipped == 0
     assert fake_clean.calls == 1
 
-    snap_resumed = snapshot(db_conn, "pntt1")
-    snap_clean = snapshot(clean_conn, "pntt1")
+    snap_resumed = snapshot(db_conn, "pntt1", comparable=True)
+    snap_clean = snapshot(clean_conn, "pntt1", comparable=True)
     assert snap_resumed == snap_clean
     clean_conn.close()
 
@@ -787,7 +798,13 @@ def test_model_failure_in_chapter_2_of_3(
     assert res_resume.skipped == 1
     assert res_resume.written == 2
 
-    # Clean run in separate DB for snapshot comparison
+    # Verify error is null after recovery
+    recovered_job2 = repo.get_job(novel_id="pntt1", chapter_id=2, stage="s2")
+    assert recovered_job2 is not None
+    assert recovered_job2["status"] == "done"
+    assert recovered_job2["error"] is None
+
+    # Clean run in separate DB for snapshot comparison with comparable=True
     clean_conn = connect(tmp_path / "clean.db")
     init_schema(clean_conn)
     clean_repo = Repository(clean_conn)
@@ -798,8 +815,8 @@ def test_model_failure_in_chapter_2_of_3(
     clean_fake = FakeAdjudicator(default_decision=True)
     run_s2(clean_repo, novel_id="pntt1", config=cfg, model=FunctionModel(clean_fake), prompts_dir=PROMPTS_DIR)
 
-    snap_recovered = snapshot(db_conn, "pntt1")
-    snap_clean = snapshot(clean_conn, "pntt1")
+    snap_recovered = snapshot(db_conn, "pntt1", comparable=True)
+    snap_clean = snapshot(clean_conn, "pntt1", comparable=True)
     assert snap_recovered == snap_clean
     clean_conn.close()
 
@@ -856,6 +873,7 @@ def test_stale_detection_and_rebuild(repo: Repository, db_conn: sqlite3.Connecti
         input_hash="diffhash",
     )
 
+    # Default comparable=False uses SELECT * on jobs, verifying no attempts/updated_at/error bump
     snap_before1 = snapshot(db_conn, "pntt1")
     fake_stale1 = FakeAdjudicator()
     call_count_before1 = fake_stale1.calls
@@ -927,6 +945,7 @@ def test_rebuild_raises_value_error_when_entity_events_exist(
     save_chapter_and_extraction(repo, chapter_id=1)
     run_s2(repo, novel_id="pntt1", config=cfg, model=FunctionModel(FakeAdjudicator()), prompts_dir=PROMPTS_DIR)
 
+    # Default comparable=False uses SELECT * on jobs
     snap_before = snapshot(db_conn, "pntt1")
 
     cur = db_conn.cursor()
