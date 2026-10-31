@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from enum import Enum
 import functools
 import inspect
 import sqlite3
@@ -435,6 +436,63 @@ class Repository:
             )
             self._conn.execute(
                 "DELETE FROM entities WHERE novel_id = ?", (novel_id,)
+            )
+            self._conn.execute(
+                "DELETE FROM jobs WHERE novel_id = ? AND stage = ?",
+                (novel_id, stage),
+            )
+
+    def save_ledger(
+        self,
+        *,
+        novel_id: str,
+        chapter_id: int,
+        events: list[dict[str, Any]],
+        stage: str,
+        input_hash: str,
+    ) -> None:
+        _validate_novel_id(novel_id)
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM entity_events WHERE novel_id = ? AND chapter_id = ?",
+                (novel_id, chapter_id),
+            )
+            for ev in events:
+                event_type = ev["event_type"]
+                if isinstance(event_type, Enum):
+                    event_type = event_type.value
+                self._conn.execute(
+                    "INSERT INTO entity_events ("
+                    "novel_id, id, chapter_id, entity_id, event_type, ordinal, "
+                    "holder_entity_id, tier_or_realm, realm_rank, description, evidence"
+                    ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        novel_id,
+                        ev["id"],
+                        chapter_id,
+                        ev["entity_id"],
+                        event_type,
+                        ev["ordinal"],
+                        ev.get("holder_entity_id"),
+                        ev.get("tier_or_realm"),
+                        ev.get("realm_rank"),
+                        ev["description"],
+                        ev.get("evidence"),
+                    ),
+                )
+            self._upsert_job(
+                novel_id=novel_id,
+                chapter_id=chapter_id,
+                stage=stage,
+                status="done",
+                input_hash=input_hash,
+            )
+
+    def clear_ledger(self, *, novel_id: str, stage: str) -> None:
+        _validate_novel_id(novel_id)
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM entity_events WHERE novel_id = ?", (novel_id,)
             )
             self._conn.execute(
                 "DELETE FROM jobs WHERE novel_id = ? AND stage = ?",

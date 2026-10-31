@@ -27,6 +27,9 @@ dependencies = [
     "jinja2>=3.1.0",
 ]
 
+[project.scripts]
+xn = "xn.cli.main:app"
+
 [dependency-groups]
 dev = [
     "pytest>=8.0.0",

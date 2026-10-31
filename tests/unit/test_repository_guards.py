@@ -55,6 +55,8 @@ OPERATIONAL_METHODS = [
     "next_entity_id",
     "save_resolution",
     "clear_resolution",
+    "save_ledger",
+    "clear_ledger",
 ]
 
 EXEMPT_METHODS = [
@@ -273,6 +275,13 @@ def test_operational_parameter_guards(repo: Repository) -> None:
             "model": "m",
         },
         "clear_resolution": {"stage": "s2"},
+        "save_ledger": {
+            "chapter_id": 1,
+            "events": [],
+            "stage": "s3",
+            "input_hash": "h",
+        },
+        "clear_ledger": {"stage": "s3"},
     }
 
     for method_name in OPERATIONAL_METHODS:
