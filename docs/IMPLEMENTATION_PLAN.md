@@ -110,10 +110,11 @@ flowchart TD
   - *Files changed/deleted:* Supersedes `src/schemas/lifecycle.py`.
   - *Details:* Writes `entity_events` with unique key `(novel_id, chapter_id, entity_id, event_type, ordinal)`. Per-chapter transactions. Records job status in `jobs`. Implements `xn run --novel pntt1 --stage s1 --from 1 --to 2673 [--stale-only]` CLI runner logic (blueprint §3.2 general form; Sprint 1 execution scope runs `--to 100`).
   - *Dependencies:* S1-T2, S1-T5 (derived from data flow: writes resolved entity events to ledger).
-- **S1-T7: Extractor Benchmark (qwen2.5:14b vs qwen3:14b)** (Phase 2 table, Phase 4 Sprint 1, BP-OQ-1)
+- **S1-T7: Extractor Benchmark (qwen3.5:Q8 vs deepseek-r1:14b)** (Phase 2 table, Phase 4 Sprint 1, BP-OQ-1)
   - *Files changed:* `ARCHITECTURE_BLUEPRINT_v3.md` (record measured s/chapter in §3.9 cost table per Sprint 1 Acceptance Criterion 4).
   - *Task:* Benchmark on 50 chapters for schema success rate, entity recall, s/chapter, and VRAM footprint. Choose production local model. Record measured s/chapter in `ARCHITECTURE_BLUEPRINT_v3.md` §3.9 cost table (owns Sprint 1 Acceptance Criterion 4).
   - *Dependencies:* S1-T4 (derived: requires working S1 extractor and Modelfile).
+  - *chapter:* path of novel in .env file name NOVEL_PATH, it had pham_nhan_tu_tien_1 folder with 2674 chapters md files.
 - **S1-T8: Grounded Query Graph (Ledger Slice)** (§3.3, §3.4, ADR-01, ADR-02)
   - *Files created:* `src/xn/graph/workflow.py` (proposal), `src/xn/graph/nodes/route.py` (proposal), `src/xn/graph/nodes/bound.py` (proposal), `src/xn/graph/nodes/resolve.py` (proposal), `src/xn/graph/nodes/retrieve.py` (proposal), `src/xn/graph/nodes/gate.py` (proposal), `src/xn/graph/nodes/synthesize.py` (proposal), `src/xn/graph/nodes/verify.py` (proposal), `src/xn/schemas/state.py` (proposal), `prompts/router/v1.md` (proposal), `prompts/synthesize_compact/v1.md` (proposal).
   - *Files changed:* `src/xn/cli/main.py` (proposal: extend with `xn ask` query command in compact mode, §3.12), `src/xn/llm.py` (proposal: add OpenRouter wrapper).
