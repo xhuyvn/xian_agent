@@ -448,7 +448,6 @@ def test_criterion_4_all_section_2_refusals_raise_and_cli_exits_1_no_traceback(
         ["run", "--stage", "s2", "--from", "2", *base_args],
         ["run", "--stage", "s1", "--rebuild", *base_args],
         ["run", "--stage", "s3", "--rebuild", *base_args],
-        ["run", "--stage", "s0", *base_args],  # raw_dir missing on s0
     ]
 
     for args in cli_test_cases:
@@ -619,6 +618,23 @@ def test_criterion_7_failed_or_stopped_exits_1_successful_exits_0(
     res3 = runner.invoke(app, ["run", "--stage", "s3", *common_args])
     assert res3.exit_code == 1
     assert "stopped_at=1" in res3.output
+
+
+def test_cli_raw_dir_defaults_to_novel_folder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    create_chapter_files(tmp_path / "data" / "novels" / "pntt1" / "raw", count=2)
+    monkeypatch.chdir(tmp_path)
+
+    res = CliRunner().invoke(app, [
+        "run", "--novel", "pntt1", "--stage", "s0", "--to", "2",
+        "--configs-dir", str(CONFIGS_DIR),
+        "--prompts-dir", str(PROMPTS_DIR),
+    ])
+
+    assert res.exit_code == 0, res.output
+    assert "s0: processed=2 written=2 skipped=0" in res.output
+    assert (tmp_path / "data" / "xn.db").is_file()
 
 
 # ---------------------------------------------------------------------------

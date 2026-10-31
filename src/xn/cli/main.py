@@ -60,6 +60,9 @@ def run(
         typer.echo(f"Error: {err}")
         raise typer.Exit(code=1)
 
+    if raw_dir is None:
+        raw_dir = Path("data/novels") / novel / "raw"
+
     db_path = Path(db)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = connect(db_path)
