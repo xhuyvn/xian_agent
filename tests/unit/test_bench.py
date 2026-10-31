@@ -194,7 +194,7 @@ def test_run_benchmark_compares_models_on_the_same_chapters(tmp_path: Path) -> N
     assert by_name["wide"].peak_vram_mib == 9000
     assert by_name["wide"].chars_per_token == pytest.approx(3.0, rel=0.05)
     assert winner == "wide"
-    assert unloaded == ["wide", "wide", "narrow", "narrow"]
+    assert unloaded == ["wide", "narrow", "wide", "wide", "narrow", "narrow"]
 
     saved = json.loads((tmp_path / "out" / "report.json").read_text(encoding="utf-8"))
     assert saved["chapters"] == [1, 2, 3]

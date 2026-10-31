@@ -10,6 +10,7 @@ import sqlite3
 import statistics
 import subprocess
 import threading
+import time
 from typing import Any, Callable
 
 import typer
@@ -24,6 +25,7 @@ from xn.text import normalize_alias, strip_diacritics
 MIN_SCHEMA_SUCCESS = 0.95
 RECALL_TIE_MARGIN = 0.02
 VRAM_POLL_SECONDS = 1.0
+STOP_WAIT_SECONDS = 30
 
 
 @dataclass(frozen=True)
@@ -80,8 +82,13 @@ def read_vram_mib() -> int | None:
 
 
 def stop_model(serving_name: str) -> None:
-    """Unload a model so the next candidate's VRAM reading starts clean."""
+    """Unload a model and wait for Ollama to release it, so VRAM readings start clean."""
     subprocess.run(["ollama", "stop", serving_name], capture_output=True, check=False)
+    for _ in range(STOP_WAIT_SECONDS):
+        loaded = subprocess.run(["ollama", "ps"], capture_output=True, text=True, check=False).stdout
+        if serving_name not in loaded:
+            return
+        time.sleep(1)
 
 
 class _PeakVram:
@@ -287,7 +294,8 @@ def run_benchmark(
             init_schema(conn)
             repo = Repository(conn)
             run_s0(repo, novel_id=novel_id, raw_dir=raw_dir, config=config, chapter_limit=chapter_max)
-            unload(name)
+            for other in candidates:
+                unload(other.serving_name)
             baseline = read_vram()
             with _PeakVram(read_vram) as peak:
                 run_s1(

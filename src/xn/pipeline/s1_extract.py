@@ -14,7 +14,7 @@ from xn.llm import extractor_output, extractor_settings, local_model, run_logged
 from xn.prompts import load_prompt, profile_from_config
 from xn.schemas.extraction import ChapterExtraction, EntityEvent, MicroSummary
 from xn.storage.repository import Repository
-from xn.text import estimate_tokens, normalize_text
+from xn.text import CHARS_PER_TOKEN, estimate_tokens, normalize_text
 
 logger = logging.getLogger(__name__)
 
@@ -51,13 +51,13 @@ def _snap_to_whitespace(text: str, target: int) -> int:
 
 
 def _split_chapter(text: str) -> tuple[str, str]:
-    r"""Split text into exactly 2 parts overlapping by ~300 tokens (480 chars).
+    r"""Split text into exactly 2 parts overlapping by ~300 tokens.
 
     Cut around the midpoint, snapped to the nearest whitespace so no word is cut.
     """
     total_len = len(text)
     mid = total_len // 2
-    overlap_chars = int(OVERLAP_TOKENS * 1.6)
+    overlap_chars = int(OVERLAP_TOKENS * CHARS_PER_TOKEN)
     half_overlap = overlap_chars // 2
 
     target_start2 = max(0, mid - half_overlap)
