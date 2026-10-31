@@ -120,7 +120,9 @@ def test_real_pntt1_config_loads() -> None:
     assert "models" in cfg
     assert isinstance(cfg["models"], dict)
     assert "local_extractor" in cfg["models"]
-    assert cfg["models"]["local_extractor"]["name"] == "qwen2.5:14b"
+    assert cfg["models"]["local_extractor"]["name"] == "deepseek-r1:14b"
+    assert cfg["models"]["local_extractor"]["serving_name"] == "deepseek-r1-14b-12k"
+    assert cfg["models"]["local_extractor"]["output_mode"] == "native"
     assert "arc_detection" in cfg
     assert cfg["arc_detection"]["max_arc_length"] == 90
 

@@ -226,11 +226,11 @@ def test_chapter_over_7000_tokens_splits_and_merges(
         f"Bảo vật thần bí thứ {i:02d} xuất hiện giữa sơn cốc hoang vắng."
         for i in range(1, 31)
     ]
-    # Build text > 7000 tokens (17,000+ characters, ~10,700 tokens)
+    # Build text > 7000 tokens (25,000+ characters, ~7,700 tokens)
     pad = "Tu đạo vốn là con đường nghịch thiên cải mệnh muôn vàn gian nan trắc trở. "
     part1_quotes = " ".join(quotes[:15])
     part2_quotes = " ".join(quotes[15:])
-    text = (pad * 70) + "\n\n" + part1_quotes + "\n\n" + (pad * 70) + "\n\n" + part2_quotes + "\n\n" + (pad * 70)
+    text = (pad * 110) + "\n\n" + part1_quotes + "\n\n" + (pad * 110) + "\n\n" + part2_quotes + "\n\n" + (pad * 110)
 
     assert estimate_tokens(text) > MAX_CHAPTER_TOKENS
     sha256 = seed_chapter(repo, chapter_id=1, clean_text=text)
@@ -347,7 +347,7 @@ def test_chapter_over_7000_tokens_splits_and_merges(
     p2_start = len(text) - len(p2_clean)
 
     assert p2_start < p1_end
-    # ~300 tokens at 1.6 chars/token is 480 chars (allow slight deviation for word boundaries)
+    # ~300 tokens (allow slight deviation for word boundaries)
     overlap_tokens = estimate_tokens(text[p2_start:p1_end])
     assert 250 <= overlap_tokens <= 350
 
