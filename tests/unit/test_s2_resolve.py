@@ -81,11 +81,13 @@ def make_adjudication_agent(
         resp_bool = model_func_or_bool
 
         def func(messages: list[Any], info: Any) -> ModelResponse:
+            prompt_str = ""
             for m in messages:
                 for p in getattr(m, "parts", []):
                     c = getattr(p, "content", None)
                     if isinstance(c, str):
-                        captured_prompts.append(c)
+                        prompt_str = c
+            captured_prompts.append(prompt_str)
             tool_name = info.output_tools[0].name
             payload = {"same_entity": resp_bool, "reason": reason}
             part = ToolCallPart(tool_name, payload)
