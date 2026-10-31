@@ -19,6 +19,8 @@ const BLOCKED_COMMANDS = [
   [/\bgh\s+(workflow\s+run|release\s+create)\b/, 'triggering workflows/releases is the owner\'s decision'],
   [/\bnpm\s+publish\b|\bpnpm\s+publish\b|\byarn\s+publish\b/, 'publishing packages is not allowed'],
   [/\bvercel\b.*--prod\b|\bnetlify\s+deploy\b.*--prod\b|\bfirebase\s+deploy\b|\bfly\s+deploy\b|\bwrangler\s+deploy\b/, 'deploys run only through GitHub Actions'],
+  [/\bdocker\b.*\b(volume\s+(rm|prune)|system\s+prune)\b|\bdocker[\s-]compose\b.*\bdown\b.*(\s-v\b|--volumes\b)/, 'removing Docker volumes can destroy data; ask the owner'],
+  [/\bdocker[\s-]compose\b.*\bconfig\b/, 'docker compose config prints values from secret files'],
   [/\bkubectl\s+(apply|delete|replace|rollout)\b|\bterraform\s+(apply|destroy)\b|\bdocker\s+push\b/, 'infrastructure changes run only through GitHub Actions'],
 ];
 
