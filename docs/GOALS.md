@@ -21,6 +21,7 @@ Done when:
 Rounds:
 - R-1 2026-10-31: deliver schema, prompts, llm.py and Modelfile -> FAIL, 3 blockers, 130ef5a, 328568 agy tokens
 - R-2 2026-10-31: clear the 3 llm.py blockers -> FAIL, 1 blocker, ae6bd6e, 102447 agy tokens
+- R-3 2026-10-31: fix the test_llm.py import and prove the R-2 fixes -> PASS, 0 blockers, 87da24b, 22777 agy tokens
 Sub-goals:
 - none yet
 Changes:
