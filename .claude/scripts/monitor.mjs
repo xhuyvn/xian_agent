@@ -31,6 +31,7 @@ export function formatEvent(e) {
     case 'subagent_end': return `${time} END      ${who}${e.verdict ? `${e.verdict} ` : ''}${e.text}`;
     case 'agy_start': return `${time} AGY >    ${e.slug} turn ${e.turn}: ${e.text}`;
     case 'agy_end': return `${time} AGY <    ${e.outcome}, ${k(e.turnTokens)} tokens, ${e.turnSeconds}s, ${e.files} files, ${e.denied} denied (run total ${k(e.runTotalTokens)})`;
+    case 'checks': return `${time} CHECKS   ${e.passed ? 'passed' : `failed: ${e.text}`}${e.fixes ? ` after ${e.fixes} auto-fixes` : ''}`;
     case 'goals_edit': return `${time} GOALS    ${who}${e.text}`;
     case 'git': return `${time} GIT      ${who}${e.text}`;
     case 'blocked': return `${time} BLOCKED  ${e.reason}: ${e.text}`;
