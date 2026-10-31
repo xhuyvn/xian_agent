@@ -46,7 +46,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Bash|Edit|Write|MultiEdit|SubagentHandback",
+        "matcher": "Bash|PowerShell|Edit|Write|MultiEdit|SubagentHandback",
         "hooks": [
           {
             "type": "command",

@@ -49,5 +49,6 @@ The script prints one JSON object. Return to the lead:
   brief? anything outside the files in scope?
 
 `outcome` meanings: `changes` (committed on the branch), `no_changes`, `blocked` (denied actions,
-no changes), `failed` (agy error/timeout). Never describe a run as done or tested — verification
+no changes), `interrupted` (agy stopped early but committed work, which may be incomplete),
+`failed` (agy error/timeout, nothing new committed). Never describe a run as done or tested — verification
 is the verifier's job.

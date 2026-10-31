@@ -7,6 +7,7 @@ const GIT_ACTIONS = /\b(git\s+(-C\s+\S+\s+)?(commit|merge|push)|gh\s+pr\s+create
 
 function report(agent, message) {
   const text = String(message ?? '');
+  if (!text.trim()) return null;
   return { type: 'subagent_end', agent, verdict: text.match(/VERDICT:\s*(PASS|FAIL)/)?.[1] ?? null, text: clip(text, 300) };
 }
 
@@ -27,7 +28,7 @@ function eventFor(p) {
         const added = String(input.new_string ?? input.content ?? '').split(/\r?\n/).filter(line => line.trim()).pop();
         return { type: 'goals_edit', agent: p.agent_type, text: clip(added || 'file updated') };
       }
-      if (p.tool_name === 'Bash' && GIT_ACTIONS.test(String(input.command || ''))) {
+      if (/^(Bash|PowerShell)$/.test(p.tool_name) && GIT_ACTIONS.test(String(input.command || ''))) {
         return { type: 'git', agent: p.agent_type, text: clip(input.command, 160) };
       }
       return null;

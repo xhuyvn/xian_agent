@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // Live view of the secretary's work:  node .claude/scripts/monitor.mjs [--once]
 // Shows the goals, then follows .secretary/activity.jsonl. Read-only.
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { basename, join } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { mainCheckout } from './activity-log.mjs';
 
 export function parseGoals(text) {
   const goals = [];
@@ -38,10 +39,9 @@ export function formatEvent(e) {
 }
 
 function goalsFile(repo) {
-  // The lead logs rounds on the task branch, so the newest copy may be in a worktree.
-  const worktrees = join(dirname(repo), `${basename(repo)}.worktrees`);
-  const copies = [join(repo, 'docs/GOALS.md')];
-  if (existsSync(worktrees)) for (const w of readdirSync(worktrees)) copies.push(join(worktrees, w, 'docs/GOALS.md'));
+  // The lead logs rounds on a branch, so the newest copy may be in any worktree.
+  const list = spawnSync('git', ['worktree', 'list', '--porcelain'], { cwd: repo, encoding: 'utf8' }).stdout;
+  const copies = [...list.matchAll(/^worktree (.+)$/gm)].map(m => join(m[1].trim(), 'docs/GOALS.md'));
   return copies.filter(existsSync).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0];
 }
 
@@ -54,15 +54,14 @@ function showGoals(repo) {
 }
 
 function main() {
-  const top = spawnSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });
-  if (top.status !== 0) { console.error('run this inside the project'); process.exit(1); }
-  const repo = top.stdout.trim();
+  const repo = mainCheckout(process.cwd());
+  if (!repo) { console.error('run this inside the project'); process.exit(1); }
   const log = join(repo, '.secretary', 'activity.jsonl');
   let offset = 0;
   let agyStartedAt = null;
   let lastBeat = 0;
 
-  const drain = () => {
+  const drain = live => {
     if (!existsSync(log)) return;
     const data = readFileSync(log);
     const fresh = data.subarray(offset);
@@ -75,16 +74,16 @@ function main() {
       console.log(formatEvent(event));
       if (event.type === 'agy_start') agyStartedAt = Date.parse(event.ts);
       if (event.type === 'agy_end') agyStartedAt = null;
-      if (event.type === 'goals_edit') showGoals(repo);
+      if (live && event.type === 'goals_edit') showGoals(repo);
     }
   };
 
   showGoals(repo);
-  drain();
+  drain(false);
   if (process.argv.includes('--once')) return;
   console.log('Watching. Press Ctrl+C to stop.');
   setInterval(() => {
-    drain();
+    drain(true);
     if (agyStartedAt && Date.now() - lastBeat >= 60000) {
       lastBeat = Date.now();
       console.log(`         agy still running, ${Math.round((Date.now() - agyStartedAt) / 60000)}m so far`);
