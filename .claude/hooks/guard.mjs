@@ -4,6 +4,9 @@
 // Edit the lists below to fit your project. Note: this guards Claude's own tools only —
 // agy's tools are limited separately (headless agy cannot run shell commands).
 
+import { appendFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+
 const PROTECTED_BRANCHES = ['main', 'master'];
 
 // Shell commands that are never allowed from an agent session.
@@ -25,7 +28,17 @@ const SECRET_PATH = /(^|[\s\/\\'"=])\.env(\.(?!example\b|sample\b|template\b)[\w
 // Files the agents must not modify (their own guardrails and CI).
 const PROTECTED_FILES = /(^|[\/\\])(\.claude[\/\\]|\.github[\/\\]workflows[\/\\]|CLAUDE\.md$)/i;
 
+let attempted = '';
+
 function block(reason) {
+  try {
+    // Inline on purpose: a logging problem must never stop a block from happening.
+    if (process.env.CLAUDE_PROJECT_DIR) {
+      const dir = join(process.env.CLAUDE_PROJECT_DIR, '.secretary');
+      mkdirSync(dir, { recursive: true });
+      appendFileSync(join(dir, 'activity.jsonl'), JSON.stringify({ ts: new Date().toISOString(), type: 'blocked', reason, text: attempted.slice(0, 160) }) + '\n');
+    }
+  } catch {}
   process.stderr.write(`Blocked by ai-secretary guard: ${reason}.\n`);
   process.exit(2);
 }
@@ -58,6 +71,7 @@ process.stdin.on('end', () => {
   try { payload = JSON.parse(raw); } catch { block('could not parse hook input'); }
   const tool = payload.tool_name || '';
   const input = payload.tool_input || {};
+  attempted = `${tool} ${input.command || input.file_path || input.notebook_path || input.path || ''}`;
 
   if (tool === 'Bash' || tool === 'PowerShell') {
     const cmd = String(input.command || '');
@@ -67,7 +81,9 @@ process.stdin.on('end', () => {
   } else {
     const path = String(input.file_path || input.notebook_path || input.path || '');
     if (path && SECRET_PATH.test(path)) block('secret files (.env, keys, credentials) are off limits');
-    if (path && tool !== 'Read' && tool !== 'Grep' && tool !== 'Glob' && PROTECTED_FILES.test(path)) {
+    // Judge a worktree's files by their path inside it: the worktree itself lives under .claude/.
+    const inRepo = path.replace(/\\/g, '/').replace(/^.*\/\.claude\/worktrees\/[^/]+\//, '');
+    if (path && tool !== 'Read' && tool !== 'Grep' && tool !== 'Glob' && PROTECTED_FILES.test(inRepo)) {
       block('.claude/, .github/workflows/ and CLAUDE.md are owner-managed; ask the owner to change them');
     }
   }

@@ -1,0 +1,24 @@
+categories:
+  - character
+  - weapon_treasure
+  - puppet_beast
+  - technique
+  - dungeon
+
+event_types:
+  ACQUISITION: "Nhận được, đoạt được, mua hoặc thu thập thực thể"
+  UPGRADE: "Thăng cấp, tiến hóa, tế luyện hoặc đột phá phẩm giai"
+  USED_IN_BATTLE: "Sử dụng thực thể trong giao tranh hoặc chiến đấu"
+  DAMAGED: "Bị tổn hại, rạn nứt, hao tổn linh tính hoặc bị thương"
+  TRANSFERRED: "Chuyển giao quyền sở hữu, ban tặng, trao đổi hoặc đổi chủ"
+  DESTROYED: "Bị phá hủy hoàn toàn, tiêu biến hoặc không thể khôi phục"
+  FALLEN_OR_SEALED: "Bị phong ấn, trấn áp, giam cầm hoặc vẫn lạc"
+  REVEALED_IDENTITY: "Tiết lộ thân phận thực sự, hóa danh hoặc liên kết danh tính mới"
+  MENTIONED: "Được nhắc tới trong đàm luận, hồi tưởng hoặc bối cảnh"
+
+extraction_hints:
+  - "Trích xuất thực thể kèm trích dẫn nguyên văn bằng chứng (evidence quote) không quá 25 từ."
+  - "Ghi nhận biến cố kèm phân loại event_type chính xác theo ngữ cảnh chương."
+  - "Chỉ ghi nhận thực thể khi có hành động, biến cố hoặc chuyển đổi sở hữu cụ thể."
+  - "Xác định rõ holder khi thực thể được sử dụng hoặc chuyển giao giữa các nhân vật."
+  - "Đánh dấu cờ location_change, realm_breakthrough, major_conflict dựa trên diễn biến cốt truyện chính."

@@ -27,3 +27,15 @@ def load_yaml_config(filepath: str = "configs/config.yaml") -> dict:
     return {}
 
 yaml_config = load_yaml_config()
+
+# Prototype compatibility: load arc_detection from novel config
+pntt1_path = "configs/novels/pntt1.yaml"
+if not os.path.exists(pntt1_path):
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    pntt1_path = os.path.join(repo_root, "configs", "novels", "pntt1.yaml")
+if os.path.exists(pntt1_path):
+    with open(pntt1_path, "r", encoding="utf-8") as f:
+        _pntt1_cfg = yaml.safe_load(f) or {}
+    if "arc_detection" in _pntt1_cfg:
+        yaml_config["arc_detection"] = _pntt1_cfg["arc_detection"]
+
