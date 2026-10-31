@@ -8,22 +8,6 @@ Round line: `R-<n> <date>: <what this round had to achieve> -> PASS|FAIL, <n> bl
 
 ## Active
 
-### G-3: S1-T3 pipeline stage S0, parse and clean (active)
-Plan: docs/IMPLEMENTATION_PLAN.md, S1-T3. Depends on G-1 and G-2.
-Owner decisions: OQ-15 S0 creates the `novels` row from `pntt1.yaml` if it is missing; S0 takes an upper chapter limit, default `total_chapters`; YAML front matter is stripped before hashing (blueprint deviation); BP-OQ-2 cleaning patterns stay empty, and a line counts as a watermark only above 5% of chapters and in at least 3; OQ-12 NFC only, through one shared function; OQ-13 non-matching files are skipped with a warning; `token_count` is characters / 1.6, to be calibrated in S1-T7. Also fixes the `upsert_job` nit on `attempts` and `updated_at`.
-Done when:
-- `src/xn/pipeline/s0_parse.py` sorts chapters by integer and aborts with a list of any missing or duplicate numbers
-- It converts Markdown to plain text, normalizes it and applies the cleaning rules
-- It stores `clean_text`, `sha256` and `token_count`, and records the stage in `jobs`
-- Running it twice gives identical rows
-- `tests/unit/test_s0_parse.py` covers all of this using made-up fixture chapters
-- `py -m compileall -q src` and `uv run pytest tests/unit` pass
-Rounds:
-Sub-goals:
-- none yet
-Changes:
-- 2026-10-31: owner approved the goal and the decisions above
-
 ### G-4: S1-T4 pipeline stage S1, extract (active)
 Plan: docs/IMPLEMENTATION_PLAN.md, S1-T4. Depends on G-3.
 Owner decisions: BP-OQ-1 the Modelfile targets `qwen2.5:14b`, the current config value, and the live run is left to S1-T7; `src/schemas/extraction.py` and `src/ingestion/pydantic_extractor.py` stay until S1-T8 replaces their importers (plan deviation). Two rounds: schema, prompts, `llm.py` and Modelfile first, then the extractor.
@@ -74,3 +58,20 @@ Sub-goals:
 - none yet
 Changes:
 - 2026-10-31: owner approved the goal and the decisions above; reworded the table, bound and test lines
+
+### G-3: S1-T3 pipeline stage S0, parse and clean (done)
+Plan: docs/IMPLEMENTATION_PLAN.md, S1-T3. Depends on G-1 and G-2.
+Owner decisions: OQ-15 S0 creates the `novels` row from `pntt1.yaml` if it is missing; S0 takes an upper chapter limit, default `total_chapters`; YAML front matter is stripped before hashing (blueprint deviation); BP-OQ-2 cleaning patterns stay empty, and a line counts as a watermark only above 5% of chapters and in at least 3; OQ-12 NFC only, through one shared function; OQ-13 non-matching files are skipped with a warning; `token_count` is characters / 1.6, to be calibrated in S1-T7. Also fixes the `upsert_job` nit on `attempts` and `updated_at`.
+Done when:
+- `src/xn/pipeline/s0_parse.py` sorts chapters by integer and aborts with a list of any missing or duplicate numbers
+- It converts Markdown to plain text, normalizes it and applies the cleaning rules
+- It stores `clean_text`, `sha256` and `token_count`, and records the stage in `jobs`
+- Running it twice gives identical rows
+- `tests/unit/test_s0_parse.py` covers all of this using made-up fixture chapters
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-10-31: deliver S0 parse and clean with its tests -> PASS, 0 blockers, 5b558c8, 264233 agy tokens
+Sub-goals:
+- none yet
+Changes:
+- 2026-10-31: owner approved the goal and the decisions above
