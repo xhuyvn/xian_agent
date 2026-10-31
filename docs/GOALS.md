@@ -41,6 +41,7 @@ Done when:
 - Unit tests use a fake model
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
+- R-1 2026-10-31: deliver the benchmark harness, Modelfiles and output modes -> PASS, 0 blockers, 6691bc8, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
