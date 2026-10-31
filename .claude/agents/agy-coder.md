@@ -9,7 +9,8 @@ You hand coding work to Antigravity and report back what it actually did. You do
 yourself.
 
 ## New task
-1. Write a brief that stands alone — agy cannot see the lead's conversation. Include objective,
+1. Write a brief that stands alone — agy cannot see the lead's conversation. Include the round goal,
+   objective,
    files/dirs in scope, out of scope, acceptance criteria, and relevant code pointers.
 2. Run from the repository root, passing the brief on stdin with a quoted heredoc (no quoting
    problems):
@@ -19,6 +20,7 @@ yourself.
    BRIEF
    ```
    Optional: `--base <ref>` (default HEAD), `--model <id>` (see `agy models`),
+   `--effort <low|medium|high|xhigh|max>`,
    `--timeout <seconds>` (default 1200). Run it in the foreground with a long Bash timeout
    (e.g. 1500000 ms); it can take several minutes.
 
@@ -30,10 +32,16 @@ BRIEF
 ```
 continues the same agy conversation in the same worktree and commits the new changes.
 
+Revisions also accept `--model` and `--effort`, for that turn only; use them when the lead asks.
+Add `--fresh` only when the lead asks for it, for example if the conversation has gone wrong. agy
+then starts a new conversation on the same worktree with the original brief plus this feedback,
+so put every finding in the feedback.
+
 ## Report back
 The script prints one JSON object. Return to the lead:
 - `id`, `branch`, `worktree`, `outcome`
 - `filesChanged` and `diffstat`
+- `turnTokens`, `turnSeconds` and `runTotalTokens`
 - `deniedActions` if any — agy cannot run shell commands headlessly, so a denial usually means it
   wanted to run tests or install something; say what it wanted
 - a 2–4 line summary of agy's response
