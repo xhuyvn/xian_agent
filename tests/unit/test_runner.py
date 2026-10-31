@@ -33,6 +33,18 @@ PROMPTS_DIR = Path(__file__).resolve().parents[2] / "prompts"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SRC_DIR = REPO_ROOT / "src"
 
+SUMMARY_200 = (
+    "Hàn Lập tiến vào Thất Huyền Môn, bắt đầu con đường tu tiên gian nan nhưng đầy kiên định. "
+    "Trải qua nhiều thử thách tại Thất Huyền Môn, hắn dần tích lũy kinh nghiệm, tìm kiếm cơ duyên "
+    "và chuẩn bị cho những bước tiến xa hơn trên con đường tu tiên đầy hiểm nguy phía trước."
+)
+
+ALTERED_SUMMARY_200 = (
+    "Nội dung tóm tắt chương truyện đã được cập nhật với nhiều tình tiết mới mẻ và biến cố bất ngờ. "
+    "Hàn Lập tiếp tục nỗ lực tu luyện không ngừng nghỉ, vượt qua mọi cản trở để nâng cao tu vi "
+    "trong môi trường đầy hiểm hách và khắc nghiệt của thế giới tu chân vô tận này."
+)
+
 
 def create_chapter_files(raw_dir: Path, count: int = 3) -> None:
     """Create raw chapter Markdown files with unique lines to avoid S0 watermark stripping."""
@@ -111,7 +123,7 @@ class FakeModelTracker:
                 "realm_breakthrough": False,
                 "major_conflict": False,
                 "time_skip_years": 0.0,
-                "micro_summary": f"Tóm tắt chương {cid}: Diễn biến tại Thất Huyền Môn.",
+                "micro_summary": SUMMARY_200,
                 "events": [
                     {
                         "name": name,
@@ -133,7 +145,7 @@ class FakeModelTracker:
             part = ToolCallPart(tool_name, payload)
             return ModelResponse(parts=[part], usage=RequestUsage(input_tokens=50, output_tokens=20))
 
-        payload = {"text": "Tóm tắt vi mô chương truyện Thất Huyền Môn."}
+        payload = {"text": SUMMARY_200}
         part = ToolCallPart(tool_name, payload)
         return ModelResponse(parts=[part], usage=RequestUsage(input_tokens=50, output_tokens=20))
 
@@ -287,12 +299,12 @@ def test_criterion_2_stale_only_on_s1_and_s3(
     res = runner.invoke(app, ["run", "--stage", "s3", "--to", "2", *common_args])
     assert res.exit_code == 0
 
-    # Alter chapter 2's extraction payload in extractions table
+    # Alter chapter 2's extraction payload in extractions table using ALTERED_SUMMARY_200 (length >= 200)
     conn = connect(db_path)
     try:
         ext2 = conn.execute("SELECT payload FROM extractions WHERE novel_id = 'pntt1' AND chapter_id = 2").fetchone()[0]
         data2 = json.loads(ext2)
-        data2["micro_summary"] = "Tóm tắt chương 2 đã thay đổi hoàn toàn."
+        data2["micro_summary"] = ALTERED_SUMMARY_200
         conn.execute(
             "UPDATE extractions SET payload = ? WHERE novel_id = 'pntt1' AND chapter_id = 2",
             (json.dumps(data2),),
@@ -543,12 +555,12 @@ def test_criterion_6_stale_s2_without_rebuild_mentions_rebuild(
         res = runner.invoke(app, ["run", "--stage", stage, *common_args])
         assert res.exit_code == 0
 
-    # Modify chapter 1's extraction payload to invalidate S2 input_hash
+    # Modify chapter 1's extraction payload to invalidate S2 input_hash using ALTERED_SUMMARY_200 (length >= 200)
     conn = connect(db_path)
     try:
         ext1 = conn.execute("SELECT payload FROM extractions WHERE novel_id = 'pntt1' AND chapter_id = 1").fetchone()[0]
         data1 = json.loads(ext1)
-        data1["micro_summary"] = "Nội dung trích xuất chương 1 đã bị biến đổi."
+        data1["micro_summary"] = ALTERED_SUMMARY_200
         conn.execute(
             "UPDATE extractions SET payload = ? WHERE novel_id = 'pntt1' AND chapter_id = 1",
             (json.dumps(data1),),
