@@ -221,11 +221,11 @@ def test_chapter_over_7000_tokens_splits_and_merges(
         f"Bảo vật thần bí thứ {i:02d} xuất hiện giữa sơn cốc hoang vắng."
         for i in range(1, 31)
     ]
-    # Build text > 7000 tokens (~12,500 characters)
+    # Build text > 7000 tokens (17,000+ characters, ~10,700 tokens)
     pad = "Tu đạo vốn là con đường nghịch thiên cải mệnh muôn vàn gian nan trắc trở. "
     part1_quotes = " ".join(quotes[:15])
     part2_quotes = " ".join(quotes[15:])
-    text = (pad * 40) + "\n\n" + part1_quotes + "\n\n" + (pad * 40) + "\n\n" + part2_quotes + "\n\n" + (pad * 40)
+    text = (pad * 70) + "\n\n" + part1_quotes + "\n\n" + (pad * 70) + "\n\n" + part2_quotes + "\n\n" + (pad * 70)
 
     assert estimate_tokens(text) > MAX_CHAPTER_TOKENS
     sha256 = seed_chapter(repo, chapter_id=1, clean_text=text)
@@ -248,7 +248,8 @@ def test_chapter_over_7000_tokens_splits_and_merges(
 
         if tool_name == "MicroSummary":
             payload = make_canned_summary(
-                "Tóm tắt hợp nhất toàn bộ hai phần của chương truyện tu tiên với độ dài trên hai trăm ký tự nhằm đáp ứng schema MicroSummary."
+                "Tóm tắt hợp nhất toàn bộ hai phần của chương truyện tu tiên với độ dài trên hai trăm ký tự nhằm đáp ứng schema MicroSummary. "
+                "Hàn Lập tiến vào Thất Huyền Môn, từng bước tu luyện và tích lũy kinh nghiệm để sẵn sàng đối mặt với những thử thách lớn hơn phía trước."
             )
         elif len(call_records) == 1:
             events_p1 = [
@@ -637,7 +638,7 @@ def test_single_call_failure_succeeds_on_split(
             raise RuntimeError("Simulated transient inference failure on single-call")
 
         if tool_name == "MicroSummary":
-            payload = make_canned_summary("Tóm tắt sau khi chia nhỏ chương truyện thành công vượt mức mong đợi.")
+            payload = make_canned_summary()
         else:
             payload = make_canned_extraction(chapter_id=1)
 
@@ -741,3 +742,48 @@ def test_save_extraction_leaves_nothing_if_job_write_fails(
 
     cur_job = db_conn.execute("SELECT * FROM jobs WHERE chapter_id = 1 AND stage = 's1'")
     assert cur_job.fetchone() is None
+
+
+def test_save_extraction_failure_marks_job_failed_and_subsequent_chapter_succeeds(
+    repo: Repository, db_conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    r"""Verify save_extraction failure marks job failed, leaves no extraction, and next chapter finishes done."""
+    seed_chapter(repo, chapter_id=1, clean_text="Chương 1 nội dung bình thường.")
+    seed_chapter(repo, chapter_id=2, clean_text="Chương 2 nội dung bình thường.")
+    cfg = make_config(total_chapters=2)
+
+    def model_func(messages: list[Any], info: Any) -> ModelResponse:
+        output_tools = getattr(info, "output_tools", None)
+        tool_name = output_tools[0].name if output_tools else "ChapterExtraction"
+        payload = make_canned_extraction()
+        part = ToolCallPart(tool_name, payload)
+        return ModelResponse(parts=[part], usage=RequestUsage(input_tokens=40, output_tokens=20))
+
+    real_save_extraction = repo.save_extraction
+
+    def mock_save_extraction(*args: Any, **kwargs: Any) -> None:
+        if kwargs.get("chapter_id") == 1:
+            raise sqlite3.OperationalError("Simulated disk error during save_extraction")
+        real_save_extraction(*args, **kwargs)
+
+    monkeypatch.setattr(repo, "save_extraction", mock_save_extraction)
+
+    model = FunctionModel(model_func)
+    result = run_s1(repo, novel_id="pntt1", config=cfg, model=model)
+
+    assert result == S1Result(processed=2, written=1, skipped=0, failed=1)
+
+    # Chapter 1 ended failed with error and has no extraction row
+    job1 = repo.get_job(novel_id="pntt1", chapter_id=1, stage="s1")
+    assert job1 is not None
+    assert job1["status"] == "failed"
+    assert "Simulated disk error during save_extraction" in (job1["error"] or "")
+    cur1 = db_conn.execute("SELECT * FROM extractions WHERE chapter_id = 1")
+    assert cur1.fetchone() is None
+
+    # Chapter 2 ended done and has extraction row
+    job2 = repo.get_job(novel_id="pntt1", chapter_id=2, stage="s1")
+    assert job2 is not None
+    assert job2["status"] == "done"
+    cur2 = db_conn.execute("SELECT * FROM extractions WHERE chapter_id = 2")
+    assert cur2.fetchone() is not None

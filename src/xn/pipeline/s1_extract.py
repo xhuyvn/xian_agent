@@ -168,13 +168,8 @@ def run_s1(
     if model is None:
         model = local_model(config)
 
-    models_cfg = config.get("models", {}).get("local_extractor", {})
-    serving_name = (
-        models_cfg.get("serving_name")
-        or getattr(model, "model_name", None)
-        or "local_extractor"
-    )
-    temperature = models_cfg.get("temperature", 0.1)
+    serving_name = config["models"]["local_extractor"]["serving_name"]
+    temperature = config["models"]["local_extractor"].get("temperature", 0.1)
 
     profile = profile_from_config(config)
 
@@ -226,7 +221,6 @@ def run_s1(
         )
 
         tokens = estimate_tokens(clean_text)
-        extraction: ChapterExtraction
 
         try:
             if tokens <= MAX_CHAPTER_TOKENS:
@@ -254,47 +248,47 @@ def run_s1(
                     extract_prompt_version=extract_prompt.prompt_version,
                     resummary_prompt_version=resummary_prompt.prompt_version,
                 )
-        except Exception as split_err:
-            logger.error("Chapter %d extraction failed: %s", chapter_id, split_err)
+
+            valid_events = []
+            for ev in extraction.events:
+                if ev.category not in allowed_categories:
+                    logger.warning(
+                        "Chapter %d: dropping event '%s' with invalid category '%s'",
+                        chapter_id, ev.name, ev.category,
+                    )
+                    continue
+
+                score = rapidfuzz.fuzz.partial_ratio(normalize_text(ev.evidence), clean_text)
+                if score < EVIDENCE_MIN_SCORE:
+                    logger.warning(
+                        "Chapter %d: dropping event '%s' with low evidence score %.1f < %d: %s",
+                        chapter_id, ev.name, score, EVIDENCE_MIN_SCORE, ev.evidence,
+                    )
+                    continue
+
+                valid_events.append(ev)
+
+            final_extraction = extraction.model_copy(
+                update={
+                    "chapter_id": chapter_id,
+                    "events": valid_events,
+                }
+            )
+
+            repo.save_extraction(
+                novel_id=novel_id, chapter_id=chapter_id, payload=final_extraction.model_dump_json(),
+                prompt_version=extract_prompt.prompt_version, model=serving_name, stage=STAGE,
+                input_hash=input_hash,
+            )
+            written += 1
+        except Exception as err:
+            logger.error("Chapter %d extraction failed: %s", chapter_id, err)
             repo.upsert_job(
                 novel_id=novel_id, chapter_id=chapter_id, stage=STAGE, status="failed",
                 input_hash=input_hash, prompt_version=extract_prompt.prompt_version,
-                model=serving_name, error=str(split_err),
+                model=serving_name, error=str(err),
             )
             failed += 1
             continue
-
-        valid_events = []
-        for ev in extraction.events:
-            if ev.category not in allowed_categories:
-                logger.warning(
-                    "Chapter %d: dropping event '%s' with invalid category '%s'",
-                    chapter_id, ev.name, ev.category,
-                )
-                continue
-
-            score = rapidfuzz.fuzz.partial_ratio(normalize_text(ev.evidence), clean_text)
-            if score < EVIDENCE_MIN_SCORE:
-                logger.warning(
-                    "Chapter %d: dropping event '%s' with low evidence score %.1f < %d: %s",
-                    chapter_id, ev.name, score, EVIDENCE_MIN_SCORE, ev.evidence,
-                )
-                continue
-
-            valid_events.append(ev)
-
-        final_extraction = extraction.model_copy(
-            update={
-                "chapter_id": chapter_id,
-                "events": valid_events,
-            }
-        )
-
-        repo.save_extraction(
-            novel_id=novel_id, chapter_id=chapter_id, payload=final_extraction.model_dump_json(),
-            prompt_version=extract_prompt.prompt_version, model=serving_name, stage=STAGE,
-            input_hash=input_hash,
-        )
-        written += 1
 
     return S1Result(processed=processed, written=written, skipped=skipped, failed=failed)
