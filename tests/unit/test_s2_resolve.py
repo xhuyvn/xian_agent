@@ -844,3 +844,55 @@ def test_empty_normalized_alias_returns_none(caplog: pytest.LogCaptureFixture) -
         res = resolver.resolve(name="   ", category="character", chapter_id=1, context="ctx")
     assert res is None
     assert "Empty normalized alias" in caplog.text
+
+
+def test_make_adjudicator_strict_boolean_match(monkeypatch: pytest.MonkeyPatch, repo: Repository) -> None:
+    r"""Verify adjudicator matches only boolean True and rejects raw strings, dicts, and non-boolean attributes."""
+    import types
+    import xn.pipeline.s2_resolve as s2_mod
+
+    stub_output: Any = None
+
+    def stub_run_logged(*args: Any, **kwargs: Any) -> Any:
+        return types.SimpleNamespace(output=stub_output)
+
+    monkeypatch.setattr(s2_mod, "run_logged", stub_run_logged)
+
+    adj = make_adjudicator(
+        agent=object(),
+        repo=repo,
+        novel_id="pntt1",
+        serving_name="test-model",
+        prompt_version="v1",
+    )
+    m = Mention(name="Hàn Lập", category="character", chapter_id=1, context="ctx")
+    c = Candidate(entity_id=1, aliases=["hàn lập"], contexts=["ctx"])
+
+    # Raw string "no" must return False
+    stub_output = "no"
+    assert adj(m, c) is False
+
+    # Raw string "yes" must return False
+    stub_output = "yes"
+    assert adj(m, c) is False
+
+    # {"same_entity": True} must return False
+    stub_output = {"same_entity": True}
+    assert adj(m, c) is False
+
+    # {} must return False
+    stub_output = {}
+    assert adj(m, c) is False
+
+    # Object with same_entity="false" must return False
+    stub_output = types.SimpleNamespace(same_entity="false")
+    assert adj(m, c) is False
+
+    # Object with no such attribute must return False
+    stub_output = types.SimpleNamespace()
+    assert adj(m, c) is False
+
+    # Object with same_entity=True must return True
+    stub_output = types.SimpleNamespace(same_entity=True)
+    assert adj(m, c) is True
+

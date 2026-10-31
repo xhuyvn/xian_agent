@@ -475,7 +475,7 @@ def resolve_chapter(
         )
 
         if ev.same_as:
-            if ev.event_type == LifecycleEventType.REVEALED_IDENTITY or str(ev.event_type) == "REVEALED_IDENTITY":
+            if ev.event_type == LifecycleEventType.REVEALED_IDENTITY:
                 exclude = frozenset({name_entity}) if name_entity is not None else frozenset()
                 same_entity = resolver.resolve(
                     name=ev.same_as,
@@ -579,11 +579,6 @@ def make_adjudicator(
             model=serving_name,
             prompt_version=prompt_version,
         )
-        output = result.output
-        if hasattr(output, "same_entity"):
-            return bool(output.same_entity)
-        if isinstance(output, dict):
-            return bool(output["same_entity"])
-        return bool(output)
+        return getattr(result.output, "same_entity", None) is True
 
     return adjudicate
