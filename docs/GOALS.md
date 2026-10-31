@@ -19,6 +19,7 @@ Done when:
 - Unit tests use a fake model
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
+- R-1 2026-10-31: deliver schema, prompts, llm.py and Modelfile -> FAIL, 3 blockers, 130ef5a, 328568 agy tokens
 Sub-goals:
 - none yet
 Changes:
