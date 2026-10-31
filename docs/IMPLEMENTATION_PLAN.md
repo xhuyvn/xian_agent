@@ -97,9 +97,9 @@ flowchart TD
   - *Details:* Match `^chapter_(\d+)\.md$`; integer sort; contiguity check; Markdown → plain text via `markdown-it-py`; NFC normalization; watermark line removal (> 5% repetition); persists `clean_text`, `sha256`, `token_count` to SQLite `chapters` table and records stage completion in `jobs` (§3.2 S0).
   - *Dependencies:* S1-T1, S1-T2 (derived from data flow: stores clean text and tokens in `chapters` table and records job status in `jobs` created in S1-T2). Also needs a `novels` row for `pntt1`, which no Sprint 1 task inserts yet (see OQ-15).
 - **S1-T4: Pipeline Stage S1 — Extract (Ollama Qwen 14B)** (§3.2 S1, §3.5, §3.9, G-06)
-  - *Files created:* `src/xn/pipeline/s1_extract.py` (proposal), `src/xn/schemas/extraction.py`, `prompts/s1_extract/v1.md` (proposal), `ollama/Modelfile.qwen14b-12k`.
+  - *Files created:* `src/xn/pipeline/s1_extract.py` (proposal), `src/xn/schemas/extraction.py`, `prompts/s1_extract/v1.md` (proposal), `ollama/Modelfile.qwen14b-12k`, `src/xn/prompts.py` (proposal), `src/xn/llm.py` (proposal).
   - *Files changed/deleted:* Supersedes `src/ingestion/pydantic_extractor.py` and `src/schemas/extraction.py`.
-  - *Details:* Pydantic-AI agent on local Qwen; `num_ctx 12288`; 2-part split with 300-token overlap for chapters > 7,000 tokens; code-side fuzzy validation of `evidence` quote (partial_ratio ≥ 85) against `clean_text`. Persists extraction output (`entities` JSON, flags JSON, `micro_summary`, prompt version, model) to SQLite `extractions` table and records stage completion in `jobs` (§3.2 S1).
+  - *Details:* Pydantic-AI agent on local Qwen; `num_ctx 12288`; 2-part split with 300-token overlap for chapters > 7,000 tokens; code-side fuzzy validation of `evidence` quote (partial_ratio ≥ 85) against `clean_text`. Persists extraction output (`entities` JSON, flags JSON, `micro_summary`, prompt version, model) to SQLite `extractions` table and records stage completion in `jobs` (§3.2 S1). `src/xn/prompts.py` implements `load_prompt(name, version, profile)`, which returns rendered Jinja2 text plus `sha256[:8]` of the template for `llm_runs.prompt_version` and `jobs.prompt_version` (§3.5). `src/xn/llm.py` holds lazy client factories (§3.3, G-12) and writes one `llm_runs` row for every LLM call (§3.8). Both are placed here because S1-T4 is their first consumer (derived; Phase 4 names no sprint for them).
   - *Dependencies:* S1-T2, S1-T3 (derived from data flow: S0 text output from `chapters`, `extractions` schema and table from S1-T2).
 - **S1-T5: Pipeline Stage S2 — Entity Resolution** (§3.2 S2, §3.4 L4, G-05)
   - *Files created:* `src/xn/pipeline/s2_resolve.py` (proposal), `prompts/s2_adjudicate/v1.md` (proposal).
@@ -116,9 +116,9 @@ flowchart TD
   - *Dependencies:* S1-T4 (derived: requires working S1 extractor and Modelfile).
 - **S1-T8: Grounded Query Graph (Ledger Slice)** (§3.3, §3.4, ADR-01, ADR-02)
   - *Files created:* `src/xn/graph/workflow.py` (proposal), `src/xn/graph/nodes/route.py` (proposal), `src/xn/graph/nodes/bound.py` (proposal), `src/xn/graph/nodes/resolve.py` (proposal), `src/xn/graph/nodes/retrieve.py` (proposal), `src/xn/graph/nodes/gate.py` (proposal), `src/xn/graph/nodes/synthesize.py` (proposal), `src/xn/graph/nodes/verify.py` (proposal), `src/xn/schemas/state.py` (proposal), `prompts/router/v1.md` (proposal), `prompts/synthesize_compact/v1.md` (proposal).
-  - *Files changed:* `src/xn/cli/main.py` (proposal: extend with `xn ask` query command in compact mode, §3.12).
+  - *Files changed:* `src/xn/cli/main.py` (proposal: extend with `xn ask` query command in compact mode, §3.12), `src/xn/llm.py` (proposal: add OpenRouter wrapper).
   - *Files changed/deleted:* Supersedes `src/agents/graph_workflow.py`, `src/agents/pydantic_agents.py`, `src/cli.py`, `src/schemas/state.py`.
-  - *Details:* LangGraph flow: `route` → `bound` → `resolve_entities` → `retrieve` (ledger-only) → `gate` → `synthesize` → `verify`. Verifies citations exist in evidence and are ≤ N. Implements initial `xn ask` query command as a proposal (blueprint §3.12 names `xn ask`; initially wired in compact mode).
+  - *Details:* LangGraph flow: `route` → `bound` → `resolve_entities` → `retrieve` (ledger-only) → `gate` → `synthesize` → `verify`. Verifies citations exist in evidence and are ≤ N. Implements initial `xn ask` query command as a proposal (blueprint §3.12 names `xn ask`; initially wired in compact mode). The OpenRouter wrapper in `src/xn/llm.py` enforces the `compact` egress class in code (§3.7), writes `egress_class` and `payload_chapters` to `llm_runs`, applies timeout 90 s, 3 retries with exponential backoff on 429/5xx and then the configured fallback model (§3.3), and checks the daily spend cap against `llm_runs.cost_usd` (§3.7); both values are unset (OQ-08). The graph compiles with `SqliteSaver` (`data/graph_checkpoints.db`), with `thread_id` per conversation, and a follow-up inherits `novel_id` and `chapter_max` from the thread (§3.3). Placement in S1-T8 is derived: it is the first OpenRouter call and the first graph compile.
   - *Dependencies:* S1-T2, S1-T6 (derived from data flow: queries populated ledger).
 - **S1-T9: Gold Set Annotation & Eval Harness** (§3.8, OQ-09, OQ-14)
   - *Files created:* `eval/pntt1/` gold assets (20 chapters, 80 alias pairs, 15 Q&A, 10 spoiler probes per blueprint Phase 4), `tests/eval/test_gold.py` (proposal).
@@ -149,8 +149,8 @@ flowchart TD
   - *Dependencies:* S1-T2 (derived from data flow: storage/repository configuration).
 - **S2-T2: Pipeline Stage S4 — Chunk & Embed** (§3.2 S4, §3.9)
   - *Files created:* `src/xn/pipeline/s4_embed.py` (proposal).
-  - *Details:* Runs in a separate GPU window (Ollama stopped). Paragraph chunks ~450 tokens (60 overlap) + micro-summaries from S1 (§3.2 S4). BGE-M3 dense + sparse vectors written to `xn_chunks`.
-  - *Dependencies:* S1-T3, S1-T4, S2-T1 (derived from data flow: S1-T3 provides clean text from `chapters`, S1-T4 persists `micro_summary` in `extractions` per §3.2 S4, and S2-T1 provides Qdrant `xn_chunks` collection setup).
+  - *Details:* Runs in a separate GPU window (Ollama stopped). Paragraph chunks ~450 tokens (60 overlap) + micro-summaries from S1 (§3.2 S4). BGE-M3 dense + sparse vectors written to `xn_chunks`. Payload fields include `entity_ids` and `arc_id` (§3.2); how these two are populated is unsettled (OQ-17).
+  - *Dependencies:* S1-T3, S1-T4, S1-T5, S2-T1 (derived from data flow: S1-T3 provides clean text from `chapters`, S1-T4 persists `micro_summary` in `extractions` per §3.2 S4, S1-T5 provides the entity IDs stored in `entity_ids`, and S2-T1 provides Qdrant `xn_chunks` collection setup).
 - **S2-T3: Hybrid Retrieval & Reranker** (§3.2 S4, §3.3, §3.9)
   - *Files created:* `src/xn/storage/retriever.py` (proposal).
   - *Files changed:* `src/xn/graph/nodes/retrieve.py` (proposal: wire hybrid retriever).
@@ -196,7 +196,7 @@ flowchart TD
   - *Files changed / used:* `src/xn/storage/qdrant.py` (proposal: writes arc vector to `xn_arcs` collection).
   - *Files changed/deleted:* Supersedes `src/schemas/arc.py`.
   - *Details:* Calls OpenRouter macro model with concatenated micro-summaries (~12k tokens in); writes `StoryArc` JSON to SQLite `arcs` and embeds arc summary into Qdrant `xn_arcs`.
-  - *Dependencies:* S3-T1, S2-T1 (derived from data flow: S3-T1 provides segmented arcs; S2-T1 initializes Qdrant manager and `xn_arcs` collection to which S6 writes arc vectors, §3.1, §3.2 S6).
+  - *Dependencies:* S1-T8, S2-T1, S3-T1 (derived from data flow: S1-T8 provides the OpenRouter wrapper; S3-T1 provides segmented arcs; S2-T1 initializes Qdrant manager and `xn_arcs` collection to which S6 writes arc vectors, §3.1, §3.2 S6).
 - **S3-T3: Pipeline Stage S7 — Entity×Arc Digests & Prefix Digests** (§3.2 S7, §3.4 L3, G-07)
   - *Files created:* `src/xn/pipeline/s7_digest.py` (proposal), `prompts/s7_digest/v1.md` (proposal).
   - *Details:* For each (entity, arc) with $\ge 3$ events: local LLM produces 80–150 word digest, stored in `entity_arc_digests` (§3.2 S7). Also precomputes prefix entity digests (`upto_chapter`) at spoiler checkpoints (§3.2 S7, §3.4 L3, Phase 4 Sprint 3).
@@ -285,12 +285,13 @@ flowchart TD
   - *Dependencies:* S5-T2 (derived: triggers interrupt based on planner's estimated cost).
 - **S5-T4: Single-Pass & Map-Reduce Engine** (§3.12)
   - *Files created:* `src/xn/graph/long_context/engine.py` (proposal), `prompts/lc_map/v1.md` (proposal), `prompts/lc_reduce/v1.md` (proposal).
-  - *Details:* `map_arcs` with LangGraph `Send` (3 in parallel); outputs cached in `lc_map_cache`; `reduce` synthesizes `DeepDiveReport` from `ArcEntityAnalysis` batches.
+  - *Files changed:* `src/xn/llm.py` (proposal: add `long_context` egress class).
+  - *Details:* `map_arcs` with LangGraph `Send` (3 in parallel); outputs cached in `lc_map_cache`; `reduce` synthesizes `DeepDiveReport` from `ArcEntityAnalysis` batches. The OpenRouter wrapper enforces the `long_context` egress class: raw text of chapters $\le N$ for one entity, within the approved plan's token budget (§3.7), with each request's chapter list written to `llm_runs.payload_chapters`.
   - *Dependencies:* S5-T3 (derived: execution commences only after approval).
 - **S5-T5: Long-Context Verifier & Quote Matcher** (§3.12)
   - *Files created:* `src/xn/graph/long_context/verify.py` (proposal).
   - *Files changed:* `src/xn/graph/nodes/verify.py` (proposal: integrate long-context checks).
-  - *Details:* Validates that cited chapters are a subset of chapters sent; verifies verbatim quotes against `clean_text` (partial_ratio $\ge 90$); executes L5 spoiler scan on final report; logs egress payload chapters to `llm_runs`.
+  - *Details:* Validates that cited chapters are a subset of chapters sent; verifies verbatim quotes against `clean_text` (partial_ratio $\ge 90$); executes L5 spoiler scan on final report.
   - *Dependencies:* S5-T4, S2-T6 (derived from data flow: S5-T4 provides engine report output; S2-T6 provides the L5 spoiler scan reused on the rendered report, §3.4 L5, §3.12).
 - **S5-T6: Long-Context Gold Evaluation (10 Probes)** (§3.8, §3.12, OQ-14)
   - *Files created / changed:* `eval/pntt1/` gold assets (updated with 10 long-context deep-dive probes per blueprint §3.8).
@@ -337,6 +338,8 @@ Repository files and planned assets mapped to sprint tasks and blueprint specifi
 | `src/schemas/extraction.py` | **Delete** | S1-T4 | §0.2, §3.2 S1 | blueprint |
 | `prompts/s1_extract/v1.md` | **Create** | S1-T4 | §3.2 S1, §3.5 | proposed |
 | `src/xn/pipeline/s1_extract.py` | **Create** | S1-T4 | §3.2 S1 | proposed |
+| `src/xn/prompts.py` | **Create** | S1-T4 | §3.5 | proposed |
+| `src/xn/llm.py` | **Create / Change** | S1-T4, S1-T8, S5-T4 | §3.3, §3.7, §3.8 | proposed |
 | `src/ingestion/pydantic_extractor.py` | **Delete** | S1-T4 | §0.2, §3.2 S1 | existing file, not named by blueprint |
 | `src/xn/pipeline/s2_resolve.py` | **Create** | S1-T5 | §3.2 S2 | proposed |
 | `prompts/s2_adjudicate/v1.md` | **Create** | S1-T5 | §3.2 S2, §3.5 | proposed |
@@ -356,6 +359,7 @@ Repository files and planned assets mapped to sprint tasks and blueprint specifi
 | `src/xn/graph/nodes/synthesize.py` | **Create / Change** | S1-T8, S2-T4, S3-T5 | §3.3 | proposed |
 | `src/xn/graph/nodes/verify.py` | **Create / Change** | S1-T8, S2-T6, S5-T5 | §3.3, §3.4 L5 | proposed |
 | `src/xn/graph/workflow.py` | **Create / Change** | S1-T8, S2-T4, S5-T3 | §3.3 | proposed |
+| `data/graph_checkpoints.db` | **Runtime file (gitignored)** | S1-T8 | §3.3 | blueprint |
 | `src/agents/graph_workflow.py` | **Delete** | S1-T8 | §0.2, §3.3 | blueprint |
 | `src/agents/pydantic_agents.py` | **Delete** | S1-T8 | §0.2, §3.3 | existing file, not named by blueprint |
 | `src/xn/cli/main.py` | **Create / Change** | S1-T6, S1-T8, S2-T5, S5-T3 | §3.2, §3.6, §3.12 | proposed |
@@ -506,7 +510,7 @@ The following genuine ambiguities, contradictions, and underspecified items are 
   - Python version target: Unspecified (blueprint §3.9 specifies `uv` + `pyproject.toml` + `uv.lock`, but does not pin a Python minor version).
   - Qdrant target version: Unspecified (prototype `docker-compose.yml` pins `v1.12.0`; blueprint §3.9 notes `[verify version at pin time]`).
   - Observability platform: Unspecified (blueprint §3.8 notes self-hosted Langfuse vs Logfire, `[verify current API]`).
-- **Which task it blocks:** S1-T1, S4-T3, S5-T1.
+- **Which task it blocks:** S1-T1, S1-T8, S2-T1, S4-T3, S5-T1.
 - **Options named/apparent:** None named in blueprint; values are unspecified.
 
 ### OQ-09: Reconciliation of Sprint 1 vs. Section 3.8 Gold Set Criteria
@@ -551,9 +555,21 @@ The following genuine ambiguities, contradictions, and underspecified items are 
 
 ### OQ-15: Sprint Ownership of Auxiliary CLI Commands (`xn status`, `xn novel add`, `xn entities`)
 - **Question:** Which sprints own the implementation of auxiliary CLI commands: `xn status` (§3.10), `xn novel add` (§3.11), and `xn entities suspect|merge|split` (§3.10)?
-- **Why it matters:** The blueprint defines `xn run` (§3.2, required in Sprint 1), `xn progress` (§3.4, explicitly named in Phase 4 Sprint 2), and `xn ask` (§3.12, required in Phase 4 Sprint 5 for long-context queries). However, Phase 4 does not assign sprints for `xn status` (§3.10), `xn novel add` (§3.11), or `xn entities suspect|merge|split` (§3.10). `xn novel add` also affects Sprint 1: `chapters.novel_id` references `novels` with `foreign_keys=ON` (§3.2), and the S0 contiguity check needs `total_chapters`, so a `novels` row must exist before S1-T3 runs, and the blueprint names no other way to create it.
+- **Why it matters:** The blueprint defines `xn run` (§3.2, required in Sprint 1), `xn progress` (§3.4, explicitly named in Phase 4 Sprint 2), and `xn ask` (§3.12, named for long-context queries; Phase 4 does not name it). However, Phase 4 does not assign sprints for `xn status` (§3.10), `xn novel add` (§3.11), or `xn entities suspect|merge|split` (§3.10). `xn novel add` also affects Sprint 1: `chapters.novel_id` references `novels` with `foreign_keys=ON` (§3.2), and the S0 contiguity check needs `total_chapters`, so a `novels` row must exist before S1-T3 runs, and the blueprint names no other way to create it.
 - **Which task it blocks:** S1-T3, S1-T8, S4-T6, CLI completion.
 - **Options named/apparent:** None named in blueprint; sprint ownership is unsettled.
+
+### OQ-16: Sprint Ownership of Spoiler Layer L6 (`answer_cache`, Thread Branching)
+- **Question:** Which sprint owns reading and writing `answer_cache` (§3.4 L6, §3.9) and the rule that changing N in a thread starts a new branch (§3.4 L6)?
+- **Why it matters:** Phase 4 Sprint 2 covers "spoiler layers L1–L5", and no sprint names L6. L6 prevents a cached answer for a larger N being reused for a smaller N. The cache key also needs `data_version`, which is undefined (OQ-06). The `answer_cache` table itself is created in S1-T2.
+- **Which task it blocks:** No task owns this until it is settled.
+- **Options named/apparent:** None named in blueprint.
+
+### OQ-17: Population of `entity_ids` and `arc_id` on `xn_chunks`
+- **Question:** How are the `entity_ids` and `arc_id` payload fields on `xn_chunks` populated?
+- **Why it matters:** §3.2 lists both as payload indexes, and §3.3 `deep_dive` retrieval uses "top-8 entity-filtered chunks". The blueprint does not say how a chunk is matched to entities. `arc_id` is not known at S4 time, because the §3.1 diagram runs S4 from S0 and S5 assigns arcs later, and the blueprint does not say whether points are updated afterwards.
+- **Which task it blocks:** S2-T2, S3-T1, S3-T5.
+- **Options named/apparent:** None named in blueprint.
 
 ---
 
@@ -589,7 +605,7 @@ Items 1–3 describe this authoring task only: writing this document changed not
 3. **Modifying Architecture Blueprint:**
    - This authoring task made no edits to `ARCHITECTURE_BLUEPRINT_v3.md`. S1-T7 will later record empirical benchmark s/chapter into the §3.9 cost table per Sprint 1 Acceptance Criterion 4.
 4. **Unilateral Decision-Making on Open Questions:**
-   - Open questions `OQ-01` through `OQ-15` and `BP-OQ-1` / `BP-OQ-2` are cataloged for owner resolution without assuming outcomes.
+   - Open questions `OQ-01` through `OQ-17` and `BP-OQ-1` / `BP-OQ-2` are cataloged for owner resolution without assuming outcomes.
 5. **Multi-User Authentication & SaaS Tenancy:**
    - Multi-user authentication, cloud SaaS tenant isolation, or public internet exposure (single user local-first per A-01; note that per-novel tenancy in SQLite and Qdrant is in scope per §3.11, G-21).
 6. **Cross-Novel Sequel Entity Linking:**
