@@ -124,7 +124,7 @@ def build_chapter_events(
                 ev.name,
                 ev.category,
                 chapter_id,
-                f"Expected exactly 1 entity for alias {name_norm!r} ({ev.category}) "
+                f"Expected exactly 1 entity for '{ev.name}' ({ev.category}) "
                 f"in chapter {chapter_id}, found {len(rows)}",
             )
         entity_id = int(rows[0]["entity_id"])
@@ -144,7 +144,7 @@ def build_chapter_events(
                         ev.holder,
                         "character",
                         chapter_id,
-                        f"Expected exactly 1 character entity for holder {holder_norm!r} "
+                        f"Expected exactly 1 character entity for holder '{ev.holder}' "
                         f"in chapter {chapter_id}, found {len(holder_rows)}",
                     )
                 holder_entity_id = int(holder_rows[0]["entity_id"])
