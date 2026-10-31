@@ -24,7 +24,7 @@ Sub-goals:
 Changes:
 - 2026-10-31: owner approved the goal and the decisions above; added the config unit test line and the pytest check
 
-### G-2: S1-T2 SQLite schema and repository layer (active)
+### G-2: S1-T2 SQLite schema and repository layer (done)
 Plan: docs/IMPLEMENTATION_PLAN.md, S1-T2. Depends on G-1.
 Owner decisions: OQ-05 deferred to S3-T1 (`jobs` built as in the blueprint, chapter-level stages only for now); OQ-06 deferred (this task needs none of those types); `feedback` gains `novel_id`; tests run with `uv run pytest tests/unit`.
 Done when:
@@ -33,7 +33,7 @@ Done when:
 - A unit test checks every public repository method against that rule and a short exceptions list
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
-- none yet
+- R-1 2026-10-31: deliver S1-T2 schema and guarded repository -> PASS, 0 blockers, 3cbd361, 270525 agy tokens
 Sub-goals:
 - none yet
 Changes:
