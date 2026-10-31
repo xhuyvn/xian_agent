@@ -42,6 +42,7 @@ Done when:
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
 - R-1 2026-10-31: deliver the benchmark harness, Modelfiles and output modes -> PASS, 0 blockers, 6691bc8, 0 agy tokens
+- R-2 2026-10-31: calibrate estimate_tokens and clean the VRAM baseline -> PASS, 0 blockers, 3f9a36a, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
