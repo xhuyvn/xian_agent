@@ -5,6 +5,7 @@ from __future__ import annotations
 import inspect
 from pathlib import Path
 import sqlite3
+from typing import Any
 import pytest
 
 from xn.storage.database import connect, init_schema
@@ -36,6 +37,9 @@ STORY_READ_METHODS = [
     "list_arcs",
     "get_entity_arc_digests",
     "get_arc_prefix_summaries",
+    "list_extractions",
+    "list_aliases",
+    "find_entities_by_alias",
 ]
 
 OPERATIONAL_METHODS = [
@@ -48,6 +52,9 @@ OPERATIONAL_METHODS = [
     "get_job",
     "add_feedback",
     "add_llm_run",
+    "next_entity_id",
+    "save_resolution",
+    "clear_resolution",
 ]
 
 EXEMPT_METHODS = [
@@ -154,6 +161,9 @@ def test_story_reads_parameter_guards(repo: Repository) -> None:
         "list_arcs": {},
         "get_entity_arc_digests": {"entity_id": 1},
         "get_arc_prefix_summaries": {"arc_id": 1},
+        "list_extractions": {},
+        "list_aliases": {},
+        "find_entities_by_alias": {"alias_norm": "hl", "category": "character"},
     }
 
     for method_name in STORY_READ_METHODS:
@@ -250,6 +260,19 @@ def test_operational_parameter_guards(repo: Repository) -> None:
             "egress_class": "local",
             "payload_chapters": "1",
         },
+        "next_entity_id": {},
+        "save_resolution": {
+            "chapter_id": 1,
+            "entities": [],
+            "entity_updates": [],
+            "aliases": [],
+            "links": [],
+            "stage": "s2",
+            "input_hash": "h",
+            "prompt_version": "v1",
+            "model": "m",
+        },
+        "clear_resolution": {"stage": "s2"},
     }
 
     for method_name in OPERATIONAL_METHODS:
@@ -466,3 +489,410 @@ def test_novel_tenant_isolation(repo: Repository, db_conn: sqlite3.Connection) -
     assert updated_a is not None and updated_a["reader_progress"] == 42
     novel_b_check = repo.get_novel(novel_id="nov_b")
     assert novel_b_check is not None and novel_b_check["reader_progress"] is None
+
+
+def test_list_aliases_and_find_entities_by_alias_bounds_and_tenant(
+    repo: Repository, db_conn: sqlite3.Connection
+) -> None:
+    """Verify list_aliases and find_entities_by_alias exclude first_chapter > bound and are novel-scoped."""
+    repo.add_novel(novel_id="nov_1", title="Novel 1", genre_profile="xianxia", total_chapters=100)
+    repo.add_novel(novel_id="nov_2", title="Novel 2", genre_profile="xianxia", total_chapters=100)
+
+    # Entities for nov_1
+    db_conn.execute(
+        "INSERT INTO entities (novel_id, entity_id, canonical_name, category, first_chapter) VALUES "
+        "('nov_1', 1, 'Hàn Lập', 'character', 5), "
+        "('nov_1', 2, 'Lệ Phi Vũ', 'character', 25)"
+    )
+    # Entities for nov_2
+    db_conn.execute(
+        "INSERT INTO entities (novel_id, entity_id, canonical_name, category, first_chapter) VALUES "
+        "('nov_2', 1, 'Hàn Lập', 'character', 5)"
+    )
+
+    # Aliases for nov_1: first_chapter 10 (<= 20) and 25 (> 20)
+    db_conn.execute(
+        "INSERT INTO entity_aliases (novel_id, alias_norm, entity_id, first_chapter, source) VALUES "
+        "('nov_1', 'han lap', 1, 10, 'exact'), "
+        "('nov_1', 'le phi vu', 2, 25, 'exact')"
+    )
+    # Alias for nov_2: first_chapter 10 (<= 20)
+    db_conn.execute(
+        "INSERT INTO entity_aliases (novel_id, alias_norm, entity_id, first_chapter, source) VALUES "
+        "('nov_2', 'han lap', 1, 10, 'exact')"
+    )
+    db_conn.commit()
+
+    bound = 20
+
+    # Test list_aliases: returns only nov_1 alias with first_chapter <= 20
+    aliases = repo.list_aliases(novel_id="nov_1", chapter_max=bound)
+    assert len(aliases) == 1
+    assert aliases[0]["alias_norm"] == "han lap"
+    assert aliases[0]["entity_id"] == 1
+    assert aliases[0]["first_chapter"] == 10
+    assert aliases[0]["source"] == "exact"
+    assert aliases[0]["category"] == "character"
+
+    # Test find_entities_by_alias:
+    entities_hl = repo.find_entities_by_alias(
+        novel_id="nov_1", alias_norm="han lap", category="character", chapter_max=bound
+    )
+    assert len(entities_hl) == 1
+    assert entities_hl[0]["entity_id"] == 1
+    assert entities_hl[0]["category"] == "character"
+
+    # Beyond bound for nov_1 -> empty
+    entities_lpv = repo.find_entities_by_alias(
+        novel_id="nov_1", alias_norm="le phi vu", category="character", chapter_max=bound
+    )
+    assert len(entities_lpv) == 0
+
+    # Verify nov_2 alias is not returned when querying nov_1
+    aliases_nov2 = repo.list_aliases(novel_id="nov_2", chapter_max=bound)
+    assert len(aliases_nov2) == 1
+    assert aliases_nov2[0]["entity_id"] == 1
+
+
+def test_list_aliases_rows_exclude_last_chapter_and_mention_count(
+    repo: Repository, db_conn: sqlite3.Connection
+) -> None:
+    """Verify list_aliases rows do not contain last_chapter or mention_count keys."""
+    repo.add_novel(novel_id="nov_1", title="Novel 1", genre_profile="xianxia", total_chapters=100)
+    db_conn.execute(
+        "INSERT INTO entities (novel_id, entity_id, canonical_name, category, first_chapter, last_chapter, mention_count) "
+        "VALUES ('nov_1', 1, 'Hàn Lập', 'character', 1, 50, 100)"
+    )
+    db_conn.execute(
+        "INSERT INTO entity_aliases (novel_id, alias_norm, entity_id, first_chapter, source) "
+        "VALUES ('nov_1', 'han lap', 1, 1, 'exact')"
+    )
+    db_conn.commit()
+
+    rows = repo.list_aliases(novel_id="nov_1", chapter_max=10)
+    assert len(rows) == 1
+    row_keys = set(rows[0].keys())
+    assert "last_chapter" not in row_keys
+    assert "mention_count" not in row_keys
+    assert row_keys == {"alias_norm", "entity_id", "first_chapter", "source", "category"}
+
+
+def test_list_extractions_honours_bound(
+    repo: Repository, db_conn: sqlite3.Connection
+) -> None:
+    """Verify list_extractions returns rows <= chapter_max ordered by chapter_id and novel-scoped."""
+    repo.add_novel(novel_id="nov_1", title="Novel 1", genre_profile="xianxia", total_chapters=100)
+    repo.add_novel(novel_id="nov_2", title="Novel 2", genre_profile="xianxia", total_chapters=100)
+
+    # Seed chapters (parent rows for extractions foreign key)
+    db_conn.execute(
+        "INSERT INTO chapters (novel_id, chapter_id, title, clean_text, sha256) VALUES "
+        "('nov_1', 1, 'Ch 1', 't1', 'h1'), "
+        "('nov_1', 2, 'Ch 2', 't2', 'h2'), "
+        "('nov_1', 3, 'Ch 3', 't3', 'h3'), "
+        "('nov_2', 1, 'Ch 1', 't1', 'h1')"
+    )
+    db_conn.execute(
+        "INSERT INTO extractions (novel_id, chapter_id, payload, prompt_version, model) VALUES "
+        "('nov_1', 2, '{\"c\": 2}', 'v1', 'm1'), "
+        "('nov_1', 1, '{\"c\": 1}', 'v1', 'm1'), "
+        "('nov_1', 3, '{\"c\": 3}', 'v1', 'm1'), "
+        "('nov_2', 1, '{\"c\": 1}', 'v1', 'm1')"
+    )
+    db_conn.commit()
+
+    extractions = repo.list_extractions(novel_id="nov_1", chapter_max=2)
+    assert [e["chapter_id"] for e in extractions] == [1, 2]
+    assert extractions[0]["payload"] == '{"c": 1}'
+    assert extractions[1]["payload"] == '{"c": 2}'
+
+
+def test_save_resolution_writes_all_rows_and_job(
+    repo: Repository, db_conn: sqlite3.Connection
+) -> None:
+    """Verify save_resolution persists entities, updates, aliases, links, and done job."""
+    repo.add_novel(novel_id="nov_1", title="Novel 1", genre_profile="xianxia", total_chapters=100)
+
+    entities = [
+        {
+            "entity_id": 1,
+            "canonical_name": "Hàn Lập",
+            "category": "character",
+            "first_chapter": 1,
+            "last_chapter": 1,
+            "mention_count": 2,
+        },
+        {
+            "entity_id": 2,
+            "canonical_name": "Lệ Phi Vũ",
+            "category": "character",
+            "first_chapter": 1,
+            "last_chapter": 1,
+            "mention_count": 1,
+        },
+    ]
+    entity_updates = [
+        {"entity_id": 1, "last_chapter": 2, "mention_delta": 3},
+    ]
+    aliases = [
+        {"alias_norm": "han lap", "entity_id": 1, "first_chapter": 1, "source": "exact"},
+        {"alias_norm": "le phi vu", "entity_id": 2, "first_chapter": 1, "source": "exact"},
+    ]
+    links = [
+        {"entity_a": 1, "entity_b": 2, "revealed_chapter": 1, "evidence": "bằng chứng liên kết"},
+    ]
+
+    repo.save_resolution(
+        novel_id="nov_1",
+        chapter_id=1,
+        entities=entities,
+        entity_updates=entity_updates,
+        aliases=aliases,
+        links=links,
+        stage="s2",
+        input_hash="hash_s2_01",
+        prompt_version="v1hash02",
+        model="qwen14b-12k",
+    )
+
+    # Check entities
+    cur_ent = db_conn.execute("SELECT * FROM entities WHERE novel_id = 'nov_1' ORDER BY entity_id")
+    ents = cur_ent.fetchall()
+    assert len(ents) == 2
+    assert ents[0]["entity_id"] == 1
+    assert ents[0]["last_chapter"] == 2
+    assert ents[0]["mention_count"] == 5  # 2 + 3
+
+    # Check aliases
+    cur_al = db_conn.execute("SELECT * FROM entity_aliases WHERE novel_id = 'nov_1' ORDER BY entity_id")
+    als = cur_al.fetchall()
+    assert len(als) == 2
+    assert als[0]["alias_norm"] == "han lap"
+
+    # Check links
+    cur_lk = db_conn.execute("SELECT * FROM entity_links WHERE novel_id = 'nov_1'")
+    lks = cur_lk.fetchall()
+    assert len(lks) == 1
+    assert lks[0]["entity_a"] == 1
+    assert lks[0]["entity_b"] == 2
+    assert lks[0]["revealed_chapter"] == 1
+    assert lks[0]["evidence"] == "bằng chứng liên kết"
+
+    # Check job
+    job = repo.get_job(novel_id="nov_1", chapter_id=1, stage="s2")
+    assert job is not None
+    assert job["status"] == "done"
+    assert job["input_hash"] == "hash_s2_01"
+    assert job["prompt_version"] == "v1hash02"
+    assert job["model"] == "qwen14b-12k"
+
+
+def test_save_resolution_conflict_handling_and_earliest_link(
+    repo: Repository, db_conn: sqlite3.Connection
+) -> None:
+    """Verify repeated alias or link changes nothing and raises nothing; earliest link stays."""
+    repo.add_novel(novel_id="nov_1", title="Novel 1", genre_profile="xianxia", total_chapters=100)
+
+    # First resolution write
+    repo.save_resolution(
+        novel_id="nov_1",
+        chapter_id=1,
+        entities=[
+            {"entity_id": 1, "canonical_name": "Hàn Lập", "category": "character", "first_chapter": 1, "last_chapter": 1, "mention_count": 1},
+            {"entity_id": 2, "canonical_name": "Lệ Phi Vũ", "category": "character", "first_chapter": 1, "last_chapter": 1, "mention_count": 1},
+        ],
+        entity_updates=[],
+        aliases=[{"alias_norm": "han lap", "entity_id": 1, "first_chapter": 1, "source": "exact"}],
+        links=[{"entity_a": 1, "entity_b": 2, "revealed_chapter": 1, "evidence": "ch 1 evidence"}],
+        stage="s2",
+        input_hash="hash1",
+        prompt_version="v1",
+        model="m1",
+    )
+
+    # Second resolution write with same alias (different first_chapter) and repeated link with later chapter
+    repo.save_resolution(
+        novel_id="nov_1",
+        chapter_id=2,
+        entities=[],
+        entity_updates=[],
+        aliases=[{"alias_norm": "han lap", "entity_id": 1, "first_chapter": 2, "source": "fuzzy"}],
+        links=[{"entity_a": 1, "entity_b": 2, "revealed_chapter": 5, "evidence": "ch 5 evidence"}],
+        stage="s2",
+        input_hash="hash2",
+        prompt_version="v1",
+        model="m1",
+    )
+
+    # Alias keeps original first_chapter 1 and source exact
+    cur_al = db_conn.execute("SELECT * FROM entity_aliases WHERE novel_id = 'nov_1' AND alias_norm = 'han lap'")
+    al = cur_al.fetchone()
+    assert al["first_chapter"] == 1
+    assert al["source"] == "exact"
+
+    # Link keeps earliest revealed_chapter 1
+    cur_lk = db_conn.execute("SELECT * FROM entity_links WHERE novel_id = 'nov_1'")
+    lk = cur_lk.fetchone()
+    assert lk["revealed_chapter"] == 1
+    assert lk["evidence"] == "ch 1 evidence"
+
+
+def test_save_resolution_link_ordering_and_equal_ids(
+    repo: Repository, db_conn: sqlite3.Connection
+) -> None:
+    """Verify links store smaller id as entity_a, and equal ids raise ValueError."""
+    repo.add_novel(novel_id="nov_1", title="Novel 1", genre_profile="xianxia", total_chapters=100)
+
+    # Inverted ids: entity_a=5, entity_b=2
+    repo.save_resolution(
+        novel_id="nov_1",
+        chapter_id=1,
+        entities=[
+            {"entity_id": 2, "canonical_name": "Ent 2", "category": "character", "first_chapter": 1, "last_chapter": 1, "mention_count": 1},
+            {"entity_id": 5, "canonical_name": "Ent 5", "category": "character", "first_chapter": 1, "last_chapter": 1, "mention_count": 1},
+        ],
+        entity_updates=[],
+        aliases=[],
+        links=[{"entity_a": 5, "entity_b": 2, "revealed_chapter": 1, "evidence": "ev"}],
+        stage="s2",
+        input_hash="h1",
+        prompt_version="v1",
+        model="m1",
+    )
+
+    cur = db_conn.execute("SELECT entity_a, entity_b FROM entity_links WHERE novel_id = 'nov_1'")
+    link_row = cur.fetchone()
+    assert link_row["entity_a"] == 2
+    assert link_row["entity_b"] == 5
+
+    # Equal ids: entity_a=3, entity_b=3 raises ValueError
+    with pytest.raises(ValueError, match="cannot be equal"):
+        repo.save_resolution(
+            novel_id="nov_1",
+            chapter_id=2,
+            entities=[],
+            entity_updates=[],
+            aliases=[],
+            links=[{"entity_a": 3, "entity_b": 3, "revealed_chapter": 2, "evidence": "ev"}],
+            stage="s2",
+            input_hash="h2",
+            prompt_version="v1",
+            model="m1",
+        )
+
+
+def test_save_resolution_leaves_nothing_if_job_write_fails(
+    repo: Repository, db_conn: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Verify atomicity of save_resolution: transaction rollback leaves no entity, alias, link, or job rows."""
+    repo.add_novel(novel_id="nov_1", title="Novel 1", genre_profile="xianxia", total_chapters=100)
+
+    def crash_upsert(*args: Any, **kwargs: Any) -> None:
+        raise sqlite3.OperationalError("Simulated job upsert failure in save_resolution")
+
+    monkeypatch.setattr(repo, "_upsert_job", crash_upsert)
+
+    with pytest.raises(sqlite3.OperationalError, match="Simulated job upsert failure"):
+        repo.save_resolution(
+            novel_id="nov_1",
+            chapter_id=1,
+            entities=[
+                {"entity_id": 1, "canonical_name": "Hàn Lập", "category": "character", "first_chapter": 1, "last_chapter": 1, "mention_count": 1}
+            ],
+            entity_updates=[],
+            aliases=[{"alias_norm": "han lap", "entity_id": 1, "first_chapter": 1, "source": "exact"}],
+            links=[],
+            stage="s2",
+            input_hash="hash01",
+            prompt_version="v1",
+            model="m1",
+        )
+
+    assert db_conn.execute("SELECT count(*) FROM entities WHERE novel_id = 'nov_1'").fetchone()[0] == 0
+    assert db_conn.execute("SELECT count(*) FROM entity_aliases WHERE novel_id = 'nov_1'").fetchone()[0] == 0
+    assert db_conn.execute("SELECT count(*) FROM entity_links WHERE novel_id = 'nov_1'").fetchone()[0] == 0
+    assert db_conn.execute("SELECT count(*) FROM jobs WHERE novel_id = 'nov_1' AND stage = 's2'").fetchone()[0] == 0
+
+
+def test_clear_resolution_clears_only_given_novel_and_refuses_on_events(
+    repo: Repository, db_conn: sqlite3.Connection
+) -> None:
+    """Verify clear_resolution clears only the targeted novel and raises when entity_events exist."""
+    repo.add_novel(novel_id="nov_1", title="Novel 1", genre_profile="xianxia", total_chapters=100)
+    repo.add_novel(novel_id="nov_2", title="Novel 2", genre_profile="xianxia", total_chapters=100)
+
+    # Seed nov_1 and nov_2 entities, aliases, links, jobs
+    for n in ["nov_1", "nov_2"]:
+        repo.save_resolution(
+            novel_id=n,
+            chapter_id=1,
+            entities=[
+                {"entity_id": 1, "canonical_name": f"Ent {n}", "category": "character", "first_chapter": 1, "last_chapter": 1, "mention_count": 1}
+            ],
+            entity_updates=[],
+            aliases=[{"alias_norm": f"alias_{n}", "entity_id": 1, "first_chapter": 1, "source": "exact"}],
+            links=[],
+            stage="s2",
+            input_hash=f"h_{n}",
+            prompt_version="v1",
+            model="m1",
+        )
+    # Also add an s1 job for nov_1 to test that only stage='s2' jobs are deleted
+    repo.upsert_job(novel_id="nov_1", chapter_id=1, stage="s1", status="done")
+
+    # Seed entity_events for nov_1 -> clear_resolution must raise ValueError
+    db_conn.execute(
+        "INSERT INTO entity_events (novel_id, id, chapter_id, entity_id, event_type, ordinal, description) "
+        "VALUES ('nov_1', 1, 1, 1, 'ACQUISITION', 1, 'Ev 1')"
+    )
+    db_conn.commit()
+
+    with pytest.raises(ValueError, match="entity_events has rows"):
+        repo.clear_resolution(novel_id="nov_1", stage="s2")
+
+    # Remove the entity_event row
+    db_conn.execute("DELETE FROM entity_events WHERE novel_id = 'nov_1'")
+    db_conn.commit()
+
+    # Now clear_resolution should succeed
+    repo.clear_resolution(novel_id="nov_1", stage="s2")
+
+    # nov_1 resolution rows are gone
+    assert db_conn.execute("SELECT count(*) FROM entities WHERE novel_id = 'nov_1'").fetchone()[0] == 0
+    assert db_conn.execute("SELECT count(*) FROM entity_aliases WHERE novel_id = 'nov_1'").fetchone()[0] == 0
+    assert db_conn.execute("SELECT count(*) FROM entity_links WHERE novel_id = 'nov_1'").fetchone()[0] == 0
+    assert repo.get_job(novel_id="nov_1", chapter_id=1, stage="s2") is None
+    # nov_1 s1 job remains
+    assert repo.get_job(novel_id="nov_1", chapter_id=1, stage="s1") is not None
+
+    # nov_2 resolution rows are completely untouched
+    assert db_conn.execute("SELECT count(*) FROM entities WHERE novel_id = 'nov_2'").fetchone()[0] == 1
+    assert db_conn.execute("SELECT count(*) FROM entity_aliases WHERE novel_id = 'nov_2'").fetchone()[0] == 1
+    assert repo.get_job(novel_id="nov_2", chapter_id=1, stage="s2") is not None
+
+
+def test_next_entity_id_scoped_to_novel(
+    repo: Repository, db_conn: sqlite3.Connection
+) -> None:
+    """Verify next_entity_id returns 1 for empty novel, max+1 otherwise, and is novel-scoped."""
+    repo.add_novel(novel_id="nov_a", title="Novel A", genre_profile="xianxia", total_chapters=100)
+    repo.add_novel(novel_id="nov_b", title="Novel B", genre_profile="xianxia", total_chapters=100)
+
+    # Empty novel returns 1
+    assert repo.next_entity_id(novel_id="nov_a") == 1
+    assert repo.next_entity_id(novel_id="nov_b") == 1
+
+    # Insert entity for nov_a with id 1
+    db_conn.execute(
+        "INSERT INTO entities (novel_id, entity_id, canonical_name, category, first_chapter) "
+        "VALUES ('nov_a', 1, 'Ent A1', 'character', 1)"
+    )
+    # Insert entity for nov_b with id 10
+    db_conn.execute(
+        "INSERT INTO entities (novel_id, entity_id, canonical_name, category, first_chapter) "
+        "VALUES ('nov_b', 10, 'Ent B10', 'character', 1)"
+    )
+    db_conn.commit()
+
+    assert repo.next_entity_id(novel_id="nov_a") == 2
+    assert repo.next_entity_id(novel_id="nov_b") == 11
