@@ -122,6 +122,12 @@ def seed_chapter(
     return sha256
 
 
+def is_summary_call(info: Any) -> bool:
+    r"""Determine if the tool call targets MicroSummary by schema properties having 'text' and not 'events'."""
+    props = info.output_tools[0].parameters_json_schema.get("properties", {})
+    return "text" in props and "events" not in props
+
+
 def make_canned_extraction(
     chapter_id: int = 1,
     events: list[dict[str, Any]] | None = None,
@@ -182,8 +188,7 @@ def test_short_chapter_makes_one_call_and_saves_correct_rows(
     def model_func(messages: list[Any], info: Any) -> ModelResponse:
         nonlocal calls
         calls += 1
-        output_tools = getattr(info, "output_tools", None)
-        tool_name = output_tools[0].name if output_tools else "ChapterExtraction"
+        tool_name = info.output_tools[0].name
         payload = make_canned_extraction(chapter_id=1)
         part = ToolCallPart(tool_name, payload)
         return ModelResponse(parts=[part], usage=RequestUsage(input_tokens=100, output_tokens=50))
@@ -234,8 +239,8 @@ def test_chapter_over_7000_tokens_splits_and_merges(
     call_records: list[dict[str, Any]] = []
 
     def model_func(messages: list[Any], info: Any) -> ModelResponse:
-        output_tools = getattr(info, "output_tools", None)
-        tool_name = output_tools[0].name if output_tools else "final_result"
+        tool_name = info.output_tools[0].name
+        is_summary = is_summary_call(info)
 
         prompt_str = ""
         for m in messages:
@@ -244,9 +249,13 @@ def test_chapter_over_7000_tokens_splits_and_merges(
                 if isinstance(content, str):
                     prompt_str = content
 
-        call_records.append({"tool_name": tool_name, "prompt": prompt_str})
+        call_records.append({
+            "tool_name": tool_name,
+            "prompt": prompt_str,
+            "is_summary": is_summary,
+        })
 
-        if tool_name == "MicroSummary":
+        if is_summary:
             payload = make_canned_summary(
                 "Tóm tắt hợp nhất toàn bộ hai phần của chương truyện tu tiên với độ dài trên hai trăm ký tự nhằm đáp ứng schema MicroSummary. "
                 "Hàn Lập tiến vào Thất Huyền Môn, từng bước tu luyện và tích lũy kinh nghiệm để sẵn sàng đối mặt với những thử thách lớn hơn phía trước."
@@ -308,9 +317,9 @@ def test_chapter_over_7000_tokens_splits_and_merges(
 
     assert result == S1Result(processed=1, written=1, skipped=0, failed=0)
     assert len(call_records) == 3
-    assert call_records[0]["tool_name"] == "ChapterExtraction"
-    assert call_records[1]["tool_name"] == "ChapterExtraction"
-    assert call_records[2]["tool_name"] == "MicroSummary"
+    assert not call_records[0]["is_summary"]
+    assert not call_records[1]["is_summary"]
+    assert call_records[2]["is_summary"]
 
     # Verify overlap between parts and no word cut
     p1_body = call_records[0]["prompt"].strip()
@@ -331,7 +340,6 @@ def test_chapter_over_7000_tokens_splits_and_merges(
     assert p2_first_word in text
 
     # Overlap check: suffix of p1 matches prefix of p2
-    # Find matching overlap
     overlap_len = 0
     for length in range(min(len(p1_clean), len(p2_clean)), 0, -1):
         if p1_clean[-length:] == p2_clean[:length]:
@@ -368,8 +376,7 @@ def test_chapter_id_from_model_is_ignored(repo: Repository, db_conn: sqlite3.Con
     cfg = make_config(total_chapters=5)
 
     def model_func(messages: list[Any], info: Any) -> ModelResponse:
-        output_tools = getattr(info, "output_tools", None)
-        tool_name = output_tools[0].name if output_tools else "ChapterExtraction"
+        tool_name = info.output_tools[0].name
         payload = make_canned_extraction(chapter_id=999)
         part = ToolCallPart(tool_name, payload)
         return ModelResponse(parts=[part], usage=RequestUsage(input_tokens=50, output_tokens=30))
@@ -415,8 +422,7 @@ def test_fabricated_evidence_dropped_and_logged_verbatim_kept(
     ]
 
     def model_func(messages: list[Any], info: Any) -> ModelResponse:
-        output_tools = getattr(info, "output_tools", None)
-        tool_name = output_tools[0].name if output_tools else "ChapterExtraction"
+        tool_name = info.output_tools[0].name
         payload = make_canned_extraction(chapter_id=1, events=events)
         part = ToolCallPart(tool_name, payload)
         return ModelResponse(parts=[part], usage=RequestUsage(input_tokens=60, output_tokens=40))
@@ -467,8 +473,7 @@ def test_invalid_category_is_dropped_and_logged(
     ]
 
     def model_func(messages: list[Any], info: Any) -> ModelResponse:
-        output_tools = getattr(info, "output_tools", None)
-        tool_name = output_tools[0].name if output_tools else "ChapterExtraction"
+        tool_name = info.output_tools[0].name
         payload = make_canned_extraction(chapter_id=1, events=events)
         part = ToolCallPart(tool_name, payload)
         return ModelResponse(parts=[part], usage=RequestUsage(input_tokens=60, output_tokens=40))
@@ -492,8 +497,7 @@ def test_one_llm_runs_row_per_call(repo: Repository, db_conn: sqlite3.Connection
     cfg = make_config(total_chapters=1)
 
     def model_func(messages: list[Any], info: Any) -> ModelResponse:
-        output_tools = getattr(info, "output_tools", None)
-        tool_name = output_tools[0].name if output_tools else "ChapterExtraction"
+        tool_name = info.output_tools[0].name
         payload = make_canned_extraction(chapter_id=1)
         part = ToolCallPart(tool_name, payload)
         return ModelResponse(parts=[part], usage=RequestUsage(input_tokens=40, output_tokens=20))
@@ -516,8 +520,7 @@ def test_second_run_makes_no_model_calls(repo: Repository) -> None:
     def model_func(messages: list[Any], info: Any) -> ModelResponse:
         nonlocal calls
         calls += 1
-        output_tools = getattr(info, "output_tools", None)
-        tool_name = output_tools[0].name if output_tools else "ChapterExtraction"
+        tool_name = info.output_tools[0].name
         payload = make_canned_extraction(chapter_id=1)
         part = ToolCallPart(tool_name, payload)
         return ModelResponse(parts=[part], usage=RequestUsage(input_tokens=40, output_tokens=20))
@@ -542,8 +545,7 @@ def test_changed_sha256_reruns_that_chapter_only(repo: Repository) -> None:
     called_chapters: list[str] = []
 
     def model_func(messages: list[Any], info: Any) -> ModelResponse:
-        output_tools = getattr(info, "output_tools", None)
-        tool_name = output_tools[0].name if output_tools else "ChapterExtraction"
+        tool_name = info.output_tools[0].name
         prompt_str = ""
         for m in messages:
             for p in getattr(m, "parts", []):
@@ -590,8 +592,7 @@ def test_persistent_failure_ends_failed_and_subsequent_chapter_succeeds(
         if "chương 1 lỗi" in prompt_str:
             raise RuntimeError("Fatal model error on chapter 1")
 
-        output_tools = getattr(info, "output_tools", None)
-        tool_name = output_tools[0].name if output_tools else "ChapterExtraction"
+        tool_name = info.output_tools[0].name
         payload = make_canned_extraction(chapter_id=2)
         part = ToolCallPart(tool_name, payload)
         return ModelResponse(parts=[part], usage=RequestUsage(input_tokens=40, output_tokens=20))
@@ -631,13 +632,12 @@ def test_single_call_failure_succeeds_on_split(
     def model_func(messages: list[Any], info: Any) -> ModelResponse:
         nonlocal call_count
         call_count += 1
-        output_tools = getattr(info, "output_tools", None)
-        tool_name = output_tools[0].name if output_tools else "final_result"
+        tool_name = info.output_tools[0].name
 
         if call_count == 1:
             raise RuntimeError("Simulated transient inference failure on single-call")
 
-        if tool_name == "MicroSummary":
+        if is_summary_call(info):
             payload = make_canned_summary()
         else:
             payload = make_canned_extraction(chapter_id=1)
@@ -666,8 +666,7 @@ def test_chapter_from_and_chapter_to_respected(repo: Repository, db_conn: sqlite
     cfg = make_config(total_chapters=5)
 
     def model_func(messages: list[Any], info: Any) -> ModelResponse:
-        output_tools = getattr(info, "output_tools", None)
-        tool_name = output_tools[0].name if output_tools else "ChapterExtraction"
+        tool_name = info.output_tools[0].name
         payload = make_canned_extraction()
         part = ToolCallPart(tool_name, payload)
         return ModelResponse(parts=[part], usage=RequestUsage(input_tokens=30, output_tokens=20))
@@ -698,8 +697,7 @@ def test_text_containing_chapter_tag_cannot_close_tag(repo: Repository) -> None:
                 if isinstance(c, str):
                     captured_prompt = c
 
-        output_tools = getattr(info, "output_tools", None)
-        tool_name = output_tools[0].name if output_tools else "ChapterExtraction"
+        tool_name = info.output_tools[0].name
         payload = make_canned_extraction(chapter_id=1)
         part = ToolCallPart(tool_name, payload)
         return ModelResponse(parts=[part], usage=RequestUsage(input_tokens=40, output_tokens=20))
@@ -753,8 +751,7 @@ def test_save_extraction_failure_marks_job_failed_and_subsequent_chapter_succeed
     cfg = make_config(total_chapters=2)
 
     def model_func(messages: list[Any], info: Any) -> ModelResponse:
-        output_tools = getattr(info, "output_tools", None)
-        tool_name = output_tools[0].name if output_tools else "ChapterExtraction"
+        tool_name = info.output_tools[0].name
         payload = make_canned_extraction()
         part = ToolCallPart(tool_name, payload)
         return ModelResponse(parts=[part], usage=RequestUsage(input_tokens=40, output_tokens=20))
