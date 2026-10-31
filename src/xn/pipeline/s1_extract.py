@@ -158,6 +158,7 @@ def run_s1(
     config: dict[str, Any],
     chapter_from: int = 1,
     chapter_to: int | None = None,
+    only_chapters: set[int] | None = None,
     model: Any = None,
     prompts_dir: Path = Path("prompts"),
 ) -> S1Result:
@@ -190,7 +191,12 @@ def run_s1(
     )
 
     all_chapters = repo.list_chapters(novel_id=novel_id, chapter_max=chapter_to)
-    chapters = [ch for ch in all_chapters if ch["chapter_id"] >= chapter_from]
+    chapters = [
+        ch
+        for ch in all_chapters
+        if ch["chapter_id"] >= chapter_from
+        and (only_chapters is None or ch["chapter_id"] in only_chapters)
+    ]
 
     processed = 0
     written = 0

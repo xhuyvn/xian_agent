@@ -64,6 +64,12 @@ class S3ResolutionError(RuntimeError):
             super().__init__(message)
 
 
+def compute_input_hash(payload: str, s2_input_hash: str | None) -> str:
+    r"""Compute S3 input hash from extraction payload and S2 job input_hash."""
+    s2_hash = s2_input_hash or ""
+    return hashlib.sha256((payload + "\0" + s2_hash).encode("utf-8")).hexdigest()
+
+
 def build_chapter_events(
     repo: Repository,
     *,
@@ -244,10 +250,7 @@ def run_s3(
 
         ext_row = extractions_by_id[cid]
         payload = ext_row["payload"]
-        s2_input_hash = s2_job["input_hash"] or ""
-        input_hash = hashlib.sha256(
-            (payload + "\0" + s2_input_hash).encode("utf-8")
-        ).hexdigest()
+        input_hash = compute_input_hash(payload, s2_job["input_hash"])
 
         s3_job = repo.get_job(novel_id=novel_id, chapter_id=cid, stage=STAGE)
         if (
