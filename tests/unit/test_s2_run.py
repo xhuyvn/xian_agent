@@ -7,7 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 import sqlite3
-from typing import Any
+from typing import Any, NamedTuple
 import pytest
 
 from pydantic_ai.messages import ModelResponse, ToolCallPart
@@ -32,6 +32,56 @@ SUMMARY_200 = (
     "Trải qua nhiều thử thách tại Thất Huyền Môn, hắn dần tích lũy kinh nghiệm, tìm kiếm cơ duyên "
     "và chuẩn bị cho những bước tiến xa hơn trên con đường tu tiên đầy hiểm nguy phía trước."
 )
+
+
+class Snapshot(NamedTuple):
+    entities: list[tuple[Any, ...]]
+    aliases: list[tuple[Any, ...]]
+    links: list[tuple[Any, ...]]
+    jobs: list[tuple[Any, ...]]
+
+    def __getitem__(self, key: Any) -> Any:
+        if isinstance(key, str):
+            try:
+                return getattr(self, key)
+            except AttributeError:
+                raise KeyError(key) from None
+        return super().__getitem__(key)
+
+
+def snapshot(conn: sqlite3.Connection, novel_id: str) -> Snapshot:
+    r"""Return snapshot of entities, aliases, links, and jobs (without updated_at and attempts) in fixed order."""
+    cur = conn.cursor()
+    entities = [
+        tuple(r)
+        for r in cur.execute(
+            "SELECT * FROM entities WHERE novel_id = ? ORDER BY entity_id",
+            (novel_id,),
+        ).fetchall()
+    ]
+    aliases = [
+        tuple(r)
+        for r in cur.execute(
+            "SELECT * FROM entity_aliases WHERE novel_id = ? ORDER BY entity_id, alias_norm",
+            (novel_id,),
+        ).fetchall()
+    ]
+    links = [
+        tuple(r)
+        for r in cur.execute(
+            "SELECT * FROM entity_links WHERE novel_id = ? ORDER BY entity_a, entity_b",
+            (novel_id,),
+        ).fetchall()
+    ]
+    jobs = [
+        tuple(r)
+        for r in cur.execute(
+            "SELECT chapter_id, stage, status, input_hash, prompt_version, model "
+            "FROM jobs WHERE novel_id = ? AND stage = 's2' ORDER BY chapter_id",
+            (novel_id,),
+        ).fetchall()
+    ]
+    return Snapshot(entities=entities, aliases=aliases, links=links, jobs=jobs)
 
 
 @pytest.fixture
@@ -345,34 +395,37 @@ def test_second_run_changes_no_row_and_makes_no_model_call(
     res1 = run_s2(repo, novel_id="pntt1", config=cfg, model=FunctionModel(fake1), prompts_dir=PROMPTS_DIR)
     assert res1.written == 2
 
-    cur = db_conn.cursor()
-    ent_before = [tuple(r) for r in cur.execute("SELECT * FROM entities ORDER BY entity_id").fetchall()]
-    ali_before = [tuple(r) for r in cur.execute("SELECT * FROM entity_aliases ORDER BY novel_id, alias_norm, entity_id").fetchall()]
-    lnk_before = [tuple(r) for r in cur.execute("SELECT * FROM entity_links ORDER BY novel_id, entity_a, entity_b").fetchall()]
-    job_before = [tuple(r) for r in cur.execute("SELECT * FROM jobs WHERE stage = 's2' ORDER BY chapter_id").fetchall()]
+    snap_before = snapshot(db_conn, "pntt1")
 
     fake2 = FakeAdjudicator()
     res2 = run_s2(repo, novel_id="pntt1", config=cfg, model=FunctionModel(fake2), prompts_dir=PROMPTS_DIR)
     assert res2 == S2Result(processed=0, written=0, skipped=2, failed=0, stopped_at=None)
     assert fake2.calls == 0
 
-    ent_after = [tuple(r) for r in cur.execute("SELECT * FROM entities ORDER BY entity_id").fetchall()]
-    ali_after = [tuple(r) for r in cur.execute("SELECT * FROM entity_aliases ORDER BY novel_id, alias_norm, entity_id").fetchall()]
-    lnk_after = [tuple(r) for r in cur.execute("SELECT * FROM entity_links ORDER BY novel_id, entity_a, entity_b").fetchall()]
-    job_after = [tuple(r) for r in cur.execute("SELECT * FROM jobs WHERE stage = 's2' ORDER BY chapter_id").fetchall()]
-
-    assert ent_before == ent_after
-    assert ali_before == ali_after
-    assert lnk_before == lnk_after
-    assert job_before == job_after
+    snap_after = snapshot(db_conn, "pntt1")
+    assert snap_before == snap_after
 
 
-def test_resuming_chapter_to_2_then_3(repo: Repository, db_conn: sqlite3.Connection) -> None:
-    r"""Verify resuming chapter_to=2 then 3 gives same rows as one run to 3, and chapter 3 adjudication sees context from 1 and 2."""
+def test_resuming_chapter_to_2_then_3(
+    repo: Repository, db_conn: sqlite3.Connection, tmp_path: Path
+) -> None:
+    r"""Verify resuming chapter_to=2 then 3 gives same snapshot as one run to 3, and chapter 3 adjudication sees context from 1 and 2."""
     cfg = make_config(total_chapters=3)
+    # Hàn Lập recurs across all 3 chapters, is a holder in Ch2, and has a reveal in Ch3.
+    # Trưởng Lão in Ch1 and Ch2 recurs, and in Ch3 Mặc Trưởng Lão triggers adjudication against Trưởng Lão.
     ext1 = make_canned_extraction(
         chapter_id=1,
         events=[
+            {
+                "name": "Hàn Lập",
+                "category": "character",
+                "event_type": "ACQUISITION",
+                "holder": "Hàn Lập",
+                "tier_or_realm": "Luyện Khí",
+                "same_as": None,
+                "description": "Hàn Lập nhập Thất Huyền Môn",
+                "evidence": "Hàn Lập",
+            },
             {
                 "name": "Trưởng Lão",
                 "category": "character",
@@ -382,12 +435,32 @@ def test_resuming_chapter_to_2_then_3(repo: Repository, db_conn: sqlite3.Connect
                 "same_as": None,
                 "description": "Trưởng Lão Ch1 context marker",
                 "evidence": "Ch1 evidence marker",
-            }
+            },
         ],
     )
     ext2 = make_canned_extraction(
         chapter_id=2,
         events=[
+            {
+                "name": "Lệ Phi Vũ",
+                "category": "character",
+                "event_type": "ACQUISITION",
+                "holder": "Lệ Phi Vũ",
+                "tier_or_realm": "Phàm nhân",
+                "same_as": None,
+                "description": "Lệ Phi Vũ xuất hiện",
+                "evidence": "Lệ Phi Vũ",
+            },
+            {
+                "name": "Thanh Trúc Kiếm",
+                "category": "weapon_treasure",
+                "event_type": "ACQUISITION",
+                "holder": "Hàn Lập",
+                "tier_or_realm": "Pháp bảo",
+                "same_as": None,
+                "description": "Bảo kiếm của Hàn Lập",
+                "evidence": "Thanh Trúc Kiếm",
+            },
             {
                 "name": "Trưởng Lão",
                 "category": "character",
@@ -397,12 +470,22 @@ def test_resuming_chapter_to_2_then_3(repo: Repository, db_conn: sqlite3.Connect
                 "same_as": None,
                 "description": "Trưởng Lão Ch2 context marker",
                 "evidence": "Ch2 evidence marker",
-            }
+            },
         ],
     )
     ext3 = make_canned_extraction(
         chapter_id=3,
         events=[
+            {
+                "name": "Hàn Lập",
+                "category": "character",
+                "event_type": "REVEALED_IDENTITY",
+                "holder": None,
+                "tier_or_realm": "Luyện Khí",
+                "same_as": "Lệ Phi Vũ",
+                "description": "Hàn Lập tiết lộ danh tính Lệ Phi Vũ",
+                "evidence": "Hàn Lập chính là Lệ Phi Vũ",
+            },
             {
                 "name": "Mặc Trưởng Lão",
                 "category": "character",
@@ -412,13 +495,14 @@ def test_resuming_chapter_to_2_then_3(repo: Repository, db_conn: sqlite3.Connect
                 "same_as": None,
                 "description": "Mặc Trưởng Lão Ch3 context marker",
                 "evidence": "Ch3 evidence marker",
-            }
+            },
         ],
     )
     save_chapter_and_extraction(repo, chapter_id=1, extraction=ext1)
     save_chapter_and_extraction(repo, chapter_id=2, extraction=ext2)
     save_chapter_and_extraction(repo, chapter_id=3, extraction=ext3)
 
+    # Resumed run: chapter_to=2, then chapter_to=3
     fake1 = FakeAdjudicator(default_decision=True)
     res1 = run_s2(repo, novel_id="pntt1", config=cfg, chapter_to=2, model=FunctionModel(fake1), prompts_dir=PROMPTS_DIR)
     assert res1.written == 2
@@ -434,10 +518,36 @@ def test_resuming_chapter_to_2_then_3(repo: Repository, db_conn: sqlite3.Connect
     assert "Trưởng Lão Ch1 context marker | Ch1 evidence marker" in prompt_captured
     assert "Trưởng Lão Ch2 context marker | Ch2 evidence marker" in prompt_captured
 
+    # Single clean run straight through chapter_to=3 in a fresh database
+    clean_conn = connect(tmp_path / "clean_resume.db")
+    init_schema(clean_conn)
+    clean_repo = Repository(clean_conn)
+    save_chapter_and_extraction(clean_repo, chapter_id=1, extraction=ext1)
+    save_chapter_and_extraction(clean_repo, chapter_id=2, extraction=ext2)
+    save_chapter_and_extraction(clean_repo, chapter_id=3, extraction=ext3)
+
+    fake_clean = FakeAdjudicator(default_decision=True)
+    res_clean = run_s2(clean_repo, novel_id="pntt1", config=cfg, chapter_to=3, model=FunctionModel(fake_clean), prompts_dir=PROMPTS_DIR)
+    assert res_clean.written == 3
+    assert res_clean.skipped == 0
+    assert fake_clean.calls == 1
+
+    snap_resumed = snapshot(db_conn, "pntt1")
+    snap_clean = snapshot(clean_conn, "pntt1")
+    assert snap_resumed == snap_clean
+    clean_conn.close()
+
+    # Meaningful counts verified
     cur = db_conn.cursor()
-    ent_rows = cur.execute("SELECT canonical_name FROM entities WHERE novel_id = 'pntt1' ORDER BY entity_id").fetchall()
-    assert len(ent_rows) == 1
-    assert ent_rows[0]["canonical_name"] == "Trưởng Lão"
+    hl = cur.execute("SELECT * FROM entities WHERE canonical_name = 'Hàn Lập'").fetchone()
+    assert hl is not None
+    assert hl["first_chapter"] == 1
+    assert hl["last_chapter"] == 3
+    assert hl["mention_count"] >= 3
+
+    links = cur.execute("SELECT * FROM entity_links WHERE novel_id = 'pntt1'").fetchall()
+    assert len(links) == 1
+    assert links[0]["revealed_chapter"] == 3
 
 
 def test_spoiler_bound(repo: Repository) -> None:
@@ -453,8 +563,8 @@ def test_spoiler_bound(repo: Repository) -> None:
                 "holder": None,
                 "tier_or_realm": "Trúc Cơ",
                 "same_as": None,
-                "description": "DESC_CH1_MARKER",
-                "evidence": "EVID_CH1_MARKER",
+                "description": "DESC_CH1_MARKER_ALPHA",
+                "evidence": "EVID_CH1_MARKER_ALPHA",
             }
         ],
     )
@@ -468,8 +578,8 @@ def test_spoiler_bound(repo: Repository) -> None:
                 "holder": None,
                 "tier_or_realm": "Trúc Cơ",
                 "same_as": None,
-                "description": "DESC_CH2_MARKER",
-                "evidence": "EVID_CH2_MARKER",
+                "description": "DESC_CH2_MARKER_BETA",
+                "evidence": "EVID_CH2_MARKER_BETA",
             }
         ],
     )
@@ -483,8 +593,8 @@ def test_spoiler_bound(repo: Repository) -> None:
                 "holder": None,
                 "tier_or_realm": "Trúc Cơ",
                 "same_as": None,
-                "description": "DESC_CH3_MARKER_FUTURE",
-                "evidence": "EVID_CH3_MARKER_FUTURE",
+                "description": "DESC_CH3_SPOILER_FUTURE",
+                "evidence": "EVID_CH3_SPOILER_FUTURE",
             }
         ],
     )
@@ -492,25 +602,28 @@ def test_spoiler_bound(repo: Repository) -> None:
     save_chapter_and_extraction(repo, chapter_id=2, extraction=ext2)
     save_chapter_and_extraction(repo, chapter_id=3, extraction=ext3)
 
-    fake_clean = FakeAdjudicator(default_decision=True)
-    res_clean = run_s2(repo, novel_id="pntt1", config=cfg, chapter_to=2, model=FunctionModel(fake_clean), prompts_dir=PROMPTS_DIR)
-    assert res_clean.written == 2
-    assert fake_clean.calls == 1
-    for prompt in fake_clean.captured_prompts:
-        assert "DESC_CH3_MARKER_FUTURE" not in prompt
-        assert "EVID_CH3_MARKER_FUTURE" not in prompt
+    # 1. First run does chapter 1 with chapter_to=1
+    fake_ch1 = FakeAdjudicator(default_decision=True)
+    res_ch1 = run_s2(repo, novel_id="pntt1", config=cfg, chapter_to=1, model=FunctionModel(fake_ch1), prompts_dir=PROMPTS_DIR)
+    assert res_ch1.written == 1
+    assert res_ch1.skipped == 0
 
-    res_rebuild = run_s2(repo, novel_id="pntt1", config=cfg, chapter_to=1, rebuild=True, model=FunctionModel(FakeAdjudicator()), prompts_dir=PROMPTS_DIR)
-    assert res_rebuild.written == 1
+    # 2. Resumed run uses chapter_to=3 with extractions for chapters 2 and 3 both present.
+    # Start chapter is K=2. Chapter 2 triggers adjudication against Trưởng Lão (which also has a mention in chapter 3).
+    fake_resumed = FakeAdjudicator(default_decision=True)
+    res_resumed = run_s2(repo, novel_id="pntt1", config=cfg, chapter_to=3, model=FunctionModel(fake_resumed), prompts_dir=PROMPTS_DIR)
+    assert res_resumed.skipped == 1
+    assert res_resumed.written == 2
+    assert fake_resumed.calls >= 1
 
-    fake_resume = FakeAdjudicator(default_decision=True)
-    res_resume = run_s2(repo, novel_id="pntt1", config=cfg, chapter_to=2, model=FunctionModel(fake_resume), prompts_dir=PROMPTS_DIR)
-    assert res_resume.skipped == 1
-    assert res_resume.written == 1
-    assert fake_resume.calls == 1
-    for prompt in fake_resume.captured_prompts:
-        assert "DESC_CH3_MARKER_FUTURE" not in prompt
-        assert "EVID_CH3_MARKER_FUTURE" not in prompt
+    # Filter prompts sent while processing chapter 2 (identifiable by "Chapter: 2" in the <mention> block)
+    ch2_prompts = [p for p in fake_resumed.captured_prompts if "Chapter: 2" in p]
+    assert len(ch2_prompts) >= 1
+    for p in ch2_prompts:
+        assert "DESC_CH1_MARKER_ALPHA" in p
+        assert "EVID_CH1_MARKER_ALPHA" in p
+        assert "DESC_CH3_SPOILER_FUTURE" not in p
+        assert "EVID_CH3_SPOILER_FUTURE" not in p
 
 
 def test_identity_reveal_end_to_end(repo: Repository) -> None:
@@ -675,7 +788,7 @@ def test_model_failure_in_chapter_2_of_3(
     assert res_resume.skipped == 1
     assert res_resume.written == 2
 
-    # Clean run in separate DB for comparison
+    # Clean run in separate DB for snapshot comparison
     clean_conn = connect(tmp_path / "clean.db")
     init_schema(clean_conn)
     clean_repo = Repository(clean_conn)
@@ -686,11 +799,9 @@ def test_model_failure_in_chapter_2_of_3(
     clean_fake = FakeAdjudicator(default_decision=True)
     run_s2(clean_repo, novel_id="pntt1", config=cfg, model=FunctionModel(clean_fake), prompts_dir=PROMPTS_DIR)
 
-    clean_cur = clean_conn.cursor()
-    assert [tuple(r) for r in cur.execute("SELECT canonical_name, category, first_chapter FROM entities ORDER BY entity_id")] == \
-           [tuple(r) for r in clean_cur.execute("SELECT canonical_name, category, first_chapter FROM entities ORDER BY entity_id")]
-    assert [tuple(r) for r in cur.execute("SELECT alias_norm, entity_id, first_chapter FROM entity_aliases ORDER BY entity_id, alias_norm")] == \
-           [tuple(r) for r in clean_cur.execute("SELECT alias_norm, entity_id, first_chapter FROM entity_aliases ORDER BY entity_id, alias_norm")]
+    snap_recovered = snapshot(db_conn, "pntt1")
+    snap_clean = snapshot(clean_conn, "pntt1")
+    assert snap_recovered == snap_clean
     clean_conn.close()
 
 
@@ -734,9 +845,6 @@ def test_stale_detection_and_rebuild(repo: Repository, db_conn: sqlite3.Connecti
     res1 = run_s2(repo, novel_id="pntt1", config=cfg, model=FunctionModel(fake), prompts_dir=PROMPTS_DIR)
     assert res1.written == 2
 
-    cur = db_conn.cursor()
-    jobs_snap = cur.execute("SELECT * FROM jobs WHERE stage = 's2'").fetchall()
-
     # 1. Changing done chapter extraction raises S2StaleError naming it
     mod_ext1 = ext1.model_copy(update={"map_location": "Vạn Bảo Lâu mới"})
     repo.save_extraction(
@@ -749,16 +857,16 @@ def test_stale_detection_and_rebuild(repo: Repository, db_conn: sqlite3.Connecti
         input_hash="diffhash",
     )
 
+    snap_before1 = snapshot(db_conn, "pntt1")
     fake_stale1 = FakeAdjudicator()
+    call_count_before1 = fake_stale1.calls
     with pytest.raises(S2StaleError) as exc_info1:
         run_s2(repo, novel_id="pntt1", config=cfg, model=FunctionModel(fake_stale1), prompts_dir=PROMPTS_DIR)
     assert exc_info1.value.chapters == [1]
     assert "1" in str(exc_info1.value)
     assert "rebuild=True redoes the novel" in str(exc_info1.value)
-    assert fake_stale1.calls == 0
-
-    jobs_after = cur.execute("SELECT * FROM jobs WHERE stage = 's2'").fetchall()
-    assert [tuple(r) for r in jobs_snap] == [tuple(r) for r in jobs_after]
+    assert snapshot(db_conn, "pntt1") == snap_before1
+    assert fake_stale1.calls == call_count_before1
 
     # Restore extraction
     repo.save_extraction(
@@ -772,33 +880,42 @@ def test_stale_detection_and_rebuild(repo: Repository, db_conn: sqlite3.Connecti
     )
 
     # 2. Changing seed_aliases also raises
+    snap_before2 = snapshot(db_conn, "pntt1")
     cfg_seeds = copy.deepcopy(cfg)
     cfg_seeds["seed_aliases"] = [{"category": "character", "names": ["Hàn Lão Ma", "Hàn Lập"]}]
     fake_stale2 = FakeAdjudicator()
+    call_count_before2 = fake_stale2.calls
     with pytest.raises(S2StaleError) as exc_info2:
         run_s2(repo, novel_id="pntt1", config=cfg_seeds, model=FunctionModel(fake_stale2), prompts_dir=PROMPTS_DIR)
     assert 1 in exc_info2.value.chapters
-    assert fake_stale2.calls == 0
+    assert "rebuild=True redoes the novel" in str(exc_info2.value)
+    assert snapshot(db_conn, "pntt1") == snap_before2
+    assert fake_stale2.calls == call_count_before2
 
     # 3. Changing prompt version also raises
     prompts_copy = tmp_path / "prompts"
     p_sub = prompts_copy / "s2_adjudicate"
-    p_sub.mkdir(parents=True)
+    p_sub.mkdir(parents=True, exist_ok=True)
     orig_text = (PROMPTS_DIR / "s2_adjudicate" / "v1.md").read_text(encoding="utf-8")
     (p_sub / "v1.md").write_text(orig_text, encoding="utf-8")
     (p_sub / "v2.md").write_text(orig_text + "\n# Modified prompt template", encoding="utf-8")
 
     cfg_prompt = copy.deepcopy(cfg)
     cfg_prompt["prompts"] = {"s2_adjudicate": "v2"}
+    snap_before3 = snapshot(db_conn, "pntt1")
     fake_stale3 = FakeAdjudicator()
+    call_count_before3 = fake_stale3.calls
     with pytest.raises(S2StaleError) as exc_info3:
         run_s2(repo, novel_id="pntt1", config=cfg_prompt, model=FunctionModel(fake_stale3), prompts_dir=prompts_copy)
     assert 1 in exc_info3.value.chapters
-    assert fake_stale3.calls == 0
+    assert "rebuild=True redoes the novel" in str(exc_info3.value)
+    assert snapshot(db_conn, "pntt1") == snap_before3
+    assert fake_stale3.calls == call_count_before3
 
     # 4. rebuild=True clears and rebuilds with fresh ids from 1
     res_rebuild = run_s2(repo, novel_id="pntt1", config=cfg, rebuild=True, model=FunctionModel(FakeAdjudicator()), prompts_dir=PROMPTS_DIR)
     assert res_rebuild.written == 2
+    cur = db_conn.cursor()
     ent = cur.execute("SELECT * FROM entities WHERE novel_id = 'pntt1'").fetchone()
     assert ent["entity_id"] == 1
 
@@ -811,10 +928,9 @@ def test_rebuild_raises_value_error_when_entity_events_exist(
     save_chapter_and_extraction(repo, chapter_id=1)
     run_s2(repo, novel_id="pntt1", config=cfg, model=FunctionModel(FakeAdjudicator()), prompts_dir=PROMPTS_DIR)
 
-    cur = db_conn.cursor()
-    ent_before = [tuple(r) for r in cur.execute("SELECT * FROM entities").fetchall()]
-    job_before = [tuple(r) for r in cur.execute("SELECT * FROM jobs WHERE stage = 's2'").fetchall()]
+    snap_before = snapshot(db_conn, "pntt1")
 
+    cur = db_conn.cursor()
     cur.execute(
         "INSERT INTO entity_events (novel_id, id, chapter_id, entity_id, event_type, ordinal, description) "
         "VALUES ('pntt1', 1, 1, 1, 'ACQUISITION', 1, 'Event description')"
@@ -824,11 +940,8 @@ def test_rebuild_raises_value_error_when_entity_events_exist(
     with pytest.raises(ValueError, match="entity_events has rows"):
         run_s2(repo, novel_id="pntt1", config=cfg, rebuild=True, prompts_dir=PROMPTS_DIR)
 
-    ent_after = [tuple(r) for r in cur.execute("SELECT * FROM entities").fetchall()]
-    job_after = [tuple(r) for r in cur.execute("SELECT * FROM jobs WHERE stage = 's2'").fetchall()]
-
-    assert ent_before == ent_after
-    assert job_before == job_after
+    snap_after = snapshot(db_conn, "pntt1")
+    assert snap_before == snap_after
 
 
 def test_seed_name_never_used_has_no_alias_row(repo: Repository) -> None:
