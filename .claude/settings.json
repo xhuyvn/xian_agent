@@ -24,7 +24,10 @@
       "Bash(uv sync:*)",
       "Bash(uv lock:*)",
       "Bash(uv export:*)",
-      "Bash(uv run pytest:*)"
+      "Bash(uv run pytest:*)",
+      "Bash(docker compose:*)",
+      "Bash(docker ps:*)",
+      "Bash(docker logs:*)"
     ],
     "deny": [
       "Read(./.env)",

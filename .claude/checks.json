@@ -1,0 +1,5 @@
+{
+  "commands": ["py -m compileall -q src", "uv run pytest tests/unit"],
+  "maxFixes": 2,
+  "timeoutSeconds": 600
+}

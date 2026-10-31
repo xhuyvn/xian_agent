@@ -8,7 +8,7 @@ replies short and phone-readable: outcome first, then at most a few bullets.
 ## Roles
 | Role | Who | Does |
 |---|---|---|
-| Lead / architect | you (this session) | clarify, plan, split work, review, integrate, report |
+| Lead / architect | you (this session) | clarify, plan, split work, build infrastructure, review, integrate, report |
 | Coder | `agy-coder` subagent → Antigravity CLI (`agy`) | edits files in an isolated git worktree; cannot run shell |
 | Verifier | `verifier` subagent | runs the project's checks in that worktree, reviews the diff, returns PASS/FAIL |
 | Deploy | GitHub Actions | runs only after the owner approves the protected environment in GitHub |
@@ -16,6 +16,11 @@ replies short and phone-readable: outcome first, then at most a few bullets.
 You do not write product code yourself. Trivial edits (docs, config typos, merge-conflict
 markers) are fine; anything larger goes to `agy-coder`. If `agy` is unavailable, say so and ask
 the owner before coding it yourself.
+
+Infrastructure is yours, because it has to be run to be proven and agy can't run anything: containers
+and `docker-compose`, Dockerfiles, dependency installs and lockfiles, project scaffolding from
+generators. Build it on a task branch, start it and show it working, then run `verifier` as on any
+task. Application logic stays with agy. Deploys stay with GitHub Actions.
 
 ## Workflow
 1. **Clarify.** If the request is ambiguous (which project area, what "done" means), ask one
@@ -29,7 +34,9 @@ the owner before coding it yourself.
 3. **Delegate.** One `agy-coder` call per task. Run tasks in parallel only when their file sets
    do not overlap. Give each a self-contained brief: objective, files in scope, out of scope,
    acceptance criteria, relevant context (agy does not see this conversation).
-4. **Verify.** Run `verifier` on every finished task: `full` mode on the first pass, then `delta`
+4. **Verify.** `agy-task` runs `.claude/checks.json` after each agy turn and sends failures back to
+   agy itself. On `checks.status` `failed`, skip the verifier and treat it as a FAIL round with that
+   output. Otherwise run `verifier` on every finished task: `full` mode on the first pass, then `delta`
    mode with the previous findings and revision. agy reporting success is not evidence; only the
    verifier's checks are. An `interrupted` run goes to the verifier too, which must confirm the
    work is complete.
@@ -41,7 +48,7 @@ the owner before coding it yourself.
    `main`/`master`), re-run the verifier in `delta` mode on the merged result, then `git push` the feature
    branch and open a PR with `gh pr create`. Merge conflicts: report, don't pick sides blindly.
 7. **Report.** What changed, check results (actual command + pass/fail), PR link, agy tokens used
-   (`runTotalTokens`), open `NIT`s, anything not done or not verified.
+   (`runTotalTokens`), automatic fixes used, open `NIT`s, anything not done or not verified.
 8. **Close.** When the task is finished, tell the owner to start a new session for the next one.
    Every message in a long session costs more. Once its PR is merged, remove each run with
    `node .claude/scripts/agy-task.mjs cleanup --id <id>`.

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // Runs one Antigravity (agy) coding task in an isolated git worktree and prints a JSON summary.
 //
-//   node .claude/scripts/agy-task.mjs run    --slug <name> [--base <ref>] [--model <id>] [--effort <level>] [--timeout <s>] < brief.md
-//   node .claude/scripts/agy-task.mjs resume --id <run-id> [--fresh] [--model <id>] [--effort <level>] [--timeout <s>] < feedback.md
+//   node .claude/scripts/agy-task.mjs run    --slug <name> [--base <ref>] [--model <id>] [--effort <level>] [--timeout <s>] [--no-checks] < brief.md
+//   node .claude/scripts/agy-task.mjs resume --id <run-id> [--fresh] [--model <id>] [--effort <level>] [--timeout <s>] [--no-checks] < feedback.md
 //   node .claude/scripts/agy-task.mjs list
 //   node .claude/scripts/agy-task.mjs cleanup --id <run-id>
 //
@@ -10,6 +10,8 @@
 // mode: it can edit files in the worktree but every shell command is auto-denied. Changes are
 // committed on branch agy/<id>; run records live in .secretary/runs/<id>/ in the main checkout.
 // --fresh starts a new agy conversation on the same worktree instead of resuming the old one.
+// After each turn the commands in .claude/checks.json run in the worktree. Failures go back to agy
+// on their own, up to maxFixes times, and the result is reported as `checks`.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, appendFileSync } from 'node:fs';
@@ -17,11 +19,12 @@ import { join, dirname, basename, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { turnUsage, outcomeFor } from './agy-usage.mjs';
 import { logEvent, clip, mainCheckout } from './activity-log.mjs';
+import { loadChecks, runChecks, fixPrompt } from './agy-checks.mjs';
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
-const PREAMBLE = `You are the coder on a team. A lead architect wrote the brief below; a separate verifier will
-run the tests and review your diff afterwards.
+const PREAMBLE = `You are the coder on a team. A lead architect wrote the brief below. Automatic checks run after
+you finish and any failures come back to you; a separate verifier then reviews your diff.
 - Work only inside the current directory (a git worktree). Edit only what the brief needs.
 - You cannot run shell commands here; don't try to run tests, installs or git. Just edit files.
 - Do not touch .claude/, .github/workflows/, CLAUDE.md, docs/GOALS.md, .env files or credentials.
@@ -84,7 +87,9 @@ function runAgy(agy, worktree, prompt, { model, effort, timeout, conversation })
   if (effort) args.push('--effort', effort);
   if (conversation) args.push('--conversation', conversation);
   const startedAt = Date.now();
-  const r = spawnSync(agy, args, {
+  // A .mjs "agy" is the tests' stand-in; Windows can't spawn it directly.
+  const [program, ...prefix] = agy.endsWith('.mjs') ? [process.execPath, agy] : [agy];
+  const r = spawnSync(program, [...prefix, ...args], {
     cwd: worktree,
     encoding: 'utf8',
     maxBuffer: 64 * 1024 * 1024,
@@ -158,6 +163,41 @@ function logAgyEnd(repo, summary) {
   });
 }
 
+function checksFor(opts) {
+  if (opts['no-checks']) return null;
+  try { return loadChecks(repo); } catch (e) { fail(e.message); }
+}
+
+// Runs the checks and hands failures back to agy until they pass, the fixes run out or agy changes nothing.
+function checkAndFix(agy, meta, first, checks, turn) {
+  let summary = first;
+  const startTokens = first.runTotalTokens - first.turnTokens;
+  let seconds = first.turnSeconds;
+  const finish = status => ({ ...summary, roundTokens: summary.runTotalTokens - startTokens, roundSeconds: seconds, checks: status });
+  if (!checks) return finish({ status: 'skipped', reason: '--no-checks' });
+  if (!checks.commands.length) return finish({ status: 'not_configured' });
+  if (!['changes', 'interrupted'].includes(first.outcome)) return finish({ status: 'skipped', reason: `outcome ${first.outcome}` });
+
+  for (let fixes = 0; ; fixes++) {
+    const result = runChecks(checks, meta.worktree);
+    logEvent(repo, { type: 'checks', run: meta.id, passed: result.passed, fixes, text: clip(result.command) });
+    if (result.passed) return finish({ status: 'passed', fixes });
+    const failed = { status: 'failed', fixes, command: result.command, exitCode: result.exitCode, output: result.output };
+    if (fixes >= checks.maxFixes || !meta.conversationId) return finish(failed);
+
+    const prompt = fixPrompt(result);
+    meta.turns += 1;
+    writeFileSync(join(repo, '.secretary', 'runs', meta.id, `brief-${meta.turns}.md`), prompt);
+    logEvent(repo, { type: 'agy_start', run: meta.id, slug: meta.id.replace(/^\d+-\d+-/, ''), turn: meta.turns, text: clip(`auto-fix: ${result.command}`, 120) });
+    const agyRun = runAgy(agy, meta.worktree, prompt, { ...turn, conversation: meta.conversationId });
+    const committed = commitChanges(meta.worktree, `agy: auto-fix ${fixes + 1} of ${meta.id}`);
+    summary = summarize(repo, meta, agyRun, committed);
+    seconds += summary.turnSeconds;
+    logAgyEnd(repo, summary);
+    if (!committed) return finish(failed);
+  }
+}
+
 function ensureIgnored(repo) {
   // Keep run records out of git without touching the tracked .gitignore.
   const exclude = join(git(['rev-parse', '--git-common-dir'], repo), 'info', 'exclude');
@@ -177,6 +217,7 @@ if (opts.effort !== undefined && !EFFORTS.includes(opts.effort)) fail(`--effort 
 if (command === 'run') {
   const brief = readBrief(opts).trim();
   if (!brief) fail('brief is empty');
+  const checks = checksFor(opts);
   const agy = findAgy();
   const base = git(['rev-parse', opts.base || 'HEAD'], here);
   const id = `${stamp()}-${slugify(opts.slug)}`;
@@ -194,7 +235,7 @@ if (command === 'run') {
   const committed = commitChanges(worktree, `agy: ${opts.slug || id}`);
   const summary = summarize(repo, meta, agyRun, committed);
   logAgyEnd(repo, summary);
-  console.log(JSON.stringify(summary, null, 2));
+  console.log(JSON.stringify(checkAndFix(agy, meta, summary, checks, { model: meta.model, effort: opts.effort, timeout }), null, 2));
 } else if (command === 'resume') {
   if (typeof opts.id !== 'string') fail('--id is required');
   const runDir = join(repo, '.secretary', 'runs', opts.id);
@@ -203,6 +244,8 @@ if (command === 'run') {
   if (!existsSync(meta.worktree)) fail(`worktree ${meta.worktree} no longer exists`);
   const feedback = readBrief(opts).trim();
   if (!feedback) fail('feedback is empty');
+  const checks = checksFor(opts);
+  const agy = findAgy();
   meta.turns += 1;
   meta.timeout = timeout;
   writeFileSync(join(runDir, `brief-${meta.turns}.md`), feedback);
@@ -211,11 +254,12 @@ if (command === 'run') {
     ? `${PREAMBLE}${readFileSync(join(runDir, 'brief-1.md'), 'utf8')}\n\n--- REVISION REQUEST ---\nEarlier work on this brief is already committed in this worktree, and you have no memory of it. Read the current files first, then address every point:\n\n${feedback}`
     : `Revision request from the lead architect (same task, same worktree). Address every point:\n\n${feedback}`;
   logEvent(repo, { type: 'agy_start', run: meta.id, slug: meta.id.replace(/^\d+-\d+-/, ''), turn: meta.turns, text: clip(feedback, 120) });
-  const agyRun = runAgy(findAgy(), meta.worktree, prompt, { model: opts.model || meta.model, effort: opts.effort, timeout, conversation: fresh ? undefined : meta.conversationId });
+  const turn = { model: opts.model || meta.model, effort: opts.effort, timeout };
+  const agyRun = runAgy(agy, meta.worktree, prompt, { ...turn, conversation: fresh ? undefined : meta.conversationId });
   const committed = commitChanges(meta.worktree, `agy: revision ${meta.turns - 1} of ${meta.id}`);
   const summary = summarize(repo, meta, agyRun, committed);
   logAgyEnd(repo, summary);
-  console.log(JSON.stringify(summary, null, 2));
+  console.log(JSON.stringify(checkAndFix(agy, meta, summary, checks, turn), null, 2));
 } else if (command === 'list') {
   const dir = join(repo, '.secretary', 'runs');
   const runs = existsSync(dir) ? readdirSync(dir).filter(d => existsSync(join(dir, d, 'meta.json'))) : [];
