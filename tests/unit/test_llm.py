@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from pathlib import Path
 import sqlite3
 import sys
@@ -9,11 +10,14 @@ from typing import Any
 import unittest.mock
 import pytest
 
-from pydantic_ai import Agent, ModelRetry
+from pydantic import BaseModel
+from pydantic_ai import Agent
+from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.usage import Usage
 
-from xn.llm import _count_retries, _extract_tokens, local_model, run_logged
+from xn.llm import local_model, run_logged
 from xn.storage.database import connect, init_schema
 from xn.storage.repository import Repository
 
@@ -86,58 +90,21 @@ def test_local_model_uses_serving_name_and_is_cached() -> None:
     assert m3 is not m1
 
 
-def test_extract_tokens_helper() -> None:
-    """Verify token extraction handles various usage formats and None."""
-    class MockResult:
-        def __init__(self, usage_obj: Any) -> None:
-            self.usage = usage_obj
+def test_local_model_missing_serving_name_raises() -> None:
+    """Verify local_model raises ValueError naming models.local_extractor.serving_name if missing."""
+    cfg_no_serving_name = {
+        "models": {
+            "local_extractor": {
+                "name": "qwen2.5:14b",
+                "base_url": "http://localhost:11434/v1",
+            }
+        }
+    }
+    with pytest.raises(ValueError, match="models.local_extractor.serving_name"):
+        local_model(cfg_no_serving_name)
 
-    # Case 1: request_tokens / response_tokens
-    usage1 = unittest.mock.MagicMock()
-    usage1.request_tokens = 120
-    usage1.response_tokens = 45
-    assert _extract_tokens(MockResult(usage1)) == (120, 45)
-
-    # Case 2: callable usage returning input_tokens / output_tokens
-    usage2 = {"input_tokens": 80, "output_tokens": 30}
-    assert _extract_tokens(MockResult(lambda: usage2)) == (80, 30)
-
-    # Case 3: None usage
-    assert _extract_tokens(MockResult(None)) == (None, None)
-
-    # Case 4: No usage attribute
-    assert _extract_tokens(object()) == (None, None)
-
-
-def test_count_retries_helper() -> None:
-    """Verify count_retries correctly parses messages with parts."""
-    class MockPart:
-        def __init__(self, part_kind: str) -> None:
-            self.part_kind = part_kind
-
-    class MockMessage:
-        def __init__(self, parts: list[Any]) -> None:
-            self.parts = parts
-
-    class MockResult:
-        def __init__(self, messages: list[Any]) -> None:
-            self._messages = messages
-
-        def all_messages(self) -> list[Any]:
-            return self._messages
-
-    # No retries
-    res0 = MockResult([MockMessage([MockPart("user-prompt")]), MockMessage([MockPart("text")])])
-    assert _count_retries(res0) == 0
-
-    # 2 retries
-    res2 = MockResult([
-        MockMessage([MockPart("user-prompt")]),
-        MockMessage([MockPart("retry-prompt")]),
-        MockMessage([MockPart("retry-prompt")]),
-        MockMessage([MockPart("text")]),
-    ])
-    assert _count_retries(res2) == 2
+    with pytest.raises(ValueError, match="models.local_extractor.serving_name"):
+        local_model({})
 
 
 def test_run_logged_success_writes_row_and_returns_result(
@@ -181,17 +148,41 @@ def test_run_logged_success_writes_row_and_returns_result(
 
 
 def test_run_logged_with_retries(repo: Repository, db_conn: sqlite3.Connection) -> None:
-    """Verify run_logged correctly counts retry prompts in result messages."""
+    """Verify run_logged correctly tracks retries when validation fails once and succeeds."""
+    class OutputSchema(BaseModel):
+        score: int
+
     attempts = 0
 
-    def retry_model_func(messages: list[Any], info: Any) -> str:
+    def retry_model_func(messages: list[Any], info: Any) -> ModelResponse:
         nonlocal attempts
         attempts += 1
-        if attempts == 1:
-            raise ModelRetry("Please format output according to instructions")
-        return "Extraction result after 1 retry"
+        output_tools = getattr(info, "output_tools", None)
+        tool_name = output_tools[0].name if output_tools else "final_result"
 
-    agent = Agent(FunctionModel(retry_model_func), output_type=str, retries=2)
+        sig = inspect.signature(Usage.__init__)
+        params = sig.parameters
+        usage_kwargs: dict[str, Any] = {}
+        if "requests" in params:
+            usage_kwargs["requests"] = 1
+        if "input_tokens" in params:
+            usage_kwargs["input_tokens"] = 10 * attempts
+        if "request_tokens" in params:
+            usage_kwargs["request_tokens"] = 10 * attempts
+        if "output_tokens" in params:
+            usage_kwargs["output_tokens"] = 5 * attempts
+        if "response_tokens" in params:
+            usage_kwargs["response_tokens"] = 5 * attempts
+        usage_obj = Usage(**usage_kwargs)
+
+        if attempts == 1:
+            part = ToolCallPart(tool_name, {"score": "not_an_int"})
+        else:
+            part = ToolCallPart(tool_name, {"score": 100})
+
+        return ModelResponse(parts=[part], usage=usage_obj)
+
+    agent = Agent(FunctionModel(retry_model_func), output_type=OutputSchema, retries=2)
 
     result = run_logged(
         agent,
@@ -204,13 +195,17 @@ def test_run_logged_with_retries(repo: Repository, db_conn: sqlite3.Connection) 
         prompt_version="a1b2c3d4",
     )
 
-    assert result.output == "Extraction result after 1 retry"
+    assert result.output.score == 100
 
     cur = db_conn.execute("SELECT * FROM llm_runs WHERE novel_id = 'pntt1' AND chapter_id = 2")
     row = cur.fetchone()
     assert row is not None
     assert row["ok"] == 1
     assert row["retries"] == 1
+    assert row["input_tokens"] is not None
+    assert row["output_tokens"] is not None
+    assert row["input_tokens"] > 0
+    assert row["output_tokens"] > 0
     assert row["chapter_id"] == 2
 
 
@@ -277,3 +272,30 @@ def test_run_logged_logging_failure_does_not_hide_original_exception() -> None:
             model="qwen14b-12k",
             prompt_version="v1",
         )
+
+
+def test_run_logged_success_path_db_error_propagates_and_leaves_no_failed_row(
+    repo: Repository, db_conn: sqlite3.Connection
+) -> None:
+    """Verify forced failure of success-path add_llm_run leaves no ok=0 row and propagates that error."""
+    agent = Agent(TestModel(), output_type=str)
+
+    mock_repo = unittest.mock.MagicMock(wraps=repo)
+    mock_repo.add_llm_run.side_effect = sqlite3.OperationalError("Disk full during success logging")
+
+    with pytest.raises(sqlite3.OperationalError, match="Disk full during success logging"):
+        run_logged(
+            agent,
+            "Success prompt",
+            repo=mock_repo,
+            novel_id="pntt1",
+            stage="s1",
+            chapter_id=50,
+            model="qwen14b-12k",
+            prompt_version="a1b2c3d4",
+        )
+
+    # Verify no row was inserted into llm_runs (specifically, no ok=0 row)
+    cur = db_conn.execute("SELECT * FROM llm_runs WHERE chapter_id = 50")
+    rows = cur.fetchall()
+    assert len(rows) == 0
