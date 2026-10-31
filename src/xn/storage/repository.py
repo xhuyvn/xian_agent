@@ -115,6 +115,48 @@ class Repository:
         )
         return cur.fetchall()
 
+    @story_read
+    def list_extractions(
+        self, *, novel_id: str, chapter_max: int
+    ) -> list[sqlite3.Row]:
+        cur = self._conn.execute(
+            "SELECT * FROM extractions WHERE novel_id = ? AND chapter_id <= ? ORDER BY chapter_id",
+            (novel_id, chapter_max),
+        )
+        return cur.fetchall()
+
+    @story_read
+    def list_aliases(
+        self, *, novel_id: str, chapter_max: int
+    ) -> list[sqlite3.Row]:
+        cur = self._conn.execute(
+            "SELECT entity_aliases.alias_norm, entity_aliases.entity_id, "
+            "entity_aliases.first_chapter, entity_aliases.source, entities.category "
+            "FROM entity_aliases "
+            "JOIN entities ON entity_aliases.novel_id = entities.novel_id "
+            "AND entity_aliases.entity_id = entities.entity_id "
+            "WHERE entity_aliases.novel_id = ? AND entity_aliases.first_chapter <= ? "
+            "ORDER BY entity_aliases.first_chapter, entity_aliases.alias_norm, entity_aliases.entity_id",
+            (novel_id, chapter_max),
+        )
+        return cur.fetchall()
+
+    @story_read
+    def find_entities_by_alias(
+        self, *, novel_id: str, alias_norm: str, category: str, chapter_max: int
+    ) -> list[sqlite3.Row]:
+        cur = self._conn.execute(
+            "SELECT DISTINCT entity_aliases.entity_id, entities.category "
+            "FROM entity_aliases "
+            "JOIN entities ON entity_aliases.novel_id = entities.novel_id "
+            "AND entity_aliases.entity_id = entities.entity_id "
+            "WHERE entity_aliases.novel_id = ? AND entity_aliases.alias_norm = ? "
+            "AND entities.category = ? AND entity_aliases.first_chapter <= ? "
+            "ORDER BY entity_aliases.entity_id",
+            (novel_id, alias_norm, category, chapter_max),
+        )
+        return cur.fetchall()
+
     # --- Operational ---
 
     def add_novel(
@@ -276,6 +318,127 @@ class Repository:
                 input_hash=input_hash,
                 prompt_version=prompt_version,
                 model=model,
+            )
+
+    def next_entity_id(self, *, novel_id: str) -> int:
+        _validate_novel_id(novel_id)
+        cur = self._conn.execute(
+            "SELECT COALESCE(MAX(entity_id), 0) + 1 FROM entities WHERE novel_id = ?",
+            (novel_id,),
+        )
+        return int(cur.fetchone()[0])
+
+    def save_resolution(
+        self,
+        *,
+        novel_id: str,
+        chapter_id: int,
+        entities: list[dict[str, Any]],
+        entity_updates: list[dict[str, Any]],
+        aliases: list[dict[str, Any]],
+        links: list[dict[str, Any]],
+        stage: str,
+        input_hash: str,
+        prompt_version: str,
+        model: str,
+    ) -> None:
+        _validate_novel_id(novel_id)
+        with self._conn:
+            for ent in entities:
+                self._conn.execute(
+                    "INSERT INTO entities ("
+                    "novel_id, entity_id, canonical_name, category, first_chapter, last_chapter, mention_count"
+                    ") VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        novel_id,
+                        ent["entity_id"],
+                        ent["canonical_name"],
+                        ent["category"],
+                        ent["first_chapter"],
+                        ent.get("last_chapter"),
+                        ent.get("mention_count", 0),
+                    ),
+                )
+            for upd in entity_updates:
+                self._conn.execute(
+                    "UPDATE entities "
+                    "SET last_chapter = MAX(COALESCE(last_chapter, 0), ?), "
+                    "mention_count = mention_count + ? "
+                    "WHERE novel_id = ? AND entity_id = ?",
+                    (
+                        upd["last_chapter"],
+                        upd["mention_delta"],
+                        novel_id,
+                        upd["entity_id"],
+                    ),
+                )
+            for al in aliases:
+                self._conn.execute(
+                    "INSERT INTO entity_aliases ("
+                    "novel_id, alias_norm, entity_id, first_chapter, source"
+                    ") VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT(novel_id, alias_norm, entity_id) DO NOTHING",
+                    (
+                        novel_id,
+                        al["alias_norm"],
+                        al["entity_id"],
+                        al["first_chapter"],
+                        al["source"],
+                    ),
+                )
+            for lk in links:
+                ea = lk["entity_a"]
+                eb = lk["entity_b"]
+                if ea == eb:
+                    raise ValueError(f"entity_a and entity_b cannot be equal: {ea}")
+                smaller = min(ea, eb)
+                larger = max(ea, eb)
+                self._conn.execute(
+                    "INSERT INTO entity_links ("
+                    "novel_id, entity_a, entity_b, revealed_chapter, evidence"
+                    ") VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT(novel_id, entity_a, entity_b) DO NOTHING",
+                    (
+                        novel_id,
+                        smaller,
+                        larger,
+                        lk["revealed_chapter"],
+                        lk.get("evidence"),
+                    ),
+                )
+            self._upsert_job(
+                novel_id=novel_id,
+                chapter_id=chapter_id,
+                stage=stage,
+                status="done",
+                input_hash=input_hash,
+                prompt_version=prompt_version,
+                model=model,
+            )
+
+    def clear_resolution(self, *, novel_id: str, stage: str) -> None:
+        _validate_novel_id(novel_id)
+        cur = self._conn.execute(
+            "SELECT 1 FROM entity_events WHERE novel_id = ? LIMIT 1",
+            (novel_id,),
+        )
+        if cur.fetchone() is not None:
+            raise ValueError(
+                f"Cannot clear resolution: entity_events has rows for novel '{novel_id}'"
+            )
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM entity_links WHERE novel_id = ?", (novel_id,)
+            )
+            self._conn.execute(
+                "DELETE FROM entity_aliases WHERE novel_id = ?", (novel_id,)
+            )
+            self._conn.execute(
+                "DELETE FROM entities WHERE novel_id = ?", (novel_id,)
+            )
+            self._conn.execute(
+                "DELETE FROM jobs WHERE novel_id = ? AND stage = ?",
+                (novel_id, stage),
             )
 
     def get_job(

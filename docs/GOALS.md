@@ -8,6 +8,35 @@ Round line: `R-<n> <date>: <what this round had to achieve> -> PASS|FAIL, <n> bl
 
 ## Active
 
+### G-5: S1-T5 pipeline stage S2, entity resolution (active)
+Plan: docs/IMPLEMENTATION_PLAN.md, S1-T5. Depends on G-2 and G-4.
+Owner decisions: a fuzzy score of 92 or above merges without the model only if both names have the same set of tokens, otherwise it goes to adjudication (plan deviation, because `token_set` scores names like Trưởng Lão / Mặc Trưởng Lão at 100). Every match step stays within one category. Links come only from `REVEALED_IDENTITY` events with `same_as`. A seed alias row is written only when the text first uses that name. `canonical_name` is the first spelling seen in the text. `holder` resolves as a character. Chapters run in strict order, S2 stops at a gap or model failure, and a changed finished chapter needs `rebuild=True`. No new table: S3 finds `entity_id` by `(alias_norm, category)`. Three rounds of code: foundations, resolver, driver.
+Done when:
+- `src/xn/pipeline/s2_resolve.py` and `prompts/s2_adjudicate/v1.md` exist, and resolution runs within one `novel_id`
+- `normalize_alias` in `src/xn/text.py` builds on `normalize_text`, and S2 uses it for every alias
+- The match order is exact, diacritics-stripped, fuzzy, adjudication, new entity, with boundary tests at scores 92 and 80 and the agreed auto-merge rule
+- Ties never auto-merge, and a mention triggers at most 3 adjudication calls, each writing one `llm_runs` row
+- `entities`, `entity_aliases` and `entity_links` are populated, with `first_chapter` on entities and aliases
+- A reveal creates a link with `revealed_chapter` and never an alias, and tests show neither side gains the other's name
+- A test shows the adjudicator prompt contains no text from a chapter after the mention's chapter
+- A seed name not yet used in the text has no alias row
+- Running twice changes no rows and makes no model calls, and a failed chapter leaves no partial rows
+- Each event's name, `same_as` and `holder` maps to exactly one entity by `(alias_norm, category)`
+- Unit tests use a fake model
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-10-31: deliver the S2 foundations -> PASS, 0 blockers, 9211129, 273754 agy tokens
+- R-2 2026-10-31: deliver the in-memory resolver and adjudicator -> FAIL, 1 blocker, 2b2ce64, 311927 agy tokens
+- R-3 2026-10-31: clear the adjudicator output blocker -> PASS, 0 blockers, e362125, 31515 agy tokens
+- R-4 2026-10-31: deliver the run_s2 driver -> FAIL, 3 blockers, 92c7556, 323997 agy tokens
+- R-5 2026-10-31: clear the 3 run_s2 test blockers -> FAIL, 1 blocker, 7b84a73, 152986 agy tokens
+- R-6 2026-10-31: restore full job row comparisons in the snapshot helper -> PASS, 0 blockers, 795afb7, 106777 agy tokens
+Sub-goals:
+- none yet
+Changes:
+- 2026-10-31: owner approved the goal and the decisions above, choosing the same-tokens guard
+- 2026-10-31: verifier pass on the merged branch at 7a92bee -> PASS, every "Done when" line met
+
 ## Parked
 
 ## Archive
