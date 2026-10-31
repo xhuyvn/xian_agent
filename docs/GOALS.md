@@ -29,6 +29,23 @@ Changes:
 - 2026-10-31: owner approved the goal and the decisions above
 - 2026-10-31: verifier pass on the merged branch at fae527d -> PASS, every "Done when" line met
 
+### G-7: S1-T7 extractor benchmark (active)
+Plan: docs/IMPLEMENTATION_PLAN.md, S1-T7. Depends on G-4. Serves BP-OQ-1.
+Owner decisions: the lead writes the code for this goal, with no agy. The models are `qwen3.5:Q8` and `deepseek-r1:14b`, as in the S1-T7 title; BP-OQ-1 and the blueprint name models that are not installed. Recall is scored against the pooled evidence-backed entities of both models, which compares them but does not satisfy Sprint 1's recall >= 0.80 (S1-T9 keeps that). 50 chapters evenly spaced across 1-1121, because chapter 1122 is missing and S0 stops at a gap. Winner: at least 95% schema success, then higher recall, and within 2 points the faster model wins; if neither reaches 95%, stop and report. `qwen3.5:Q8` runs with thinking off, `deepseek-r1:14b` as it behaves, both one chapter at a time. Setting the winner in config and its Modelfile goes beyond S1-T7's listed files (plan deviation). The chapter gap and `total_chapters` are out of scope. Three rounds: harness, calibration, full run.
+Done when:
+- Both models run the same 50 chapters through the real S1 code
+- A report gives schema success, recall against the shared reference, s/chapter and peak VRAM for each model
+- The winner follows the agreed rule and is set in config and its Modelfile
+- `estimate_tokens` is calibrated from measured data
+- Measured s/chapter is in the blueprint §3.9 cost table
+- Unit tests use a fake model
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+Sub-goals:
+- none yet
+Changes:
+- 2026-10-31: owner approved the goal and the decisions above
+
 ## Parked
 
 ## Archive
