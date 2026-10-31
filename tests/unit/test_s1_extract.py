@@ -339,16 +339,16 @@ def test_chapter_over_7000_tokens_splits_and_merges(
     p2_first_word = p2_clean.split()[0]
     assert p2_first_word in text
 
-    # Overlap check: suffix of p1 matches prefix of p2
-    overlap_len = 0
-    for length in range(min(len(p1_clean), len(p2_clean)), 0, -1):
-        if p1_clean[-length:] == p2_clean[:length]:
-            overlap_len = length
-            break
+    # Overlap check: measure by position in the source text. The fixture repeats its padding,
+    # so the longest suffix of p1 matching a prefix of p2 would overstate the overlap.
+    assert text.startswith(p1_clean)
+    assert text.endswith(p2_clean)
+    p1_end = len(p1_clean)
+    p2_start = len(text) - len(p2_clean)
 
-    assert overlap_len > 0
+    assert p2_start < p1_end
     # ~300 tokens at 1.6 chars/token is 480 chars (allow slight deviation for word boundaries)
-    overlap_tokens = estimate_tokens(p1_clean[-overlap_len:])
+    overlap_tokens = estimate_tokens(text[p2_start:p1_end])
     assert 250 <= overlap_tokens <= 350
 
     # Resummary input verification
