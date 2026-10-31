@@ -269,6 +269,52 @@ class Repository:
         )
         self._conn.commit()
 
+    def add_llm_run(
+        self,
+        *,
+        novel_id: str,
+        run_id: str,
+        stage: str,
+        chapter_id: int | None,
+        model: str,
+        prompt_version: str,
+        input_tokens: int | None,
+        output_tokens: int | None,
+        latency_ms: int,
+        retries: int | None,
+        ok: int,
+        cost_usd: float,
+        egress_class: str,
+        payload_chapters: str | None,
+    ) -> None:
+        _validate_novel_id(novel_id)
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            "INSERT INTO llm_runs ("
+            "run_id, novel_id, stage, chapter_id, model, prompt_version, "
+            "input_tokens, output_tokens, latency_ms, retries, ok, cost_usd, "
+            "egress_class, payload_chapters, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                run_id,
+                novel_id,
+                stage,
+                chapter_id,
+                model,
+                prompt_version,
+                input_tokens,
+                output_tokens,
+                latency_ms,
+                retries,
+                ok,
+                cost_usd,
+                egress_class,
+                payload_chapters,
+                now,
+            ),
+        )
+        self._conn.commit()
+
     # --- Exempt ---
 
     def list_novels(self) -> list[sqlite3.Row]:

@@ -46,6 +46,7 @@ OPERATIONAL_METHODS = [
     "upsert_job",
     "get_job",
     "add_feedback",
+    "add_llm_run",
 ]
 
 EXEMPT_METHODS = [
@@ -225,6 +226,21 @@ def test_operational_parameter_guards(repo: Repository) -> None:
         "upsert_job": {"chapter_id": 1, "stage": "s1", "status": "pending"},
         "get_job": {"chapter_id": 1, "stage": "s1"},
         "add_feedback": {"run_id": "r1", "rating": 5},
+        "add_llm_run": {
+            "run_id": "r1",
+            "stage": "s1",
+            "chapter_id": 1,
+            "model": "qwen14b-12k",
+            "prompt_version": "v1hash01",
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "latency_ms": 120,
+            "retries": 0,
+            "ok": 1,
+            "cost_usd": 0.0,
+            "egress_class": "local",
+            "payload_chapters": "1",
+        },
     }
 
     for method_name in OPERATIONAL_METHODS:
