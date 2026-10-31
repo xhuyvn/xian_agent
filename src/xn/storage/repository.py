@@ -244,6 +244,40 @@ class Repository:
                 input_hash=input_hash,
             )
 
+    def save_extraction(
+        self,
+        *,
+        novel_id: str,
+        chapter_id: int,
+        payload: str,
+        prompt_version: str,
+        model: str,
+        stage: str,
+        input_hash: str,
+    ) -> None:
+        _validate_novel_id(novel_id)
+        now = datetime.now(timezone.utc).isoformat()
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO extractions (novel_id, chapter_id, payload, prompt_version, model, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(novel_id, chapter_id) DO UPDATE SET "
+                "payload = excluded.payload, "
+                "prompt_version = excluded.prompt_version, "
+                "model = excluded.model, "
+                "created_at = excluded.created_at",
+                (novel_id, chapter_id, payload, prompt_version, model, now),
+            )
+            self._upsert_job(
+                novel_id=novel_id,
+                chapter_id=chapter_id,
+                stage=stage,
+                status="done",
+                input_hash=input_hash,
+                prompt_version=prompt_version,
+                model=model,
+            )
+
     def get_job(
         self, *, novel_id: str, chapter_id: int, stage: str
     ) -> sqlite3.Row | None:

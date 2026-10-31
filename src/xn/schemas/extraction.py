@@ -33,3 +33,9 @@ class ChapterExtraction(BaseModel):
     time_skip_years: float = 0.0
     micro_summary: str = Field(min_length=200, max_length=1200)
     events: list[EntityEvent] = Field(max_length=25)
+
+
+class MicroSummary(BaseModel):
+    """Concise chapter summary model."""
+
+    text: str = Field(min_length=200, max_length=1200)
