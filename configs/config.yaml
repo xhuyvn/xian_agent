@@ -6,6 +6,8 @@ prompts: {}
 models:
   local_extractor:
     name: "qwen2.5:14b"
+    serving_name: "qwen14b-12k"
+    base_url: "http://localhost:11434/v1"
     temperature: 0.1
   macro_synthesizer:
     name: "deepseek/deepseek-chat"
