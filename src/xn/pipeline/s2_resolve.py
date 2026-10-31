@@ -12,7 +12,7 @@ from typing import Any, Callable
 from pydantic_ai import Agent
 import rapidfuzz
 
-from xn.llm import local_model, run_logged
+from xn.llm import extractor_output, extractor_settings, local_model, run_logged
 from xn.prompts import load_prompt, profile_from_config
 from xn.schemas.extraction import ChapterExtraction, EntityEvent
 from xn.schemas.lifecycle import LifecycleEventType
@@ -633,7 +633,6 @@ def run_s2(
         model = local_model(config)
 
     serving_name = config["models"]["local_extractor"]["serving_name"]
-    temperature = config["models"]["local_extractor"].get("temperature", 0.1)
 
     profile = profile_from_config(config)
 
@@ -644,10 +643,10 @@ def run_s2(
 
     agent = Agent(
         model,
-        output_type=AdjudicationDecision,
+        output_type=extractor_output(AdjudicationDecision, config),
         system_prompt=prompt.text,
         retries=3,
-        model_settings={"temperature": temperature},
+        model_settings=extractor_settings(config),
     )
     adjudicator = make_adjudicator(
         agent,
