@@ -8,6 +8,10 @@ Round line: `R-<n> <date>: <what this round had to achieve> -> PASS|FAIL, <n> bl
 
 ## Active
 
+## Parked
+
+## Archive
+
 ### G-1: S1-T1 project setup and config split (done)
 Plan: docs/IMPLEMENTATION_PLAN.md, S1-T1.
 Owner decisions: OQ-01 `src/xn/` package layout; OQ-02 `uv` with `pyproject.toml`, `uv.lock` and an exported `requirements.txt`; OQ-08 Python 3.12 (other OQ-08 values stay null). In `pntt1.yaml` the realm ladder, seed aliases and cleaning rules stay empty.
@@ -39,6 +43,44 @@ Sub-goals:
 Changes:
 - 2026-10-31: owner approved the goal and the decisions above; reworded the table, bound and test lines
 
-## Parked
+### G-3: S1-T3 pipeline stage S0, parse and clean (done)
+Plan: docs/IMPLEMENTATION_PLAN.md, S1-T3. Depends on G-1 and G-2.
+Owner decisions: OQ-15 S0 creates the `novels` row from `pntt1.yaml` if it is missing; S0 takes an upper chapter limit, default `total_chapters`; YAML front matter is stripped before hashing (blueprint deviation); BP-OQ-2 cleaning patterns stay empty, and a line counts as a watermark only above 5% of chapters and in at least 3; OQ-12 NFC only, through one shared function; OQ-13 non-matching files are skipped with a warning; `token_count` is characters / 1.6, to be calibrated in S1-T7. Also fixes the `upsert_job` nit on `attempts` and `updated_at`.
+Done when:
+- `src/xn/pipeline/s0_parse.py` sorts chapters by integer and aborts with a list of any missing or duplicate numbers
+- It converts Markdown to plain text, normalizes it and applies the cleaning rules
+- It stores `clean_text`, `sha256` and `token_count`, and records the stage in `jobs`
+- Running it twice gives identical rows
+- `tests/unit/test_s0_parse.py` covers all of this using made-up fixture chapters
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-10-31: deliver S0 parse and clean with its tests -> PASS, 0 blockers, 5b558c8, 264233 agy tokens
+Sub-goals:
+- none yet
+Changes:
+- 2026-10-31: owner approved the goal and the decisions above
 
-## Archive
+### G-4: S1-T4 pipeline stage S1, extract (done)
+Plan: docs/IMPLEMENTATION_PLAN.md, S1-T4. Depends on G-3.
+Owner decisions: BP-OQ-1 the Modelfile targets `qwen2.5:14b`, the current config value, and the live run is left to S1-T7; `src/schemas/extraction.py` and `src/ingestion/pydantic_extractor.py` stay until S1-T8 replaces their importers (plan deviation). Two rounds: schema, prompts, `llm.py` and Modelfile first, then the extractor.
+Done when:
+- The extraction schema, `prompts.py`, `llm.py`, the prompt and the Modelfile exist
+- Chapters over 7,000 tokens split into 2 parts with a 300-token overlap, and the results merge
+- Events whose evidence scores below 85 are dropped and logged, and `chapter_id` always comes from S0
+- Each LLM call writes one `llm_runs` row, and extractions and `jobs` are saved
+- Unit tests use a fake model
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-10-31: deliver schema, prompts, llm.py and Modelfile -> FAIL, 3 blockers, 130ef5a, 328568 agy tokens
+- R-2 2026-10-31: clear the 3 llm.py blockers -> FAIL, 1 blocker, ae6bd6e, 102447 agy tokens
+- R-3 2026-10-31: fix the test_llm.py import and prove the R-2 fixes -> PASS, 0 blockers, 87da24b, 22777 agy tokens
+- R-4 2026-10-31: deliver the S1 extractor -> FAIL, 3 blockers, 468ff13, 357240 agy tokens
+- R-5 2026-10-31: clear the 3 extractor blockers -> FAIL, 2 blockers, 3591690, 71464 agy tokens
+- R-6 2026-10-31: fix the fake model routing in the extractor tests -> FAIL, 1 blocker, 96e7dd1, 54481 agy tokens
+- R-7 2026-10-31: fix the failing split overlap test -> PASS, 0 blockers, b62ff80, 0 agy tokens
+Sub-goals:
+- none yet
+Changes:
+- 2026-10-31: owner approved the goal and the decisions above
+- 2026-10-31: owner approved one extra round, R-7, past the revision limit
+- 2026-10-31: full verifier pass at d39c569 -> PASS; owner approved marking the goal done

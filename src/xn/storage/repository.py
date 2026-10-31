@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import functools
 import inspect
 import sqlite3
@@ -146,7 +147,7 @@ class Repository:
         )
         self._conn.commit()
 
-    def upsert_job(
+    def _upsert_job(
         self,
         *,
         novel_id: str,
@@ -159,18 +160,123 @@ class Repository:
         error: str | None = None,
     ) -> None:
         _validate_novel_id(novel_id)
+        now = datetime.now(timezone.utc).isoformat()
+        initial_attempts = 1 if status == "running" else 0
         self._conn.execute(
-            "INSERT INTO jobs (novel_id, chapter_id, stage, status, input_hash, prompt_version, model, error) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+            "INSERT INTO jobs ("
+            "novel_id, chapter_id, stage, status, input_hash, prompt_version, model, error, attempts, updated_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(novel_id, chapter_id, stage) DO UPDATE SET "
             "status = excluded.status, "
             "input_hash = excluded.input_hash, "
             "prompt_version = excluded.prompt_version, "
             "model = excluded.model, "
-            "error = excluded.error",
-            (novel_id, chapter_id, stage, status, input_hash, prompt_version, model, error),
+            "error = excluded.error, "
+            "attempts = CASE WHEN excluded.status = 'running' THEN jobs.attempts + 1 ELSE jobs.attempts END, "
+            "updated_at = excluded.updated_at",
+            (
+                novel_id,
+                chapter_id,
+                stage,
+                status,
+                input_hash,
+                prompt_version,
+                model,
+                error,
+                initial_attempts,
+                now,
+            ),
+        )
+
+    def upsert_job(
+        self,
+        *,
+        novel_id: str,
+        chapter_id: int,
+        stage: str,
+        status: str,
+        input_hash: str | None = None,
+        prompt_version: str | None = None,
+        model: str | None = None,
+        error: str | None = None,
+    ) -> None:
+        self._upsert_job(
+            novel_id=novel_id,
+            chapter_id=chapter_id,
+            stage=stage,
+            status=status,
+            input_hash=input_hash,
+            prompt_version=prompt_version,
+            model=model,
+            error=error,
         )
         self._conn.commit()
+
+    def save_chapter(
+        self,
+        *,
+        novel_id: str,
+        chapter_id: int,
+        title: str | None,
+        clean_text: str,
+        sha256: str,
+        token_count: int,
+        stage: str,
+        input_hash: str,
+    ) -> None:
+        _validate_novel_id(novel_id)
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO chapters (novel_id, chapter_id, title, clean_text, sha256, token_count) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(novel_id, chapter_id) DO UPDATE SET "
+                "title = excluded.title, "
+                "clean_text = excluded.clean_text, "
+                "sha256 = excluded.sha256, "
+                "token_count = excluded.token_count",
+                (novel_id, chapter_id, title, clean_text, sha256, token_count),
+            )
+            self._upsert_job(
+                novel_id=novel_id,
+                chapter_id=chapter_id,
+                stage=stage,
+                status="done",
+                input_hash=input_hash,
+            )
+
+    def save_extraction(
+        self,
+        *,
+        novel_id: str,
+        chapter_id: int,
+        payload: str,
+        prompt_version: str,
+        model: str,
+        stage: str,
+        input_hash: str,
+    ) -> None:
+        _validate_novel_id(novel_id)
+        now = datetime.now(timezone.utc).isoformat()
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO extractions (novel_id, chapter_id, payload, prompt_version, model, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(novel_id, chapter_id) DO UPDATE SET "
+                "payload = excluded.payload, "
+                "prompt_version = excluded.prompt_version, "
+                "model = excluded.model, "
+                "created_at = excluded.created_at",
+                (novel_id, chapter_id, payload, prompt_version, model, now),
+            )
+            self._upsert_job(
+                novel_id=novel_id,
+                chapter_id=chapter_id,
+                stage=stage,
+                status="done",
+                input_hash=input_hash,
+                prompt_version=prompt_version,
+                model=model,
+            )
 
     def get_job(
         self, *, novel_id: str, chapter_id: int, stage: str
@@ -194,6 +300,52 @@ class Repository:
         self._conn.execute(
             "INSERT INTO feedback (novel_id, run_id, rating, note) VALUES (?, ?, ?, ?)",
             (novel_id, run_id, rating, note),
+        )
+        self._conn.commit()
+
+    def add_llm_run(
+        self,
+        *,
+        novel_id: str,
+        run_id: str,
+        stage: str,
+        chapter_id: int | None,
+        model: str,
+        prompt_version: str,
+        input_tokens: int | None,
+        output_tokens: int | None,
+        latency_ms: int,
+        retries: int | None,
+        ok: int,
+        cost_usd: float,
+        egress_class: str,
+        payload_chapters: str | None,
+    ) -> None:
+        _validate_novel_id(novel_id)
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            "INSERT INTO llm_runs ("
+            "run_id, novel_id, stage, chapter_id, model, prompt_version, "
+            "input_tokens, output_tokens, latency_ms, retries, ok, cost_usd, "
+            "egress_class, payload_chapters, created_at"
+            ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                run_id,
+                novel_id,
+                stage,
+                chapter_id,
+                model,
+                prompt_version,
+                input_tokens,
+                output_tokens,
+                latency_ms,
+                retries,
+                ok,
+                cost_usd,
+                egress_class,
+                payload_chapters,
+                now,
+            ),
         )
         self._conn.commit()
 
