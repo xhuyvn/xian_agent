@@ -25,10 +25,12 @@ Rounds:
 - R-4 2026-10-31: deliver the S1 extractor -> FAIL, 3 blockers, 468ff13, 357240 agy tokens
 - R-5 2026-10-31: clear the 3 extractor blockers -> FAIL, 2 blockers, 3591690, 71464 agy tokens
 - R-6 2026-10-31: fix the fake model routing in the extractor tests -> FAIL, 1 blocker, 96e7dd1, 54481 agy tokens
+- R-7 2026-10-31: fix the failing split overlap test -> PASS, 0 blockers, b62ff80, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
 - 2026-10-31: owner approved the goal and the decisions above
+- 2026-10-31: owner approved one extra round, R-7, past the revision limit
 
 ## Parked
 
