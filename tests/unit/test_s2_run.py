@@ -2,12 +2,13 @@ r"""Unit tests for stage S2 entity resolution chapter driver."""
 
 from __future__ import annotations
 
+from collections import namedtuple
 import copy
 import hashlib
 import json
 from pathlib import Path
 import sqlite3
-from typing import Any, NamedTuple
+from typing import Any
 import pytest
 
 from pydantic_ai.messages import ModelResponse, ToolCallPart
@@ -33,20 +34,18 @@ SUMMARY_200 = (
     "và chuẩn bị cho những bước tiến xa hơn trên con đường tu tiên đầy hiểm nguy phía trước."
 )
 
+_SnapshotBase = namedtuple("Snapshot", ["entities", "aliases", "links", "jobs"])
 
-class Snapshot(NamedTuple):
-    entities: list[tuple[Any, ...]]
-    aliases: list[tuple[Any, ...]]
-    links: list[tuple[Any, ...]]
-    jobs: list[tuple[Any, ...]]
+
+class Snapshot(_SnapshotBase):
+    r"""Snapshot of entities, aliases, links, and jobs for a novel."""
 
     def __getitem__(self, key: Any) -> Any:
         if isinstance(key, str):
-            try:
+            if hasattr(self, key):
                 return getattr(self, key)
-            except AttributeError:
-                raise KeyError(key) from None
-        return super().__getitem__(key)
+            raise KeyError(key)
+        return tuple.__getitem__(self, key)
 
 
 def snapshot(conn: sqlite3.Connection, novel_id: str) -> Snapshot:
