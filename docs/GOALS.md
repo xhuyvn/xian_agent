@@ -20,6 +20,9 @@ Done when:
 - An S0-to-S3 run through the CLI with a fake model, repeated twice, gives identical row counts
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
+- R-1 2026-10-31: deliver the S3 ledger write -> PASS, 0 blockers, a7e6d1f, 459487 agy tokens
+- R-2 2026-10-31: deliver the runner and xn run CLI -> FAIL, 1 blocker, 6c89f43, 412385 agy tokens
+- R-3 2026-10-31: clear the raw-dir default blocker -> PASS, 0 blockers, 9821437, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
