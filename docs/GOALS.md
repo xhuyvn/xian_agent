@@ -27,6 +27,7 @@ Sub-goals:
 - none yet
 Changes:
 - 2026-10-31: owner approved the goal and the decisions above
+- 2026-10-31: verifier pass on the merged branch at fae527d -> PASS, every "Done when" line met
 
 ## Parked
 
