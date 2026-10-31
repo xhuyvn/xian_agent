@@ -24,6 +24,7 @@ Rounds:
 - R-3 2026-10-31: fix the test_llm.py import and prove the R-2 fixes -> PASS, 0 blockers, 87da24b, 22777 agy tokens
 - R-4 2026-10-31: deliver the S1 extractor -> FAIL, 3 blockers, 468ff13, 357240 agy tokens
 - R-5 2026-10-31: clear the 3 extractor blockers -> FAIL, 2 blockers, 3591690, 71464 agy tokens
+- R-6 2026-10-31: fix the fake model routing in the extractor tests -> FAIL, 1 blocker, 96e7dd1, 54481 agy tokens
 Sub-goals:
 - none yet
 Changes:
