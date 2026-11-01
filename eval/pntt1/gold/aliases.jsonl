@@ -1,0 +1,80 @@
+{"a": "Mặc đại phu", "b": "Mặc lão", "category": "character", "same": true}
+{"a": "Mặc đại phu", "b": "Mặc lão quỷ", "category": "character", "same": true}
+{"a": "Mặc đại phu", "b": "Mặc Cư Nhân", "category": "character", "same": true}
+{"a": "Hàn Lập", "b": "Hàn thần y", "category": "character", "same": true}
+{"a": "Hàn Lập", "b": "Hàn đại phu", "category": "character", "same": true}
+{"a": "Hàn Lập", "b": "Hàn sư đệ", "category": "character", "same": true}
+{"a": "Hàn Lập", "b": "Hàn sư huynh", "category": "character", "same": true}
+{"a": "Hàn Lập", "b": "Anh ngố", "category": "character", "same": true}
+{"a": "Hàn Lập", "b": "Hàn tiểu đại phu", "category": "character", "same": true}
+{"a": "Lệ Phi Vũ", "b": "Lệ sư huynh", "category": "character", "same": true}
+{"a": "Lệ Phi Vũ", "b": "Lệ đại đường chủ", "category": "character", "same": true}
+{"a": "Trương Thiết", "b": "Trương ca", "category": "character", "same": true}
+{"a": "Vương Tuyệt Sở", "b": "Vương môn chủ", "category": "character", "same": true}
+{"a": "Vương Tuyệt Sở", "b": "Vương đại môn chủ", "category": "character", "same": true}
+{"a": "Cổ Thiên Long", "b": "Cổ bang chủ", "category": "character", "same": true}
+{"a": "Cổ Thiên Long", "b": "Cổ đại bang chủ", "category": "character", "same": true}
+{"a": "Kim Quang thượng nhân", "b": "Chu Nho", "category": "character", "same": true}
+{"a": "Kim quang thượng nhân", "b": "Kim Quang thượng nhân", "category": "character", "same": true}
+{"a": "Trương Tụ Nhi", "b": "Trương cô nương", "category": "character", "same": true}
+{"a": "Hắc Hùng", "b": "Hắc gia", "category": "character", "same": true}
+{"a": "Tôn nhị cẩu", "b": "Nhị cẩu", "category": "character", "same": true}
+{"a": "Tiền trưởng lão", "b": "Tiễn trưởng lão", "category": "character", "same": true}
+{"a": "Dư Tử Đồng", "b": "Dử Tử Đồng", "category": "character", "same": true}
+{"a": "Dư Tử Đồng", "b": "Dư Tử Đổng", "category": "character", "same": true}
+{"a": "Trường Xuân công", "b": "Trường xuân công", "category": "technique", "same": true}
+{"a": "La Yên bộ", "b": "La yên bộ", "category": "technique", "same": true}
+{"a": "Ngự phong quyết", "b": "Ngự Phong Quyết", "category": "technique", "same": true}
+{"a": "Ngự phong quyết", "b": "Ngự phong thuật", "category": "technique", "same": true}
+{"a": "Trát nhãn kiếm pháp", "b": "Trát Nhãn kiếm pháp", "category": "technique", "same": true}
+{"a": "Hỏa đạn thuật", "b": "Hoả đạn thuật", "category": "technique", "same": true}
+{"a": "Hỏa đạn thuật", "b": "hỏa đan thuật", "category": "technique", "same": true}
+{"a": "Thanh linh tán", "b": "Thanh Linh Tán", "category": "weapon_treasure", "same": true}
+{"a": "bình thần bí", "b": "cái bình thần bí", "category": "weapon_treasure", "same": true}
+{"a": "bình nhỏ", "b": "cái bình", "category": "weapon_treasure", "same": true}
+{"a": "Thất Huyền môn", "b": "Thất huyền môn", "category": "dungeon", "same": true}
+{"a": "Dã Lang bang", "b": "Dã lang bang", "category": "dungeon", "same": true}
+{"a": "Lạc Nhật Phong", "b": "Lạc nhật phong", "category": "dungeon", "same": true}
+{"a": "Gia Nguyên thành", "b": "Gia nguyên thành", "category": "dungeon", "same": true}
+{"a": "Đoạn Thủy môn", "b": "Đoạn thuỷ môn", "category": "dungeon", "same": true}
+{"a": "Khúc Hồn", "b": "cự hán", "category": "puppet_beast", "same": true}
+{"a": "Trương Thiết", "b": "Trương Tụ Nhi", "category": "character", "same": false}
+{"a": "Trương Thiết", "b": "Trương Trường Quý", "category": "character", "same": false}
+{"a": "Trương Tụ Nhi", "b": "Trương Trường Quý", "category": "character", "same": false}
+{"a": "Trương Quân", "b": "Trương Thiết", "category": "character", "same": false}
+{"a": "Trương Quân", "b": "Trương Trường Quý", "category": "character", "same": false}
+{"a": "Trương thúc", "b": "Trương Thiết", "category": "character", "same": false}
+{"a": "Hàn Lập", "b": "Hàn Chú", "category": "character", "same": false}
+{"a": "Hàn Lập", "b": "Hàn phụ", "category": "character", "same": false}
+{"a": "Hàn Chú", "b": "Hàn mẫu", "category": "character", "same": false}
+{"a": "Vương Tuyệt Sở", "b": "Vương đại bàn", "category": "character", "same": false}
+{"a": "Vương Dạng", "b": "Vương Tuyệt Sở", "category": "character", "same": false}
+{"a": "Vương Đại Bàn", "b": "Vương Dạng", "category": "character", "same": false}
+{"a": "Mã Vinh", "b": "Mã phó môn chủ", "category": "character", "same": false}
+{"a": "Lý trưởng lão", "b": "Triệu trưởng lão", "category": "character", "same": false}
+{"a": "Tiền trưởng lão", "b": "Triệu trưởng lão", "category": "character", "same": false}
+{"a": "Lý trưởng lão", "b": "Tiền trưởng lão", "category": "character", "same": false}
+{"a": "Triệu Tử Linh", "b": "Triệu trưởng lão", "category": "character", "same": false}
+{"a": "Trương Thiết", "b": "Khúc Hồn", "category": "character", "same": false}
+{"a": "Mặc đại phu", "b": "Dư Tử Đồng", "category": "character", "same": false}
+{"a": "Cổ Thiên Long", "b": "Kim Quang thượng nhân", "category": "character", "same": false}
+{"a": "Kim Đông Bảo", "b": "Kim Quang thượng nhân", "category": "character", "same": false}
+{"a": "Trát nhãn kiếm pháp", "b": "Bôn lôi đao pháp", "category": "technique", "same": false}
+{"a": "Ngự phong quyết", "b": "Thiên nhãn thuật", "category": "technique", "same": false}
+{"a": "Hỏa đạn thuật", "b": "Khu vật thuật", "category": "technique", "same": false}
+{"a": "Trường xuân công", "b": "Tượng giáp công", "category": "technique", "same": false}
+{"a": "Thiên nhãn thuật", "b": "Khu vật thuật", "category": "technique", "same": false}
+{"a": "Hỏa đạn thuật", "b": "Thiên nhãn thuật", "category": "technique", "same": false}
+{"a": "La Yên bộ", "b": "Ngự phong quyết", "category": "technique", "same": false}
+{"a": "Hoàng long đan", "b": "Dưỡng tinh đan", "category": "weapon_treasure", "same": false}
+{"a": "Kim tủy hoàn", "b": "Trừu tủy hoàn", "category": "weapon_treasure", "same": false}
+{"a": "Thi Trùng Hoàn", "b": "Kim tủy hoàn", "category": "weapon_treasure", "same": false}
+{"a": "Thanh linh tán", "b": "Ngũ Độc Thủy", "category": "weapon_treasure", "same": false}
+{"a": "Kim tủy hoàn", "b": "Hoàng long đan", "category": "weapon_treasure", "same": false}
+{"a": "Thất Huyền môn", "b": "Đoạn Thủy môn", "category": "dungeon", "same": false}
+{"a": "Dã Lang bang", "b": "Độc long bang", "category": "dungeon", "same": false}
+{"a": "Tứ bình bang", "b": "Độc long bang", "category": "dungeon", "same": false}
+{"a": "Thiết thương hội", "b": "Thiết chưởng hội", "category": "dungeon", "same": false}
+{"a": "Bách đoán đường", "b": "Thất tuyệt đường", "category": "dungeon", "same": false}
+{"a": "Phi Điểu đường", "b": "Tụ bảo đường", "category": "dungeon", "same": false}
+{"a": "Lam Châu", "b": "Kính Châu", "category": "dungeon", "same": false}

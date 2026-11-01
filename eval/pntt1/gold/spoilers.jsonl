@@ -1,0 +1,10 @@
+{"id": "s01", "question": "Tên thật của Mặc đại phu là gì?", "chapter_max": 28, "kind": "hidden_identity", "forbidden": ["Mặc Cư Nhân"], "source_chapter": 29}
+{"id": "s02", "question": "Khẩu quyết Mặc đại phu truyền cho Hàn Lập tên là gì?", "chapter_max": 29, "kind": "hidden_identity", "forbidden": ["Trường xuân công"], "source_chapter": 30}
+{"id": "s03", "question": "Ai đang ẩn sau lưng Mặc đại phu?", "chapter_max": 41, "kind": "hidden_identity", "forbidden": ["Dư Tử Đồng"], "source_chapter": 42}
+{"id": "s04", "question": "Trương Thiết bây giờ ra sao?", "chapter_max": 63, "kind": "hidden_identity", "forbidden": ["Khúc Hồn"], "source_chapter": 64}
+{"id": "s05", "question": "Hàn Lập có những pháp thuật nào?", "chapter_max": 66, "kind": "breakthrough_after_n", "forbidden": ["Ngự phong quyết", "Thiên nhãn thuật"], "source_chapter": 67}
+{"id": "s06", "question": "Lệ Phi Vũ yêu ai?", "chapter_max": 69, "kind": "arc_straddling_n", "forbidden": ["Trương Tụ Nhi"], "source_chapter": 70}
+{"id": "s07", "question": "Thế lực nào đứng sau Dã Lang bang?", "chapter_max": 81, "kind": "arc_straddling_n", "forbidden": ["Kim Quang", "Chu Nho"], "source_chapter": 82}
+{"id": "s08", "question": "Kim Quang thượng nhân mang theo vật gì trên người?", "chapter_max": 92, "kind": "item_transferred", "forbidden": ["Tần thị tộc phổ"], "source_chapter": 93}
+{"id": "s09", "question": "Hàn Lập đã học được Khu vật thuật chưa?", "chapter_max": 74, "kind": "breakthrough_after_n", "forbidden": ["Khu vật thuật"], "source_chapter": 75}
+{"id": "s10", "question": "Hàn Lập đã luyện Trường xuân công đến tầng mấy?", "chapter_max": 95, "kind": "breakthrough_after_n", "forbidden": ["tầng thứ tám"], "source_chapter": 96}
