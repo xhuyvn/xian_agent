@@ -20,6 +20,7 @@ Done when:
 Rounds:
 - R-1 2026-11-01: deliver the gold loader, scoring and eval harness -> PASS, 0 blockers, d73284a, 0 agy tokens
 - R-2 2026-11-01: annotate 20 chapters from the text -> FAIL, 1 blocker, 4da44e9, 0 agy tokens
+- R-3 2026-11-01: fix the chapter 53 conflict flag -> PASS, 0 blockers, 62e21e2, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
