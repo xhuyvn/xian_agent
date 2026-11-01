@@ -7,15 +7,33 @@ from typing import Any
 
 from xn.graph.deps import GraphDeps, QueryError
 from xn.schemas.state import QueryState
-from xn.text import normalize_text
+from xn.text import strip_diacritics
 
-_BOUND_IN_QUESTION = re.compile(r"(?:đến|tới|trước|hết)(?:\s+hết)?\s+chương\s+(\d+)", re.IGNORECASE)
+# Patterns run on casefolded text without diacritics, so "den chuong 300" also matches.
+_CHAPTER = r"(?:chuong|chapter|chap|ch|c)\.?\s*"
+_INCLUSIVE_BOUNDS = [
+    re.compile(p)
+    for p in (
+        rf"\b(?:den|toi|het|khong qua|chua qua)(?:\s+(?:het|cuoi|tan))*\s+{_CHAPTER}(\d+)\b",
+        rf"\b{_CHAPTER}(\d+)\s+(?:tro ve truoc|tro xuong|ve truoc|do lai)\b",
+        r"\b(\d+)\s+(?:chuong|chapter|chap)\s+dau\b",
+        rf"\b{_CHAPTER}\d+\s*(?:den|toi|-|–)\s*(?:{_CHAPTER})?(\d+)\b",
+    )
+]
+_BEFORE_BOUND = re.compile(rf"\btruoc\s+{_CHAPTER}(\d+)\b")
 
 
 def _question_bound(query: str) -> int | None:
-    """Read "đến chương N" in code, because the model can miss it and leak past the bound."""
-    match = _BOUND_IN_QUESTION.search(normalize_text(query))
-    return int(match.group(1)) if match else None
+    """Read a chapter bound in code, because the model can miss it and leak past the bound.
+
+    Several bounds in one question resolve to the smallest, and "trước chương N" stops at
+    N - 1. A chapter that is only named, as in "chương 30 có gì?", is not a bound.
+    """
+    text = strip_diacritics(query).casefold()
+    bounds = [int(m) for pattern in _INCLUSIVE_BOUNDS for m in pattern.findall(text)]
+    bounds += [max(int(m) - 1, 1) for m in _BEFORE_BOUND.findall(text) if int(m) >= 1]
+    bounds = [b for b in bounds if b >= 1]
+    return min(bounds) if bounds else None
 
 
 def bound(state: QueryState, deps: GraphDeps) -> dict[str, Any]:

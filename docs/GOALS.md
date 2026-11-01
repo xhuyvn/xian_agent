@@ -34,6 +34,7 @@ Sub-goals:
 Changes:
 - 2026-11-01: owner approved the goal and the decisions above
 - 2026-11-01: verifier pass on the whole branch at 34ae093 -> PASS, every "Done when" line met
+- 2026-11-01: owner approved R-5, widening the chapter-bound parsing in `bound` before merge
 
 ## Parked
 

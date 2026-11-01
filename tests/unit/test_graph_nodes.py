@@ -180,8 +180,28 @@ def test_bound_ignores_a_meaningless_hint(repo: Repository) -> None:
     [
         ("Đến chương 30 Mặc Đại Phu đã làm gì?", 30),
         ("Tính tới hết chương 40 có gì?", 40),
-        ("trước chương 7", 7),
-        ("Chương 30 có gì?", 100),  # naming a chapter is not a bound
+        ("đến cuối chương 40", 40),
+        ("tới tận chương 40", 40),
+        ("không quá chương 40", 40),
+        ("chương 40 trở về trước", 40),
+        ("Chương 40 trở xuống có gì?", 40),
+        ("chương 40 đổ lại", 40),
+        ("den chuong 40", 40),
+        ("ĐẾN CHƯƠNG 40", 40),
+        ("đến chap 40", 40),
+        ("đến chapter 40", 40),
+        ("đến c40", 40),
+        ("tới c.40", 40),
+        ("tới ch 40", 40),
+        ("40 chương đầu", 40),
+        ("trong 40 chương đầu tiên", 40),
+        ("từ chương 10 đến 40", 40),
+        ("từ chương 10 đến chương 40", 40),
+        ("chương 10-40", 40),
+        ("đến chương 60, trước chương 41", 40),  # the smallest bound wins
+        ("trước chương 41", 40),  # strictly before the chapter
+        ("đến trước chương 41", 40),
+        ("trước chương 1", 1),
     ],
 )
 def test_bound_reads_the_question_when_the_model_misses_the_hint(
@@ -189,6 +209,25 @@ def test_bound_reads_the_question_when_the_model_misses_the_hint(
 ) -> None:
     out = bound({"novel_id": "nov", "query": query, "decision": decision()}, deps_for(repo))
     assert out == {"chapter_max": expected}
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "Chương 30 có gì?",
+        "Ở chương 30 Hàn Lập làm gì?",
+        "từ chương 30 trở đi",
+        "sau chương 30",
+        "đến chương 0",
+        "trước chương 0",
+        "Hàn Lập đến Hoàng Phong Cốc thế nào?",
+        "đến cửa 30",
+        "Hàn Lập mạnh hơn 30 người",
+    ],
+)
+def test_bound_does_not_invent_a_limit(repo: Repository, query: str) -> None:
+    out = bound({"novel_id": "nov", "query": query, "decision": decision()}, deps_for(repo))
+    assert out == {"chapter_max": 100}
 
 
 def test_bound_prefers_model_hint_and_explicit_over_question(repo: Repository) -> None:
