@@ -13,10 +13,10 @@ models:
     output_mode: "native"
     think: false
   macro_synthesizer:
-    name: "deepseek/deepseek-chat"
+    name: "deepseek/deepseek-v4.1-flash-1017"
     temperature: 0.3
   deep_dive_evaluator:
-    name: "deepseek/deepseek-chat"
+    name: "deepseek/deepseek-v4.1-flash-1017"
     temperature: 0.4
 
 qdrant:

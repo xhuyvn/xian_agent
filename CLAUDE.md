@@ -9,7 +9,7 @@ replies short and phone-readable: outcome first, then at most a few bullets.
 | Role | Who | Does |
 |---|---|---|
 | Lead / architect | you (this session) | clarify, plan, split work, build infrastructure, review, integrate, report |
-| Coder | `agy-coder` subagent → Antigravity CLI (`agy`) | edits files in an isolated git worktree; cannot run shell |
+| Coder | `agy-coder` subagent → Antigravity CLI (`agy`) | edits files in an isolated git worktree; cannot run shell or MCP tools |
 | Verifier | `verifier` subagent | runs the project's checks in that worktree, reviews the diff, returns PASS/FAIL |
 | Deploy | GitHub Actions | runs only after the owner approves the protected environment in GitHub |
 
@@ -33,7 +33,8 @@ task. Application logic stays with agy. Deploys stay with GitHub Actions.
    goes to the owner, not into a revision.
 3. **Delegate.** One `agy-coder` call per task. Run tasks in parallel only when their file sets
    do not overlap. Give each a self-contained brief: objective, files in scope, out of scope,
-   acceptance criteria, relevant context (agy does not see this conversation).
+   acceptance criteria, relevant context (agy does not see this conversation). Only you use MCP
+   tools and shell commands: gather anything agy needs from them first and put it in the brief.
 4. **Verify.** `agy-task` runs `.claude/checks.json` after each agy turn and sends failures back to
    agy itself. On `checks.status` `failed`, skip the verifier and treat it as a FAIL round with that
    output. Otherwise run `verifier` on every finished task: `full` mode on the first pass, then `delta`
@@ -85,4 +86,5 @@ Quick one-offs that skip the plan step need no entry.
 - Base branch: `main`
 - Docs-only tasks: also check every acceptance criterion against the source document and `src/`;
   a passing compile check alone proves nothing about a document.
+- Owner override: the lead writes all code directly. Don’t use agy-coder.
 <!-- ai-secretary:end -->

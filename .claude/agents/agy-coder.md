@@ -44,8 +44,9 @@ The script prints one JSON object. Return to the lead:
 - `filesChanged` and `diffstat`
 - `roundTokens`, `roundSeconds` and `runTotalTokens`
 - `checks`: its `status` and `fixes`, and when it failed, the `command`, `exitCode` and `output`
-- `deniedActions` if any — agy cannot run shell commands headlessly, so a denial usually means it
-  wanted to run tests or install something; say what it wanted
+- `deniedActions` if any — agy cannot run shell commands or MCP tools headlessly, so a denial
+  usually means it wanted to run tests, install something or call a tool; say what it wanted. The
+  script already gave it one more turn without that tool
 - a 2–4 line summary of agy's response
 - your own quick read of the diff (`git -C <worktree> diff <base>..HEAD`): does it match the
   brief? anything outside the files in scope?

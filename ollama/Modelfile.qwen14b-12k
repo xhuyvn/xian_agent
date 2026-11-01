@@ -1,3 +1,0 @@
-FROM qwen2.5:14b
-PARAMETER num_ctx 12288
-PARAMETER temperature 0.1
