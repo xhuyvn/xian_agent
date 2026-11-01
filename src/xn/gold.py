@@ -105,6 +105,12 @@ def name_key(name: str) -> str:
     return strip_diacritics(normalize_alias(name))
 
 
+def gold_split(chapters: list[GoldChapter]) -> tuple[list[GoldChapter], list[GoldChapter]]:
+    """Return the dev and held-out chapters: taking turns in chapter order, dev first."""
+    ordered = sorted(chapters, key=lambda c: c.chapter_id)
+    return ordered[::2], ordered[1::2]
+
+
 def _read_jsonl(path: Path, model: type[_Item]) -> list[_Item]:
     lines = path.read_text(encoding="utf-8").splitlines()
     return [model.model_validate_json(line) for line in lines if line.strip()]
@@ -423,9 +429,12 @@ def gold_report(
             for i in items
         ]
 
+    dev, held_out = gold_split(gold.chapters)
     return {
         "meta": gold.meta,
         "extraction": score_extraction(gold.chapters, payloads),
+        "extraction_dev": score_extraction(dev, payloads),
+        "extraction_held_out": score_extraction(held_out, payloads),
         "aliases": score_aliases(
             gold.aliases, [resolver_merges(p, texts, adjudicate) for p in gold.aliases]
         ),
