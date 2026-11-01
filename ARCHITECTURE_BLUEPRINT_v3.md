@@ -17,7 +17,7 @@
 | Field | Value | Status |
 |---|---|---|
 | Purpose | Analysis system for long Chinese web novels in Vietnamese translation: arc timelines, entity deep-dives (nhân vật, pháp bảo, khôi lỗi/linh thú, công pháp, bí cảnh), factual Q&A, comparisons | Confirmed |
-| First corpus | *Phàm Nhân Tu Tiên 1* (`novel_id = pntt1`): 2,673 chapters, ~5.6M words → avg ≈ 2,100 words ≈ 11–12k chars ≈ 3–3.5k Qwen tokens/chapter | Confirmed |
+| First corpus | *Phàm Nhân Tu Tiên 1* (`novel_id = pntt1`): 2,468 chapters, ~5.6M words → avg ≈ 2,270 words ≈ 14k chars ≈ 4–4.5k Qwen tokens/chapter | Confirmed |
 | Multi-novel | **Yes** — more novels later; isolation by `novel_id` everywhere | Confirmed |
 | Source format | Vietnamese Markdown, one file per chapter: `chapter_<N>.md` | Confirmed |
 | Spoiler control | **First-class**: every answer bounded by "as of chapter N" | Confirmed |
@@ -160,11 +160,11 @@ sequenceDiagram
 
 ### 3.2 Data pipeline & RAG
 
-**Stage contract.** Each stage reads/writes SQLite and records `(novel_id, chapter_id, stage, status, input_hash, prompt_version, model, error)` in `jobs`. A stage re-runs only when `input_hash` or `prompt_version` changes. Writes are per-chapter transactions (delete that chapter's rows for the stage, then insert). CLI: `python -m xn run --novel pntt1 --stage s1 --from 1 --to 2673 [--stale-only]`.
+**Stage contract.** Each stage reads/writes SQLite and records `(novel_id, chapter_id, stage, status, input_hash, prompt_version, model, error)` in `jobs`. A stage re-runs only when `input_hash` or `prompt_version` changes. Writes are per-chapter transactions (delete that chapter's rows for the stage, then insert). CLI: `python -m xn run --novel pntt1 --stage s1 --from 1 --to 2468 [--stale-only]`.
 
 | Stage | Design |
 |---|---|
-| **S0 Parse & clean** | Input dir `data/novels/{novel_id}/raw/`. Accept only files matching `^chapter_(\d+)\.md$`; sort by the **integer** N; fail the run if any number in `1..total_chapters` is missing or duplicated (report list). Title = first Markdown heading `^#{1,3}\s*(.+)$`, else first line matching `^Chương\s+\d+`, else `Chương N`. Convert Markdown → plain text with `markdown-it-py` (drop images/links/HTML, keep paragraph breaks). NFC-normalize. Apply the novel's cleaning rules (`configs/novels/{id}.yaml → cleaning.patterns`) and drop lines that repeat in > 5% of chapters (site watermarks). Store `clean_text`, `sha256`, `token_count` |
+| **S0 Parse & clean** | Input dir `raw_dir` from the novel config, else `data/novels/{novel_id}/raw/`. Accept only files matching `^chapter_(\d+)\.md$`; sort by the **integer** N; fail the run if any number in `1..total_chapters` is missing or duplicated (report list). Title = first Markdown heading `^#{1,3}\s*(.+)$`, else first line matching `^Chương\s+\d+`, else `Chương N`. Convert Markdown → plain text with `markdown-it-py` (drop images/links/HTML, keep paragraph breaks). NFC-normalize. Apply the novel's cleaning rules (`configs/novels/{id}.yaml → cleaning.patterns`) and drop lines that repeat in > 5% of chapters (site watermarks). Store `clean_text`, `sha256`, `token_count` |
 | **S1 Extract** | Local Qwen via Pydantic-AI, temperature 0.1, prompt templated with the genre profile (§3.11). Chapter ≤ 7,000 tokens → one call; longer → 2 parts with 300-token overlap, merged in code (union events, OR booleans, local re-summary). Output `ChapterExtraction` (below). Evidence quote check drops unverifiable events |
 | **S2 Resolve** | Within one `novel_id` only. (1) exact normalized alias; (2) diacritics-stripped; (3) `rapidfuzz` token_set ≥ 92, same category; (4) 80–92 → local LLM adjudication with both contexts; (5) new entity. Seed aliases from `configs/novels/{id}.yaml`. Records `first_chapter` per entity and per alias. Identity reveals (one person behind two names) go to `entity_links`, never merged (§3.4) |
 | **S3 Ledger** | `entity_events` keyed by `entity_id` with unique `(novel_id, chapter_id, entity_id, event_type, ordinal)` |
@@ -421,12 +421,12 @@ KV estimate for Qwen2.5-14B (48 layers × 8 KV heads × 128 dim): ~0.19 MB/token
 
 Ollama setup:
 ```
-# ollama/Modelfile.qwen14b-12k
-FROM qwen2.5:14b            # or qwen3:14b after the Sprint 1 benchmark
-PARAMETER num_ctx 12288
+# ollama/Modelfile.qwen38-udiq4-hui-10k
+FROM qwen3.8:udiq4_hui
+PARAMETER num_ctx 10240
 PARAMETER temperature 0.1
 ```
-Environment: `OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0`, `OLLAMA_NUM_PARALLEL=2`, `OLLAMA_KEEP_ALIVE=30m`. Why 12,288: system + schema ≈ 1.2k, chapter ≤ 7k (longer chapters are split), output ≤ 1.5k → ~9.7k with headroom. If VRAM pressure appears, use `NUM_PARALLEL=1` first, then `num_ctx 10240`.
+Environment: `OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0`, `OLLAMA_NUM_PARALLEL=2`, `OLLAMA_KEEP_ALIVE=30m`. Why 10,240: system + schema ≈ 1.2k, chapter ≤ 7k (longer chapters are split), output ≤ 1.5k → ~9.7k with headroom. If VRAM pressure appears, use `NUM_PARALLEL=1`.
 
 Blackwell note: PyTorch for BGE-M3/reranker must be a CUDA 12.8+ build that supports sm_120 `[verify current wheel]`; Ollama ships its own runtime.
 
@@ -437,7 +437,7 @@ Blackwell note: PyTorch for BGE-M3/reranker must be a CUDA 12.8+ build that supp
 configs/config.yaml               # global: models, prompts, budgets
 configs/genres/xianxia.yaml       # categories, event definitions, extraction hints
 configs/novels/pntt1.yaml         # title, total_chapters, realm ladder, arc params, aliases seed, cleaning rules
-data/novels/pntt1/raw/chapter_N.md
+data/novel/pham_nhan_tu_tien_1/chapter_N.md   # raw_dir in pntt1.yaml; default data/novels/<id>/raw/
 prompts/<name>/<version>.md
 src/xn/{schemas,pipeline,storage,graph,api,cli}/
 eval/pntt1/{gold,baseline.json}
@@ -451,14 +451,14 @@ eval/pntt1/{gold,baseline.json}
 
 | Item | Formula | Estimate |
 |---|---|---|
-| S1 extraction | 2,673 × 27.2 s/chapter (measured in G-8: `qwen3.8:udiq4_hui`, `num_ctx 10240`, 50 chapters, 1 slot, p95 40.2 s; see `docs/S1_T7_BENCHMARK.md`) | ≈ 20.2 h sequential; ≈ 18.7 h for the 2,468 chapters on disk (2 slots not measured) |
+| S1 extraction | 2,468 × 27.2 s/chapter (measured in G-8: `qwen3.8:udiq4_hui`, `num_ctx 10240`, 50 chapters, 1 slot, p95 40.2 s; see `docs/S1_T7_BENCHMARK.md`) | ≈ 18.7 h sequential (2 slots not measured) |
 | S2 adjudication + S7 digests | local | ≈ 2–3 h |
 | S4 embedding | ~23k items @ ~60/s | ≈ 7 min |
 | Arc prefix summaries (every 10 ch.) | ~267 × local call | ≈ 1.5 h |
 | S6 arc synthesis | ~45 × (13k in + 1.5k out) | ≈ $0.25 |
 | Per query (compact) | ≤ 20k in + ≤ 2.5k out (+1 regeneration if leak) | ≤ $0.01–0.02 |
 | Long-context, minor/major item (single pass) | 50–250k in + ~4k out | ≈ $0.02–0.10 DeepSeek-class; ≈ $0.20–1.00 top-tier |
-| Long-context, protagonist at N = 2,673 (map-reduce) | ~1.2–2M in + ~60k out | ≈ $0.40–0.70 DeepSeek-class; ≈ $5–8 top-tier; reruns mostly hit `lc_map_cache` |
+| Long-context, protagonist at N = 2,468 (map-reduce) | ~1.2–2M in + ~60k out | ≈ $0.40–0.70 DeepSeek-class; ≈ $5–8 top-tier; reruns mostly hit `lc_map_cache` |
 
 ### 3.10 Failure modes
 
@@ -485,7 +485,7 @@ eval/pntt1/{gold,baseline.json}
 - **Identity**: `novel_id` slug (`pntt1`, later e.g. `pntt2`). It is part of every SQLite primary key, every Qdrant payload, every job, cache entry, eval folder and log span.
 - **Isolation**: single shared Qdrant collections with `novel_id` as a tenant payload index (efficient for many small tenants, no per-novel infra); the repository layer refuses any read without `novel_id`.
 - **Genre profile** (`configs/genres/<genre>.yaml`): entity categories, event-type definitions with examples, extraction hints. `xianxia` ships first. The schema enum `LifecycleEventType` is a fixed superset; categories are validated against the profile, so a new genre needs config + prompt review, not code changes.
-- **Per-novel config** (`configs/novels/<id>.yaml`): title, author, `total_chapters`, genre profile, **realm ladder** (ordered list → `realm_rank`, used for power progression and spoiler checks), arc weights/min/max length, seed aliases and identity links, cleaning patterns, optional prompt overrides.
+- **Per-novel config** (`configs/novels/<id>.yaml`): title, author, `total_chapters`, `raw_dir` (optional), genre profile, **realm ladder** (ordered list → `realm_rank`, used for power progression and spoiler checks), arc weights/min/max length, seed aliases and identity links, cleaning patterns, optional prompt overrides.
 - **Series**: `novels.series_id` reserved. Cross-novel entity linking (sequels sharing characters) is out of scope for v3 — see R-03.
 - **Onboarding a novel**: add config + raw files → `xn novel add <id>` → `xn run --novel <id> --all` → annotate a small gold set (≥ 15 chapters, 10 spoiler probes) before trusting answers.
 
@@ -596,7 +596,7 @@ class DeepDiveReport(BaseModel):              # single-pass or reduce output
 - **Acceptance**: boundary F1 ≥ 0.80 on chapters 1–600; protagonist deep-dive ≤ 20k evidence tokens at any N; 0 leaks on arc-straddling probes.
 
 **Sprint 4 — Full run, LLMOps, multi-novel proof**
-- Full 2,673-chapter run; failure queue cleared; complete gold set (40 / 150 / 40 / 30).
+- Full 2,468-chapter run; failure queue cleared; complete gold set (40 / 150 / 40 / 30).
 - Tracing, SQL views, regression gate, CI. FastAPI + SSE; optional UI with progress slider.
 - Onboard a second small novel (or a 200-chapter sample) end to end using config only.
 - **Acceptance**: all §3.8 thresholds met or recorded as accepted risk; second novel needs no code change; cross-novel bleed test passes; `pntt1` cloud spend ≤ $5.
@@ -635,7 +635,7 @@ class DeepDiveReport(BaseModel):              # single-pass or reduce output
 
 **ADR-01 Evidence-only answering.** Refuse when evidence is insufficient; cite chapters. Rejected: background-knowledge fallback (untestable, leaks spoilers).
 
-**ADR-02 Staged pipeline for ingestion, LangGraph for queries.** Batch work needs per-chapter idempotency and per-stage re-runs; LangGraph suits interactive, branching, multi-turn queries. Rejected: one graph run over 2,673 chapters.
+**ADR-02 Staged pipeline for ingestion, LangGraph for queries.** Batch work needs per-chapter idempotency and per-stage re-runs; LangGraph suits interactive, branching, multi-turn queries. Rejected: one graph run over 2,468 chapters.
 
 **ADR-03 BGE-M3 dense+sparse in Qdrant.** Hán-Việt proper nouns need lexical matching; one model gives both. Rejected: separate BM25 service; dense-only.
 

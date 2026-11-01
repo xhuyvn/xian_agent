@@ -6,6 +6,7 @@ from pathlib import Path
 import sqlite3
 from typing import Any, Optional
 
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 
@@ -17,7 +18,10 @@ from xn.graph.nodes.retrieve import retrieve
 from xn.graph.nodes.route import route
 from xn.graph.nodes.synthesize import synthesize
 from xn.graph.nodes.verify import verify
-from xn.schemas.state import QueryState
+from xn.schemas.state import Answer, EvidencePack, QueryState, RouterDecision
+
+# Models stored whole in a checkpoint; langgraph refuses to load anything else.
+CHECKPOINT_TYPES = (RouterDecision, EvidencePack, Answer)
 
 
 def _continue_unless_refused(next_node: str) -> Any:
@@ -32,7 +36,10 @@ def _continue_unless_refused(next_node: str) -> Any:
 def open_checkpointer(path: Path) -> SqliteSaver:
     """Open the SqliteSaver at path, creating its directory and tables."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    saver = SqliteSaver(sqlite3.connect(str(path), check_same_thread=False))
+    saver = SqliteSaver(
+        sqlite3.connect(str(path), check_same_thread=False),
+        serde=JsonPlusSerializer(allowed_msgpack_modules=CHECKPOINT_TYPES),
+    )
     saver.setup()
     return saver
 

@@ -54,7 +54,7 @@ def run(
     rebuild: bool = typer.Option(False, "--rebuild", help="Rebuild stage resolution (s2 only)"),
     db: Path = typer.Option(Path("data/xn.db"), "--db", help="Path to SQLite database file"),
     raw_dir: Path | None = typer.Option(
-        None, "--raw-dir", help="Path to raw chapters directory (default: data/novels/<novel>/raw)"
+        None, "--raw-dir", help="Path to raw chapters directory (default: raw_dir in the novel config, else data/novels/<novel>/raw)"
     ),
     configs_dir: Path = typer.Option(Path("configs"), "--configs-dir", help="Path to configs directory"),
     prompts_dir: Path = typer.Option(Path("prompts"), "--prompts-dir", help="Path to prompts directory"),
@@ -69,7 +69,7 @@ def run(
         raise typer.Exit(code=1)
 
     if raw_dir is None:
-        raw_dir = Path("data/novels") / novel / "raw"
+        raw_dir = Path(config.get("raw_dir") or Path("data/novels") / novel / "raw")
 
     db_path = Path(db)
     db_path.parent.mkdir(parents=True, exist_ok=True)

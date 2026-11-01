@@ -1,7 +1,8 @@
 novel_id: pntt1
 title: "Phàm Nhân Tu Tiên 1"
 author: "Vong Ngữ"
-total_chapters: 2673
+total_chapters: 2468
+raw_dir: data/novel/pham_nhan_tu_tien_1
 genre: xianxia
 
 arc_detection:

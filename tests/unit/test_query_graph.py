@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import logging
 import os
 from pathlib import Path
 import sqlite3
@@ -12,6 +13,7 @@ from typing import Any
 import warnings
 import pytest
 
+from langgraph.checkpoint.serde import jsonplus
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -298,12 +300,20 @@ def test_follow_up_changing_bound_is_refused_without_stale_answer(run_query: Any
     assert cloud.names == []
 
 
-def test_checkpoint_round_trip_gives_no_serializer_warning(run_query: Any) -> None:
-    with warnings.catch_warnings():
+def test_checkpoint_round_trip_gives_no_serializer_warning(
+    run_query: Any, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # langgraph logs each type once per process, so an earlier test would hide it here.
+    monkeypatch.setattr(jsonplus, "_warned_unregistered_types", set())
+    monkeypatch.setattr(jsonplus, "_warned_blocked_types", set())
+    with warnings.catch_warnings(), caplog.at_level(logging.WARNING, logger=jsonplus.logger.name):
         warnings.simplefilter("error")
         run_query(until=50)
         state = run_query(until=50)
+    assert [r.getMessage() for r in caplog.records if r.name == jsonplus.logger.name] == []
     assert isinstance(state["answer"], Answer)
+    assert isinstance(state["evidence"], EvidencePack)
+    assert isinstance(state["evidence"].items[0], EvidenceItem)
 
 
 def test_tenant_isolation_through_the_graph(run_query: Any, db_conn: Any) -> None:

@@ -29,9 +29,9 @@ Sub-goals:
 Changes:
 - 2026-11-01: owner approved the goal and the decisions above, including the live check
 
-### G-11: clear the non-blocking Sprint 1 recheck items (proposed)
+### G-11: clear the non-blocking Sprint 1 recheck items (active)
 Plan: docs/S1_T9_EVAL.md, "Sprint 1 recheck". Follows G-10, whose recall line stays open there. Cut from `cld/s1-t9-feature-a3a0ec`.
-Proposed decisions: the lead writes the code, with no agy, because it is two small changes that must be run to be proven. `total_chapters` becomes 2468, the chapters on disk. `pntt1.yaml` gains `raw_dir: data/novel/pham_nhan_tu_tien_1`, and `xn run` falls back to `data/novels/<id>/raw` only without it (this changes the G-6 decision on the raw path; the folder stays where it is). The checkpoint serializer gets an explicit allowlist covering every `xn.schemas.state` model stored in a checkpoint, which includes `EvidenceItem` if it logs too. `novels` rows in existing databases keep their old value: there is no `data/xn.db`, and S0 only writes a missing row. Blueprint history (old benchmark plans) stays as written. The extraction prompt, the gold set, the extractor model and the other recheck items are out of scope. One round.
+Owner decisions: the lead writes the code, with no agy, because it is two small changes that must be run to be proven. `total_chapters` becomes 2468, the chapters on disk. `pntt1.yaml` gains `raw_dir: data/novel/pham_nhan_tu_tien_1`, and `xn run` falls back to `data/novels/<id>/raw` only without it (this changes the G-6 decision on the raw path; the folder stays where it is). The checkpoint serializer gets an explicit allowlist covering every `xn.schemas.state` model stored in a checkpoint, which includes `EvidenceItem` if it logs too. `novels` rows in existing databases keep their old value: there is no `data/xn.db`, and S0 only writes a missing row. Blueprint history (old benchmark plans) stays as written. The extraction prompt, the gold set, the extractor model and the other recheck items are out of scope. One round.
 Done when:
 - `configs/novels/pntt1.yaml`, the blueprint's chapter-count lines and `--to` examples in the blueprint and `docs/IMPLEMENTATION_PLAN.md` say 2468, and a bare `xn run --novel pntt1 --stage s0` finds the real folder without the missing-chapter abort
 - A real follow-up logs no unregistered type, and `test_checkpoint_round_trip_gives_no_serializer_warning` checks logging as well as warnings, resets langgraph's warn-once record, and fails when the allowlist is removed
@@ -44,7 +44,7 @@ Rounds:
 Sub-goals:
 - none yet
 Changes:
-- none yet
+- 2026-11-01: owner approved the goal and the decisions above
 
 ## Parked
 
@@ -248,3 +248,5 @@ Changes:
 - 2026-11-01: verifier pass on the whole branch at 34ae093 -> PASS, every "Done when" line met
 - 2026-11-01: owner approved R-5, widening the chapter-bound parsing in `bound` before merge
 - 2026-11-01: PR #14 merged; owner approved marking the goal done
+- 2026-11-01: recheck found `cloud_spend_since` is a third exempt repository method, beside the two in G-2, because cloud spend spans novels
+- 2026-11-01: recheck found `src/storage/qdrant_client.py` also keeps `src/config.py` alive, so removing `src/timeline/arc_detector.py` alone won't free it
