@@ -27,7 +27,7 @@ Changes:
 
 ### G-12: S2-T1 Qdrant multi-tenant setup and manager (active)
 Plan: docs/IMPLEMENTATION_PLAN.md, S2-T1. Depends on G-2.
-Owner decisions: dense vectors are BGE-M3 through Ollama (1024 cosine), kept over `embeddinggemma-2:570m` by the benchmark rule of 0.05 hybrid recall@8 (0.90 against 0.867 on chapters 1-100). Ollama returns dense only, so sparse vectors are BM25 built in our code and stored in Qdrant with the IDF modifier (blueprint change to ADR-03). The project's compose Qdrant is used, port 6233 bound to `127.0.0.1`, not `platform-qdrant`. agy writes the code; the lead does compose and docs. Filling the vectors is S2-T2, and the reranker is S2-T3. One round.
+Owner decisions: dense vectors are BGE-M3 through Ollama (1024 cosine), kept over `embeddinggemma-2:570m` by the benchmark rule of 0.05 hybrid recall@8 (0.90 against 0.867 on chapters 1-100). Ollama returns dense only, so sparse vectors are BM25 built in our code and stored in Qdrant with the IDF modifier (blueprint change to ADR-03). The project's compose Qdrant is used, port 6233 bound to `127.0.0.1`, not `platform-qdrant`. The lead writes the code, with no agy, after agy was blocked twice, running the same two checks and the integration test before the verifier pass. Filling the vectors is S2-T2, and the reranker is S2-T3. One round.
 Done when:
 - `src/xn/storage/qdrant.py` creates `xn_chunks` with `dense` 1024 cosine and `sparse` with IDF, plus `xn_arcs`, and running it twice is safe
 - The payload indexes match the plan, with `novel_id` as the tenant index
@@ -41,6 +41,7 @@ Sub-goals:
 - none yet
 Changes:
 - 2026-11-01: owner approved the goal and the decisions above
+- 2026-11-01: owner moved the code from agy to the lead, after two agy runs (157018 tokens) were blocked by a denied MCP call and a denied `read_file`, with no code written
 
 ## Parked
 
