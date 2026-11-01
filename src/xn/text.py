@@ -8,6 +8,9 @@ import unicodedata
 
 _ALIAS_STRIP_CHARS = " \t\n\r\f\v\"'“”‘’.,:;!?()[]"
 
+# Measured on 40 pntt1 chapters (S1-T7): qwen35-q8-12k 3.78, deepseek-r1-14b-12k 3.39, lowest chapter 3.29.
+CHARS_PER_TOKEN = 3.3
+
 
 def normalize_text(text: str) -> str:
     """Normalize text using Unicode Normalization Form C (NFC) only."""
@@ -15,8 +18,8 @@ def normalize_text(text: str) -> str:
 
 
 def estimate_tokens(text: str) -> int:
-    """Estimate token count for text using math.ceil(len(text) / 1.6)."""
-    return math.ceil(len(text) / 1.6)
+    """Estimate token count for text using math.ceil(len(text) / CHARS_PER_TOKEN)."""
+    return math.ceil(len(text) / CHARS_PER_TOKEN)
 
 
 def normalize_alias(name: str) -> str:

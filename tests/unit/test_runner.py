@@ -13,8 +13,9 @@ from typing import Any
 import pytest
 from typer.testing import CliRunner
 
-from pydantic_ai.messages import ModelResponse, ToolCallPart
+from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.profiles import ModelProfile
 from pydantic_ai.usage import RequestUsage
 
 from xn.cli.main import app
@@ -79,6 +80,9 @@ def create_chapter_files(raw_dir: Path, count: int = 3) -> None:
         (raw_dir / f"chapter_{i}.md").write_text(contents[i], encoding="utf-8")
 
 
+NATIVE_PROFILE = ModelProfile(supports_json_schema_output=True)
+
+
 class FakeModelTracker:
     """Fake model tracking execution calls and returning valid Pydantic-AI responses."""
 
@@ -87,8 +91,15 @@ class FakeModelTracker:
 
     def __call__(self, messages: list[Any], info: Any) -> ModelResponse:
         self.calls += 1
-        tool_name = info.output_tools[0].name
-        props = info.output_tools[0].parameters_json_schema.get("properties", {})
+        native = info.model_request_parameters.output_object
+        schema = native.json_schema if native else info.output_tools[0].parameters_json_schema
+        props = schema.get("properties", {})
+
+        def reply(payload: dict[str, Any], *, input_tokens: int, output_tokens: int) -> ModelResponse:
+            part = TextPart(json.dumps(payload)) if native else ToolCallPart(info.output_tools[0].name, payload)
+            return ModelResponse(
+                parts=[part], usage=RequestUsage(input_tokens=input_tokens, output_tokens=output_tokens)
+            )
 
         if "events" in props:
             prompt_str = ""
@@ -137,17 +148,13 @@ class FakeModelTracker:
                     }
                 ],
             }
-            part = ToolCallPart(tool_name, payload)
-            return ModelResponse(parts=[part], usage=RequestUsage(input_tokens=100, output_tokens=50))
+            return reply(payload, input_tokens=100, output_tokens=50)
 
         if "same_entity" in props:
             payload = {"same_entity": False, "reason": "Distinct entities in test"}
-            part = ToolCallPart(tool_name, payload)
-            return ModelResponse(parts=[part], usage=RequestUsage(input_tokens=50, output_tokens=20))
+            return reply(payload, input_tokens=50, output_tokens=20)
 
-        payload = {"text": SUMMARY_200}
-        part = ToolCallPart(tool_name, payload)
-        return ModelResponse(parts=[part], usage=RequestUsage(input_tokens=50, output_tokens=20))
+        return reply({"text": SUMMARY_200}, input_tokens=50, output_tokens=20)
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +170,7 @@ def test_criterion_1_end_to_end_and_idempotent_second_run(
     db_path = tmp_path / "xn_test.db"
 
     tracker = FakeModelTracker()
-    fake_model = FunctionModel(tracker)
+    fake_model = FunctionModel(tracker, profile=NATIVE_PROFILE)
     monkeypatch.setattr("xn.llm.local_model", lambda cfg: fake_model)
     monkeypatch.setattr("xn.pipeline.s1_extract.local_model", lambda cfg: fake_model)
     monkeypatch.setattr("xn.pipeline.s2_resolve.local_model", lambda cfg: fake_model)
@@ -235,7 +242,7 @@ def test_criterion_2_stale_only_on_s1_and_s3(
     db_path = tmp_path / "xn_test.db"
 
     tracker = FakeModelTracker()
-    fake_model = FunctionModel(tracker)
+    fake_model = FunctionModel(tracker, profile=NATIVE_PROFILE)
     monkeypatch.setattr("xn.llm.local_model", lambda cfg: fake_model)
     monkeypatch.setattr("xn.pipeline.s1_extract.local_model", lambda cfg: fake_model)
     monkeypatch.setattr("xn.pipeline.s2_resolve.local_model", lambda cfg: fake_model)
@@ -340,7 +347,7 @@ def test_criterion_3_stale_only_nothing_stale(
     db_path = tmp_path / "xn_test.db"
 
     tracker = FakeModelTracker()
-    fake_model = FunctionModel(tracker)
+    fake_model = FunctionModel(tracker, profile=NATIVE_PROFILE)
     monkeypatch.setattr("xn.llm.local_model", lambda cfg: fake_model)
     monkeypatch.setattr("xn.pipeline.s1_extract.local_model", lambda cfg: fake_model)
     monkeypatch.setattr("xn.pipeline.s2_resolve.local_model", lambda cfg: fake_model)
@@ -470,7 +477,7 @@ def test_criterion_5_rebuild_on_s2_clears_ledger_and_s3_jobs(
     db_path = tmp_path / "xn_test.db"
 
     tracker = FakeModelTracker()
-    fake_model = FunctionModel(tracker)
+    fake_model = FunctionModel(tracker, profile=NATIVE_PROFILE)
     monkeypatch.setattr("xn.llm.local_model", lambda cfg: fake_model)
     monkeypatch.setattr("xn.pipeline.s1_extract.local_model", lambda cfg: fake_model)
     monkeypatch.setattr("xn.pipeline.s2_resolve.local_model", lambda cfg: fake_model)
@@ -535,7 +542,7 @@ def test_criterion_6_stale_s2_without_rebuild_mentions_rebuild(
     db_path = tmp_path / "xn_test.db"
 
     tracker = FakeModelTracker()
-    fake_model = FunctionModel(tracker)
+    fake_model = FunctionModel(tracker, profile=NATIVE_PROFILE)
     monkeypatch.setattr("xn.llm.local_model", lambda cfg: fake_model)
     monkeypatch.setattr("xn.pipeline.s1_extract.local_model", lambda cfg: fake_model)
     monkeypatch.setattr("xn.pipeline.s2_resolve.local_model", lambda cfg: fake_model)
@@ -588,7 +595,7 @@ def test_criterion_7_failed_or_stopped_exits_1_successful_exits_0(
     db_path = tmp_path / "xn_test.db"
 
     tracker = FakeModelTracker()
-    fake_model = FunctionModel(tracker)
+    fake_model = FunctionModel(tracker, profile=NATIVE_PROFILE)
     monkeypatch.setattr("xn.llm.local_model", lambda cfg: fake_model)
     monkeypatch.setattr("xn.pipeline.s1_extract.local_model", lambda cfg: fake_model)
     monkeypatch.setattr("xn.pipeline.s2_resolve.local_model", lambda cfg: fake_model)
@@ -679,7 +686,7 @@ def test_criterion_9_run_s1_with_only_chapters(
     run_s0(repo, novel_id="pntt1", raw_dir=raw_dir, config=cfg, chapter_limit=3)
 
     tracker = FakeModelTracker()
-    fake_model = FunctionModel(tracker)
+    fake_model = FunctionModel(tracker, profile=NATIVE_PROFILE)
 
     # 1. only_chapters={2}
     res = run_s1(

@@ -7,6 +7,7 @@ import time
 from typing import Any
 import uuid
 
+from pydantic_ai import NativeOutput
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
@@ -35,6 +36,35 @@ def local_model(config: dict[str, Any]) -> OpenAIChatModel:
         provider = OpenAIProvider(base_url=base_url, api_key="ollama")
         _MODEL_CACHE[cache_key] = OpenAIChatModel(serving_name, provider=provider)
     return _MODEL_CACHE[cache_key]
+
+
+def extractor_output(output_type: Any, config: dict[str, Any]) -> Any:
+    """Wrap output_type for models.local_extractor.output_mode (tool by default).
+
+    Models that ignore tools, such as deepseek-r1, need "native", the JSON-schema
+    response format.
+
+    Raises:
+        ValueError: If output_mode is neither "tool" nor "native".
+    """
+    mode = config.get("models", {}).get("local_extractor", {}).get("output_mode", "tool")
+    if mode == "tool":
+        return output_type
+    if mode == "native":
+        return NativeOutput(output_type)
+    raise ValueError(f"Unknown models.local_extractor.output_mode: {mode!r}")
+
+
+def extractor_settings(config: dict[str, Any]) -> dict[str, Any]:
+    """Build model settings from models.local_extractor temperature and think.
+
+    think: false asks Ollama to skip thinking. When unset, the model's default applies.
+    """
+    models_cfg = config.get("models", {}).get("local_extractor", {})
+    settings: dict[str, Any] = {"temperature": models_cfg.get("temperature", 0.1)}
+    if models_cfg.get("think") is False:
+        settings["openai_reasoning_effort"] = "none"
+    return settings
 
 
 def run_logged(

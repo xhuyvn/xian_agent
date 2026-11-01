@@ -451,7 +451,7 @@ eval/pntt1/{gold,baseline.json}
 
 | Item | Formula | Estimate |
 |---|---|---|
-| S1 extraction | 2,673 × (4.7k/2500 + 900/50) s × 1.15 | ≈ 17 h sequential; ≈ 11 h with 2 slots |
+| S1 extraction | 2,673 × 18.3 s/chapter (measured in S1-T7: `deepseek-r1:14b`, 50 chapters, 1 slot, p95 29.7 s; see `docs/S1_T7_BENCHMARK.md`) | ≈ 13.6 h sequential (2 slots not measured) |
 | S2 adjudication + S7 digests | local | ≈ 2–3 h |
 | S4 embedding | ~23k items @ ~60/s | ≈ 7 min |
 | Arc prefix summaries (every 10 ch.) | ~267 × local call | ≈ 1.5 h |

@@ -16,7 +16,7 @@ import pytest
 from xn.pipeline.s0_parse import ChapterSetError, S0Result, run_s0
 from xn.storage.database import connect, init_schema
 from xn.storage.repository import Repository
-from xn.text import estimate_tokens, normalize_text
+from xn.text import CHARS_PER_TOKEN, estimate_tokens, normalize_text
 
 
 @pytest.fixture
@@ -373,7 +373,7 @@ def test_sha256_and_token_count_stored_job_row_done(
     ch = repo.list_chapters(novel_id="pntt1", chapter_max=1)[0]
     expected_hash = hashlib.sha256(ch["clean_text"].encode("utf-8")).hexdigest()
     assert ch["sha256"] == expected_hash
-    assert ch["token_count"] == math.ceil(len(ch["clean_text"]) / 1.6)
+    assert ch["token_count"] == math.ceil(len(ch["clean_text"]) / CHARS_PER_TOKEN)
 
     job = repo.get_job(novel_id="pntt1", chapter_id=1, stage="s0")
     assert job is not None
