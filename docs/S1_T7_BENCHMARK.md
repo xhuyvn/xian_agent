@@ -88,7 +88,7 @@ The same 50 chapters through the real S0 and S1 code. `qwen3.8:UD_Q3` ran at `nu
 | Names with Chinese characters | 0 | 3 |
 | Events per chapter | 5.4 | 4.1 |
 | s/chapter, mean | 15.8 | 18.5 |
-| s/chapter, p95 | 24.9 | 29.8 |
+| s/chapter, p95 | 24.9 | 29.7 |
 | Output tokens per chapter, mean | 673 | 1,141 |
 | Peak VRAM (MiB) | 14,783 | 12,775 (G-7 run) |
 | Chapters flagged `location_change` | 7 | 41 |
@@ -116,7 +116,7 @@ The entity list has no English names and no combined names, and "Hàn Lập" is 
 ### Trade-offs
 
 - **`qwen3.8:UD_Q3` is stronger on** recall, name quality and speed. It finds about twice as many items, techniques and places.
-- **`qwen3.8:UD_Q3` is weaker on** memory and characters. It leaves about 1.5 GB of the 16 GB free, against about 3.5 GB. It lists the protagonist less often, and finds slightly fewer characters.
+- **`qwen3.8:UD_Q3` is weaker on** memory and characters. It leaves about 1.5 GB of the 16 GB free, against about 3.4 GB. It lists the protagonist less often, and finds slightly fewer characters.
 - **Query time may not fit.** Blueprint §3.9 keeps the local model and the 1.2 GB reranker on the GPU together. With this model that reaches about 16 GB, so it needs testing when the reranker exists, or the model must unload first.
 - **Two slots are unlikely.** There is little memory left for a second slot.
 - **The flags are unchecked.** `deepseek-r1:14b` flags a location change in 82% of chapters and `qwen3.8:UD_Q3` in 14%. The first looks like over-flagging, but no gold set exists to confirm either. These flags feed arc detection, so S1-T9 should check them.
@@ -129,7 +129,7 @@ Thinking is off only because `think: false` is set. If this model is picked, con
 
 ### Full-book estimate
 
-2,673 chapters at 15.8 s is about 11.7 h in one slot, against 13.6 h for `deepseek-r1:14b`. The raw folder holds 2,468 chapters, which is about 10.8 h.
+2,673 chapters at 15.8 s is about 11.7 h in one slot, against 13.7 h for `deepseek-r1:14b` at 18.5 s. The raw folder holds 2,468 chapters, which is about 10.8 h.
 
 ### Source changes during the benchmark
 
