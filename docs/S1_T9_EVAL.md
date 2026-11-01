@@ -2,7 +2,7 @@
 
 Date: 2026-11-01. Goal: G-10.
 
-**Extraction recall is 0.68, below Sprint 1's 0.80.** Sprint 1 criterion 3 is not met. The gold and the prompt were left unchanged, as agreed. Everything else measured here has no Sprint 1 threshold.
+**Extraction recall is now 0.98, above Sprint 1's 0.80, with precision 0.88.** Prompt v1 scored 0.68, so sub-goal G-10.1 wrote prompt v2. On the 10 held-out chapters v2 scored recall 1.00 and precision 0.90, with the caveats in "G-10.1 prompt v2". The gold did not change. Everything else measured here has no Sprint 1 threshold.
 
 The gold was drafted by Claude from the chapter text, not by a person (`annotator: claude` in `eval/pntt1/gold/meta.json`), and committed before any scoring. It covers chapters 1-100 only. A person's spot-check would make these numbers firmer.
 
@@ -10,24 +10,25 @@ The gold was drafted by Claude from the chapter text, not by a person (`annotato
 
 `qwen3.8:udiq4_hui` through the real S0-S3 code on chapters 1-100, then `pytest tests/eval -m gold`. Thresholds in brackets come from blueprint §3.8 and apply in Sprint 4, except recall at 0.80, which is Sprint 1's.
 
-| Metric | Result | Threshold |
-|---|---|---|
-| Entity recall | **0.68** (69 of 102) | 0.80 now, 0.85 in S4 |
-| Entity precision | 0.86 (11 false names) | 0.90 in S4 |
-| Category accuracy | 0.92 | none |
-| Event-type accuracy | 0.87 | 0.75 in S4 |
-| Flag F1, `realm_breakthrough` | 1.00, on 1 gold chapter | 0.80 in S4 |
-| Flag F1, `major_conflict` | 0.86 | 0.80 in S4 |
-| Flag F1, `location_change` | 0.50, on 2 gold chapters | 0.80 in S4 |
-| Alias pairwise F1 | 0.67 (precision 1.00, recall 0.50) | 0.90 in S4 |
-| Q&A citation hit rate, evidence only | 0.80 (12 of 15, none refused) | 0.80 in S4 |
-| Q&A context recall, evidence only | 0.72 | 0.75 in S2 |
-| Spoiler leaks, evidence and suggestions | 0 of 10 probes | 0 |
-| Evidence above the bound | 0 | 0 |
+| Metric | Prompt v1 | Prompt v2 | Threshold |
+|---|---|---|---|
+| Entity recall | 0.68 (69 of 102) | **0.98** (100 of 102) | 0.80 now, 0.85 in S4 |
+| Entity precision | 0.86 (11 false names) | 0.88 (14 false names) | 0.90 in S4 |
+| Category accuracy | 0.92 | 0.91 | none |
+| Event-type accuracy | 0.87 | 0.90 | 0.75 in S4 |
+| Flag F1, `realm_breakthrough` | 1.00, on 1 gold chapter | 1.00 | 0.80 in S4 |
+| Flag F1, `major_conflict` | 0.86 | 0.92 | 0.80 in S4 |
+| Flag F1, `location_change` | 0.50, on 2 gold chapters | 0.33 | 0.80 in S4 |
+| Alias pairwise F1 | 0.67 (precision 1.00, recall 0.50) | 0.64 (precision 1.00, recall 0.48) | 0.90 in S4 |
+| Q&A citation hit rate, evidence only | 0.80 (12 of 15, none refused) | 0.93 (14 of 15, none refused) | 0.80 in S4 |
+| Q&A context recall, evidence only | 0.72 | 0.91 | 0.75 in S2 |
+| Spoiler leaks, evidence and suggestions | 0 of 10 probes | 0 of 10 probes | 0 |
+| Evidence above the bound | 0 | not rerun | 0 |
+| S1 s/chapter | 20.4 | 34.7 | none |
 
-Q&A and spoiler scores cover what the graph retrieves and shows before any cloud call, not the written answers. The spoiler result does not replace the Sprint 2 check on real answers. S1 took 34 minutes for 100 chapters, about 20.4 s/chapter. RAGAS and boundary F1 were not run.
+Q&A and spoiler scores cover what the graph retrieves and shows before any cloud call, not the written answers. The spoiler result does not replace the Sprint 2 check on real answers. The Sprint 1 recheck and the live deep-dive below were run on v1, and were not repeated on v2. RAGAS and boundary F1 were not run.
 
-## Why recall is low
+## Why recall was low on prompt v1
 
 - **The model writes fewer events than the gold has entities.** The mean is 4.0 events per chapter, with a range of 1-8 and none empty, against 5.1 gold entities per chapter. This fits the misses but does not prove the cause.
 - **It misses most on crowded chapters.** Chapter 84 lost 5 of 8 entities: its three events are all techniques, and no character is named. Chapters 69 and 95 lost 4 of 7 and 4 of 8. Those three plus chapter 79 hold 16 of the 33 misses, and chapter 27 holds 6.
@@ -35,7 +36,7 @@ Q&A and spoiler scores cover what the graph retrieves and shows before any cloud
 - **Malformed names are a smaller cause.** In chapter 27 four pills arrive as one comma-joined name, and "phi kiếm (ánh sáng mờ mờ" is cut mid-bracket. Counting a gold name inside any extracted name lifts recall only to 0.73, so better name cleaning alone will not reach 0.80.
 - **Not yet known:** how many good events S1's evidence check dropped. Dropped events are logged, not stored, so this run cannot show it.
 
-## Other findings
+## Other findings on prompt v1
 
 - **Alias recall is 0.50 because `seed_aliases` is empty.** All 20 wrong pairs are titles, nicknames and descriptions S2 can't guess, such as Hàn thần y, Mặc lão, Chu Nho and cự hán. It merged no pair that should stay apart, including Trương Thiết / Khúc Hồn. `entity_links` is empty, so no reveal was linked in the first 100 chapters.
 - **`location_change` F1 rests on 2 chapters**, so 0.50 says little. This answers the S1-T7 question only loosely.
@@ -44,7 +45,7 @@ Q&A and spoiler scores cover what the graph retrieves and shows before any cloud
 
 ## Sprint 1 criteria
 
-1. **Identical row counts: met.** S0-S3 ran twice on the same database, with 100 chapters, 183 entities, 209 aliases, 399 events and 400 jobs both times. The second run made no model calls and wrote nothing.
+1. **Identical row counts: met**, on v1 and again on v2. S0-S3 ran twice on the same database. v1 gave 100 chapters, 183 entities, 209 aliases, 399 events and 400 jobs both times, and v2 gave 100 chapters, 259 entities, 295 aliases, 846 events and 400 jobs both times. The second run made no model calls and wrote nothing.
 2. **Deep-dive on 3 entities cites only chapters <= N: met live.** Through OpenRouter at N = 60, on the real ledger:
 
    | Entity | Citations | Grounding |
@@ -54,7 +55,7 @@ Q&A and spoiler scores cover what the graph retrieves and shows before any cloud
    | Hàn Lập | 1-60, 13 chapters | 20% |
 
    Spend was $0.0025 for 3 answers. Grounding is the share of answer sentences that carry a citation, so most Hàn Lập sentences carry none. Two problems showed up on the way. One of the 5 deep-dive router calls failed on a context overflow (10,295 tokens against 10,240) and fell back to a refusal; the 25 router calls in the gold run all worked. OpenRouter also returned connection errors on 5 calls, and a repeat run answered.
-3. **Extraction recall >= 0.80: not met.** 0.68.
+3. **Extraction recall >= 0.80: met with prompt v2.** 0.98 across the 20 gold chapters; v1 scored 0.68.
 4. **Measured s/chapter in the blueprint: met** by G-8, at 27.2 s/chapter.
 
 ## G-10.1 drop measurement
@@ -85,6 +86,25 @@ These dev numbers are tuned, so they do not count toward the goal; the held-out 
 
 **The hold-out is not fully clean.** The split was made after the 20-chapter v1 report, which showed misses and false names from all 20 chapters. Attempt 1 used two example phrases from that report that belong to held-out chapters 48 and 79, so attempt 2 replaced them. The rules themselves are general, but they were written after seeing that report, including the comma-joined name from chapter 27 and the missing protagonist in chapters 58 and 79. One replacement, "thanh trường kiếm", is a common phrase that also occurs in chapters 1-100. Scores on the held-out chapters may therefore read slightly high.
 
+### Full run on prompt v2
+
+Real S0-S3 on chapters 1-100, on a fresh database, with 100 S1 calls, none failed or retried. `ace67e0` pins the final prompt.
+
+| Gold chapters | Recall | Precision | Category | Event type | False names |
+|---|---|---|---|---|---|
+| All 20 | **0.98** (100 of 102) | 0.88 | 0.91 | 0.90 | 14 |
+| Dev, 10 | 0.96 (48 of 50) | 0.86 | 0.94 | 0.81 | 8 |
+| Held out, 10 | **1.00** (52 of 52) | 0.90 | 0.88 | 0.98 | 6 |
+
+- **Misses:** "bình thần bí" in chapter 11 and "Trừu tủy hoàn" in chapter 22, both dev.
+- **Dev moved between runs.** The same prompt gave 0.98 and 0.89 on the 10-chapter run, and 0.96 and 0.86 here, so repeats differ by about one name and some false names.
+- **Recall came from writing more.** v2 keeps 8.5 events per chapter (range 4-18) against 4.0 for v1, 846 events against 399. False names rose from 11 to 14, and they are descriptions such as "thiếu nữ" and "cái hộp đen".
+- **S1 is slower.** It took 34.7 s/chapter, 58 minutes for 100 chapters. At that rate the 2,468-chapter book takes about 24 hours of S1, against about 14 at v1's rate.
+- **More names split.** By exact name, 14 now sit under two entities, against 4 on v1. This is the problem G-8 saw.
+- **Aliases did not improve.** F1 fell from 0.67 to 0.64, and precision stayed 1.00. The cause is still empty `seed_aliases`, not extraction.
+- **Q&A rose** to 14 of 15, leaving q13. Context recall is 0.91, above the Sprint 2 bar of 0.75.
+- **`location_change` is 0.33 on 2 gold chapters**, so it says little either way. `realm_breakthrough` has its one gold chapter in dev, so its held-out 0.00 means nothing.
+
 ## Sprint 1 recheck
 
 An independent verifier pass at `c53d1e9` read every "Done when" line of G-1 to G-9 against the code as it stands, not against the round logs. All are met, or were superseded with the owner's yes (the extractor model, through G-8). Recall is the only failing criterion.
@@ -96,8 +116,8 @@ Open items it found, none blocking:
 - **`test_criterion_8` depends on the console encoding.** It fails when output is UTF-8 and the reader uses cp1252.
 - **Not logged in `docs/GOALS.md`:** `cloud_spend_since` is a third exempt repository method, and `src/storage/qdrant_client.py` also keeps `src/config.py` alive.
 - **Stale text:** `README.md` still names Redis, blueprint §3.9 still shows `FROM qwen2.5:14b`, and `s0_parse.py` line 43 raises a SyntaxWarning on every run.
-- **Sprint 2 starts below its bar:** evidence-only context recall is 0.72 against 0.75.
-- **S1 speed:** this run measured 20.4 s/chapter on chapters 1-100, against the blueprint's 27.2 from 50 chapters across 1-1121.
+- **Sprint 2 bar:** evidence-only context recall was 0.72 against 0.75 on v1. Prompt v2 lifts it to 0.91.
+- **S1 speed:** v1 measured 20.4 s/chapter on chapters 1-100 and v2 measured 34.7, against the blueprint's 27.2 from 50 chapters across 1-1121 on v1. The blueprint cost table still shows v1.
 - **Nobody owns:** CI, ruff and mypy (OQ-03).
 
 ## Reproduce
