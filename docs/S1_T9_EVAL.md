@@ -107,9 +107,9 @@ Real S0-S3 on chapters 1-100, on a fresh database, with 100 S1 calls, none faile
 
 ## Sprint 1 recheck
 
-An independent verifier pass at `c53d1e9` read every "Done when" line of G-1 to G-9 against the code as it stands, not against the round logs. All are met, or were superseded with the owner's yes (the extractor model, through G-8). Recall is the only failing criterion.
+An independent verifier pass at `c53d1e9` read every "Done when" line of G-1 to G-9 against the code as it stands, not against the round logs. All are met, or were superseded with the owner's yes (the extractor model, through G-8). Recall was the only failing criterion, and prompt v2 has since met it.
 
-Open items it found, none blocking:
+Open items it found, none blocking. G-11 has since fixed the first five; the last three remain:
 
 - **`total_chapters` is stale.** Config, the `novels` row and the blueprint say 2,673, and the folder holds 2,468 contiguous chapters. A bare `xn run --stage s0` aborts on 205 missing chapters, and `xn ask --full` bounds at 2,673. The default raw folder does not match the real one either.
 - **A follow-up may break on a future langgraph.** Each real follow-up logs that `RouterDecision`, `EvidencePack` and `Answer` are unregistered types that will be blocked later. `test_checkpoint_round_trip_gives_no_serializer_warning` can't see this, because the warning goes through logging.
