@@ -22,6 +22,7 @@ Rounds:
 - R-2 2026-11-01: annotate 20 chapters from the text -> FAIL, 1 blocker, 4da44e9, 0 agy tokens
 - R-3 2026-11-01: fix the chapter 53 conflict flag -> PASS, 0 blockers, 62e21e2, 0 agy tokens
 - R-4 2026-11-01: deliver the alias pairs, Q&A and spoiler probes -> PASS, 0 blockers, 49e05fb, 0 agy tokens
+- R-5 2026-11-01: run the real ingest, score it and report the numbers -> FAIL, 1 blocker (recall 0.68 against 0.80), b7eb8b5, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
