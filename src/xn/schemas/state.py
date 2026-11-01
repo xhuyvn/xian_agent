@@ -29,6 +29,13 @@ class EvidenceItem(BaseModel):
     tier_or_realm: Optional[str] = None
     evidence: Optional[str] = None
 
+    def cloud_text(self) -> str:
+        """Return the text sent to the cloud model; the chapter quote stays local."""
+        text = f"[{self.event_type}] {self.entity_name}: {self.description}"
+        if self.tier_or_realm:
+            text += f" (cảnh giới/phẩm giai: {self.tier_or_realm})"
+        return text
+
 
 class EvidencePack(BaseModel):
     """Evidence for one query, ranked so the most useful items come first."""
