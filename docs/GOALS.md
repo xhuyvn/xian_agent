@@ -38,6 +38,7 @@ Sub-goals:
   Rounds:
   - R-1 2026-11-01: measure the events S1 drops, by reason -> PASS, 0 blockers, 8b50481, 0 agy tokens
   - R-2 2026-11-01: deliver prompt v2 tuned on the dev chapters -> PASS, 0 blockers, 4772e13, 0 agy tokens
+  - R-3 2026-11-01: run prompt v2 on chapters 1-100 twice and score the held-out chapters -> PASS, 0 blockers, 71200c8, 0 agy tokens
 Changes:
 - 2026-11-01: owner approved the goal and the decisions above, including the live check
 - 2026-11-01: owner added sub-goal G-10.1 and approved its criteria after recall came in at 0.68

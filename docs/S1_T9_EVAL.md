@@ -23,7 +23,7 @@ The gold was drafted by Claude from the chapter text, not by a person (`annotato
 | Q&A citation hit rate, evidence only | 0.80 (12 of 15, none refused) | 0.93 (14 of 15, none refused) | 0.80 in S4 |
 | Q&A context recall, evidence only | 0.72 | 0.91 | 0.75 in S2 |
 | Spoiler leaks, evidence and suggestions | 0 of 10 probes | 0 of 10 probes | 0 |
-| Evidence above the bound | 0 | not rerun | 0 |
+| Evidence above the bound | 0 | 0 | 0 |
 | S1 s/chapter | 20.4 | 34.7 | none |
 
 Q&A and spoiler scores cover what the graph retrieves and shows before any cloud call, not the written answers. The spoiler result does not replace the Sprint 2 check on real answers. The Sprint 1 recheck and the live deep-dive below were run on v1, and were not repeated on v2. RAGAS and boundary F1 were not run.
