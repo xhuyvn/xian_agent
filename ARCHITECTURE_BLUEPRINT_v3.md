@@ -78,7 +78,7 @@ OWASP LLM Top 10: LLM01 → G-15 · LLM02 → G-17 · LLM09 → G-01, G-02, G-07
 | `text[:9000]` | Token budget + 2-part split; `num_ctx 12288`, KV cache q8_0 | G-06 | 0% truncation | ~+8% extraction time |
 | All ledger rows to LLM | Entity×arc digests + top-k events, 20k cap | G-07 | Bounded cost/latency for any entity | Precompute stage S7 |
 | `CLASH` everywhere | Typed events, evidence quotes, unique keys | G-03, G-04 | Lifecycle questions answerable; idempotent | +~150 output tokens/chapter |
-| Dense 1024 with no model | BGE-M3 dense+sparse, RRF, bge-reranker-v2-m3 | G-08 | Real hybrid search; exact Hán-Việt name matching | Shares GPU → separate stage |
+| Dense 1024 with no model | BGE-M3 dense + BM25 sparse (ADR-03), RRF, bge-reranker-v2-m3 | G-08 | Real hybrid search; exact Hán-Việt name matching | Shares GPU → separate stage |
 | Greedy changepoint | Smoothed constrained DP + LLM review | G-11 | Boundary F1 ≥ 0.80 target | ~45 extra calls/novel |
 | `pntt_*` collections | Shared collections, `novel_id` tenant index | G-21 | Add a novel with zero infra change | Every query must carry `novel_id` (enforced) |
 | qwen2.5:14b fixed | Benchmark qwen2.5:14b vs qwen3:14b (non-thinking) on gold set in Sprint 1 | — | Better JSON reliability likely `[verify]` | One eval run |
@@ -99,7 +99,7 @@ flowchart LR
     S0 --> S1[S1 Extract<br/>Ollama Qwen 14B<br/>Pydantic-AI]
     S1 --> S2[S2 Entity resolution]
     S2 --> S3[S3 Ledger write]
-    S0 --> S4[S4 Chunk & embed<br/>BGE-M3 dense+sparse]
+    S0 --> S4[S4 Chunk & embed<br/>BGE-M3 dense + BM25 sparse]
     S3 --> S5[S5 Arc segmentation]
     S5 --> S7[S7 Entity×arc digests]
     DB[("SQLite — every row keyed by novel_id")]
@@ -168,7 +168,7 @@ sequenceDiagram
 | **S1 Extract** | Local Qwen via Pydantic-AI, temperature 0.1, prompt templated with the genre profile (§3.11). Chapter ≤ 7,000 tokens → one call; longer → 2 parts with 300-token overlap, merged in code (union events, OR booleans, local re-summary). Output `ChapterExtraction` (below). Evidence quote check drops unverifiable events |
 | **S2 Resolve** | Within one `novel_id` only. (1) exact normalized alias; (2) diacritics-stripped; (3) `rapidfuzz` token_set ≥ 92, same category; (4) 80–92 → local LLM adjudication with both contexts; (5) new entity. Seed aliases from `configs/novels/{id}.yaml`. Records `first_chapter` per entity and per alias. Identity reveals (one person behind two names) go to `entity_links`, never merged (§3.4) |
 | **S3 Ledger** | `entity_events` keyed by `entity_id` with unique `(novel_id, chapter_id, entity_id, event_type, ordinal)` |
-| **S4 Embed** | Separate GPU window (Ollama unloaded). Paragraph chunks ~450 tokens, 60 overlap (~20k chunks for `pntt1`) + each `micro_summary`. BGE-M3 dense+sparse |
+| **S4 Embed** | Separate GPU window (Ollama unloaded). Paragraph chunks ~450 tokens, 60 overlap (~20k chunks for `pntt1`) + each `micro_summary`. BGE-M3 dense + BM25 sparse (ADR-03) |
 | **S5 Segment** | Score `s_i = Σ w·flag` (weights per novel); centered smoothing window 5; DP picks boundaries maximizing Σ scores subject to `min_len ≤ len ≤ max_len`; LLM reviews each boundary with micro-summaries ±5 chapters and may shift ≤ 5 |
 | **S6 Synthesize** | OpenRouter macro model → `StoryArc` from the arc's micro-summaries (~12k tokens in) |
 | **S7 Digests** | For each (entity, arc) with ≥ 3 events: 80–150-word digest (local model). Also prefix digests at spoiler checkpoints (§3.4) |
@@ -250,7 +250,7 @@ CREATE TABLE feedback (run_id TEXT, rating INTEGER, note TEXT, created_at TEXT);
 
 | Collection | Vectors | Payload indexes |
 |---|---|---|
-| `xn_chunks` | `dense` 1024 cosine, `sparse` (BGE-M3 lexical) | `novel_id` keyword (**tenant**), `chapter_id` int (range), `arc_id` int, `kind` (`text`/`summary`), `entity_ids` int[] |
+| `xn_chunks` | `dense` 1024 cosine (BGE-M3 via Ollama), `sparse` (BM25, IDF modifier, ADR-03) | `novel_id` keyword (**tenant**), `chapter_id` int (range), `arc_id` int, `kind` (`text`/`summary`), `entity_ids` int[] |
 | `xn_arcs` | `dense` 1024 | `novel_id` (**tenant**), `arc_id`, `start_chapter`, `end_chapter` |
 
 Point ID = `uuid5(NAMESPACE, f"{novel_id}:{kind}:{chapter_id}:{chunk_no}")` → re-embedding upserts, never duplicates.
@@ -637,7 +637,7 @@ class DeepDiveReport(BaseModel):              # single-pass or reduce output
 
 **ADR-02 Staged pipeline for ingestion, LangGraph for queries.** Batch work needs per-chapter idempotency and per-stage re-runs; LangGraph suits interactive, branching, multi-turn queries. Rejected: one graph run over 2,468 chapters.
 
-**ADR-03 BGE-M3 dense+sparse in Qdrant.** Hán-Việt proper nouns need lexical matching; one model gives both. Rejected: separate BM25 service; dense-only.
+**ADR-03 BGE-M3 dense + BM25 sparse in Qdrant.** Hán-Việt proper nouns need lexical matching. Ollama's `bge-m3` returns dense vectors only, so sparse vectors are BM25 term weights built in our code and stored in Qdrant with the IDF modifier; no PyTorch and no extra service. On chapters 1-100 BM25 alone reached recall@8 0.933 and hybrid reached recall@30 1.00 (G-12). Rejected: separate BM25 service; dense-only; FlagEmbedding sparse (adds PyTorch, not tested); `embeddinggemma-2:570m` for dense (hybrid recall@8 0.867 against 0.90).
 
 **ADR-04 Relational entity resolution with time-aware identity links.** Auditable merges and spoiler-safe identity reveals. Rejected: vector "entities" collection; hard merging of aliases.
 

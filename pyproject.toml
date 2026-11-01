@@ -42,4 +42,7 @@ packages = ["src/xn"]
 [tool.pytest.ini_options]
 pythonpath = [".", "src"]
 testpaths = ["tests"]
-markers = ["gold: scores a real ingest against eval/<novel>/gold (run with -m gold)"]
+markers = [
+    "gold: scores a real ingest against eval/<novel>/gold (run with -m gold)",
+    "integration: needs the real Qdrant from docker-compose.yml",
+]

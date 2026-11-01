@@ -5,8 +5,8 @@ services:
     image: qdrant/qdrant:v1.19.1
     container_name: xn_agent_qdrant
     ports:
-      - "6233:6333"
-      - "6234:6334"
+      - "127.0.0.1:6233:6333"
+      - "127.0.0.1:6234:6334"
     volumes:
       - ./data/qdrant_storage:/qdrant/storage
     environment:
