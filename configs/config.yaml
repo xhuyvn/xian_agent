@@ -5,11 +5,12 @@ prompts: {}
 
 models:
   local_extractor:
-    name: "deepseek-r1:14b"
-    serving_name: "deepseek-r1-14b-12k"
+    name: "qwen3.8:udiq4_hui"
+    serving_name: "qwen38-udiq4-hui-10k"
     base_url: "http://localhost:11434/v1"
     temperature: 0.1
     output_mode: "native"
+    think: false
   macro_synthesizer:
     name: "deepseek/deepseek-chat"
     temperature: 0.3

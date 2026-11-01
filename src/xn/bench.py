@@ -41,6 +41,8 @@ class Candidate:
 CANDIDATES = (
     Candidate("qwen35-q8-12k", "qwen3.5:Q8", think=False),
     Candidate("deepseek-r1-14b-12k", "deepseek-r1:14b"),
+    Candidate("qwen38-ud-q3-10k", "qwen3.8:UD_Q3", think=False),
+    Candidate("qwen38-udiq4-hui-10k", "qwen3.8:udiq4_hui", think=False),
 )
 
 
@@ -60,6 +62,17 @@ class ModelResult:
     baseline_vram_mib: int | None
     peak_vram_mib: int | None
     chars_per_token: float | None
+
+
+def select_candidates(names: list[str] | None) -> tuple[Candidate, ...]:
+    """Return the candidates with these serving names, or all of them when names is empty."""
+    if not names:
+        return CANDIDATES
+    known = {candidate.serving_name: candidate for candidate in CANDIDATES}
+    unknown = [name for name in names if name not in known]
+    if unknown:
+        raise ValueError(f"Unknown models: {unknown}. Known: {sorted(known)}")
+    return tuple(known[name] for name in names)
 
 
 def pick_chapters(chapter_max: int, count: int) -> list[int]:
@@ -169,6 +182,13 @@ def pooled_recall(found_by_model: dict[str, dict[int, set[str]]]) -> dict[str, f
     }
 
 
+def _s1_call_count(conn: sqlite3.Connection, *, novel_id: str, serving_name: str) -> int:
+    return conn.execute(
+        "SELECT COUNT(*) FROM llm_runs WHERE novel_id = ? AND stage = ? AND model = ?",
+        (novel_id, STAGE, serving_name),
+    ).fetchone()[0]
+
+
 def _measure_runs(
     conn: sqlite3.Connection, *, novel_id: str, chapters: list[int], serving_name: str
 ) -> dict[str, Any]:
@@ -247,8 +267,8 @@ def render_report(results: list[ModelResult], chapters: list[int], winner: str |
         ("Names not in text", lambda r: str(r.names_not_in_text)),
         ("s/chapter (mean)", lambda r: f"{r.s_per_chapter:.1f}"),
         ("s/chapter (p95)", lambda r: f"{r.p95_s_per_chapter:.1f}"),
-        ("Idle VRAM (MiB)", lambda r: str(r.baseline_vram_mib)),
-        ("Peak VRAM (MiB)", lambda r: str(r.peak_vram_mib)),
+        ("Idle VRAM (MiB)", lambda r: "n/a" if r.baseline_vram_mib is None else str(r.baseline_vram_mib)),
+        ("Peak VRAM (MiB)", lambda r: "n/a" if r.peak_vram_mib is None else str(r.peak_vram_mib)),
         ("Chars per token", lambda r: "n/a" if r.chars_per_token is None else f"{r.chars_per_token:.2f}"),
     ]
     lines = [
@@ -297,6 +317,7 @@ def run_benchmark(
             for other in candidates:
                 unload(other.serving_name)
             baseline = read_vram()
+            calls_before = _s1_call_count(conn, novel_id=novel_id, serving_name=name)
             with _PeakVram(read_vram) as peak:
                 run_s1(
                     repo, novel_id=novel_id, config=_candidate_config(config, candidate),
@@ -304,10 +325,12 @@ def run_benchmark(
                     model=models[name] if models else None, prompts_dir=prompts_dir,
                 )
             unload(name)
+            # A fully resumed run never loads the model, so its readings say nothing about it.
+            loaded = _s1_call_count(conn, novel_id=novel_id, serving_name=name) > calls_before
             measured[name] = {
                 **_measure_runs(conn, novel_id=novel_id, chapters=chapters, serving_name=name),
-                "baseline_vram_mib": baseline,
-                "peak_vram_mib": peak.peak,
+                "baseline_vram_mib": baseline if loaded else None,
+                "peak_vram_mib": peak.peak if loaded else None,
             }
             found_by_model[name], not_in_text[name] = _found_names(repo, novel_id=novel_id, chapters=chapters)
         finally:
@@ -341,11 +364,17 @@ def main(
     chapter_max: int = typer.Option(1121, "--chapter-max", help="Last chapter S0 reads"),
     count: int = typer.Option(50, "--count", help="Chapters to benchmark"),
     novel: str = typer.Option("pntt1", "--novel", help="Novel ID"),
+    model: list[str] | None = typer.Option(None, "--model", help="Serving name to run; repeat for more (default: all)"),
 ) -> None:
     """Benchmark the extractor candidates and print the report."""
     config = load_config(novel, configs_dir=Path("configs"))
+    try:
+        candidates = select_candidates(model)
+    except ValueError as err:
+        raise typer.BadParameter(str(err))
     results, winner, reason = run_benchmark(
         config=config, raw_dir=raw_dir, out_dir=out_dir, chapter_max=chapter_max, count=count,
+        candidates=candidates,
     )
     typer.echo(render_report(results, pick_chapters(chapter_max, count), winner, reason))
 
