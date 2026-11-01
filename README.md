@@ -47,7 +47,7 @@ novel_agent_architecture/
     │   ├── lifecycle.py             # Schema sổ cái biến cố thực thể
     │   └── arc.py                   # Schema mốc sự kiện StoryArc
     ├── storage/
-    │   ├── qdrant_client.py         # Quản lý 3 collections Qdrant
+    │   ├── (đã thay bằng src/xn/storage/qdrant.py)
     │   └── sqlite_ledger.py         # Sổ cái biến cố theo thời gian (SQLite)
     ├── ingestion/
     │   └── pydantic_extractor.py    # Extractor sử dụng Pydantic-AI Agent

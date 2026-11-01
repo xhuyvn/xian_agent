@@ -139,18 +139,18 @@ flowchart TD
 
 ### Sprint 2 — Retrieval + Spoiler Layers L1–L5
 
-*Goal:* Implement BGE-M3 hybrid vector search in Qdrant, multi-tenant payload indexing, reranking, and full L1–L5 spoiler prevention layers.
+*Goal:* Implement hybrid vector search in Qdrant (BGE-M3 dense + BM25 sparse, ADR-03), multi-tenant payload indexing, reranking, and full L1–L5 spoiler prevention layers.
 
 #### Task Ordering & File Matrix
 - **S2-T1: Qdrant Multi-tenant Setup & Manager** (§3.2, §3.9, §3.11, ADR-03, ADR-06)
   - *Files created:* `src/xn/storage/qdrant.py` (proposal), `tests/integration/test_tenant_isolation.py` (proposal).
   - *Files changed:* `docker-compose.yml` (upgrade Qdrant image per §0.2/§3.9 with target version subject to OQ-08; placement in Sprint 2 is derived as S2-T1 is the first consumer, as §0.2 names no sprint).
   - *Files changed/deleted:* Supersedes `src/storage/qdrant_client.py` (§0.2 via `storage/*` wildcard).
-  - *Details:* Manage shared collections `xn_chunks` and `xn_arcs`. Setup dense (1024 cosine) and sparse vectors. Payload indexes on `xn_chunks`: `novel_id`, `chapter_id`, `arc_id`, `kind`, `entity_ids` (§3.2 S4). Payload indexes on `xn_arcs`: `novel_id`, `arc_id`, `start_chapter`, `end_chapter` (§3.2 S6; infrastructure configured here, with `xn_arcs` population executed in S3-T2). Deterministic UUID5 point IDs.
+  - *Details:* Manage shared collections `xn_chunks` and `xn_arcs`. Setup dense (1024 cosine) and sparse (BM25, IDF modifier) vectors. Payload indexes on `xn_chunks`: `novel_id`, `chapter_id`, `arc_id`, `kind`, `entity_ids` (§3.2 S4). Payload indexes on `xn_arcs`: `novel_id`, `arc_id`, `start_chapter`, `end_chapter` (§3.2 S6; infrastructure configured here, with `xn_arcs` population executed in S3-T2). Deterministic UUID5 point IDs.
   - *Dependencies:* S1-T2 (derived from data flow: storage/repository configuration).
 - **S2-T2: Pipeline Stage S4 — Chunk & Embed** (§3.2 S4, §3.9)
   - *Files created:* `src/xn/pipeline/s4_embed.py` (proposal).
-  - *Details:* Runs in a separate GPU window (Ollama stopped). Paragraph chunks ~450 tokens (60 overlap) + micro-summaries from S1 (§3.2 S4). BGE-M3 dense + sparse vectors written to `xn_chunks`. Payload fields include `entity_ids` and `arc_id` (§3.2); how these two are populated is unsettled (OQ-17).
+  - *Details:* Runs in a separate GPU window (Ollama stopped). Paragraph chunks ~450 tokens (60 overlap) + micro-summaries from S1 (§3.2 S4). BGE-M3 dense (Ollama) + BM25 sparse vectors written to `xn_chunks`. Payload fields include `entity_ids` and `arc_id` (§3.2); how these two are populated is unsettled (OQ-17).
   - *Dependencies:* S1-T3, S1-T4, S1-T5, S2-T1 (derived from data flow: S1-T3 provides clean text from `chapters`, S1-T4 persists `micro_summary` in `extractions` per §3.2 S4, S1-T5 provides the entity IDs stored in `entity_ids`, and S2-T1 provides Qdrant `xn_chunks` collection setup).
 - **S2-T3: Hybrid Retrieval & Reranker** (§3.2 S4, §3.3, §3.9)
   - *Files created:* `src/xn/storage/retriever.py` (proposal).

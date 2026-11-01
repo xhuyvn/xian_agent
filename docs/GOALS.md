@@ -25,6 +25,23 @@ Sub-goals:
 Changes:
 - 2026-11-01: owner approved the goal and the decisions above
 
+### G-12: S2-T1 Qdrant multi-tenant setup and manager (active)
+Plan: docs/IMPLEMENTATION_PLAN.md, S2-T1. Depends on G-2.
+Owner decisions: dense vectors are BGE-M3 through Ollama (1024 cosine), kept over `embeddinggemma-2:570m` by the benchmark rule of 0.05 hybrid recall@8 (0.90 against 0.867 on chapters 1-100). Ollama returns dense only, so sparse vectors are BM25 built in our code and stored in Qdrant with the IDF modifier (blueprint change to ADR-03). The project's compose Qdrant is used, port 6233 bound to `127.0.0.1`, not `platform-qdrant`. agy writes the code; the lead does compose and docs. Filling the vectors is S2-T2, and the reranker is S2-T3. One round.
+Done when:
+- `src/xn/storage/qdrant.py` creates `xn_chunks` with `dense` 1024 cosine and `sparse` with IDF, plus `xn_arcs`, and running it twice is safe
+- The payload indexes match the plan, with `novel_id` as the tenant index
+- Point IDs are deterministic UUID5, so a re-upsert adds no duplicates
+- A test against the real Qdrant shows that a query on novel A never returns novel B, and nothing past `chapter_max` comes back
+- `configs/config.yaml` uses the new collections, and `src/storage/qdrant_client.py` is deleted
+- ADR-03 and §3.2 record the BM25 decision
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-01: owner approved the goal and the decisions above
+
 ## Parked
 
 ## Archive
