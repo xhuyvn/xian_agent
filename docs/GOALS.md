@@ -60,6 +60,7 @@ Done when:
 - A recommendation is given and the owner has picked a model
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
+- R-1 2026-11-01: add `qwen3.8:UD_Q3`, its Modelfile and model selection -> PASS, 0 blockers, 7511ab0, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
