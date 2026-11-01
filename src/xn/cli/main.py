@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 import sys
 from typing import Any
@@ -156,6 +157,7 @@ def ask(
 ) -> None:
     """Ask a spoiler-bounded question, answered in compact mode from the ledger."""
     logging.basicConfig(level=logging.WARNING)
+    os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
 

@@ -131,6 +131,11 @@ def test_route_clears_the_previous_turn(repo: Repository) -> None:
     assert out["entity_ids"] == []
 
 
+def test_repeated_mentions_are_dropped_in_order_before_the_size_limit() -> None:
+    mentions = ["Thanh Trúc", "Phong Vân", "thanh trúc", "Phong Vân", "Hàn Lập", "Hàn Lập", "X"]
+    assert decision(mentions=mentions).mentions == ["Thanh Trúc", "Phong Vân", "Hàn Lập", "X"]
+
+
 def test_more_than_four_mentions_is_rejected_as_router_failure(repo: Repository) -> None:
     model = TestModel(
         custom_output_args={"intent": "compare", "mentions": ["a", "b", "c", "d", "e"]}
@@ -168,6 +173,36 @@ def test_bound_precedence(
 def test_bound_ignores_a_meaningless_hint(repo: Repository) -> None:
     out = bound({"novel_id": "nov", "decision": decision(chapter_hint=0)}, deps_for(repo))
     assert out == {"chapter_max": 100}
+
+
+@pytest.mark.parametrize(
+    "query, expected",
+    [
+        ("Đến chương 30 Mặc Đại Phu đã làm gì?", 30),
+        ("Tính tới hết chương 40 có gì?", 40),
+        ("trước chương 7", 7),
+        ("Chương 30 có gì?", 100),  # naming a chapter is not a bound
+    ],
+)
+def test_bound_reads_the_question_when_the_model_misses_the_hint(
+    repo: Repository, query: str, expected: int
+) -> None:
+    out = bound({"novel_id": "nov", "query": query, "decision": decision()}, deps_for(repo))
+    assert out == {"chapter_max": expected}
+
+
+def test_bound_prefers_model_hint_and_explicit_over_question(repo: Repository) -> None:
+    state = {"novel_id": "nov", "query": "đến chương 30", "decision": decision(chapter_hint=40)}
+    assert bound(state, deps_for(repo)) == {"chapter_max": 40}
+    assert bound({**state, "until": 50}, deps_for(repo)) == {"chapter_max": 50}
+
+
+def test_follow_up_with_bound_only_in_text_is_refused(repo: Repository) -> None:
+    out = bound(
+        {"novel_id": "nov", "chapter_max": 80, "query": "đến chương 30", "decision": decision()},
+        deps_for(repo),
+    )
+    assert "cuộc trò chuyện mới" in out["refusal"]
 
 
 def test_bound_rejects_an_explicit_bound_below_one(repo: Repository) -> None:

@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from xn.graph.deps import GraphDeps, QueryError
 from xn.schemas.state import QueryState
+from xn.text import normalize_text
+
+_BOUND_IN_QUESTION = re.compile(r"(?:đến|tới|trước|hết)(?:\s+hết)?\s+chương\s+(\d+)", re.IGNORECASE)
+
+
+def _question_bound(query: str) -> int | None:
+    """Read "đến chương N" in code, because the model can miss it and leak past the bound."""
+    match = _BOUND_IN_QUESTION.search(normalize_text(query))
+    return int(match.group(1)) if match else None
 
 
 def bound(state: QueryState, deps: GraphDeps) -> dict[str, Any]:
@@ -26,8 +36,8 @@ def bound(state: QueryState, deps: GraphDeps) -> dict[str, Any]:
     if until is not None and until < 1:
         raise QueryError("VALIDATION_FAILED", f"Chapter bound must be at least 1: {until}")
     hint = state["decision"].chapter_hint
-    if hint is not None and hint < 1:
-        hint = None
+    if hint is None or hint < 1:
+        hint = _question_bound(state.get("query", ""))
     requested = until or hint
 
     pinned = state.get("chapter_max")

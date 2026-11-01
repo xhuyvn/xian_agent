@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import operator
-from typing import Annotated, Literal, Optional, TypedDict
+from typing import Annotated, Any, Literal, Optional, TypedDict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from xn.text import normalize_alias
 
 
 class RouterDecision(BaseModel):
@@ -15,6 +17,15 @@ class RouterDecision(BaseModel):
     mentions: list[str] = Field(default_factory=list, max_length=4)
     chapter_hint: Optional[int] = None
     aspect: Optional[str] = None
+
+    @field_validator("mentions", mode="before")
+    @classmethod
+    def _drop_repeats(cls, value: Any) -> Any:
+        """Drop repeated names, which local models produce and would break the size limit."""
+        if not isinstance(value, list):
+            return value
+        unique = {normalize_alias(m) if isinstance(m, str) else m: m for m in reversed(value)}
+        return list(reversed(unique.values()))
 
 
 class EvidenceItem(BaseModel):
