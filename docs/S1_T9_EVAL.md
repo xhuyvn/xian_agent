@@ -57,6 +57,21 @@ Q&A and spoiler scores cover what the graph retrieves and shows before any cloud
 3. **Extraction recall >= 0.80: not met.** 0.68.
 4. **Measured s/chapter in the blueprint: met** by G-8, at 27.2 s/chapter.
 
+## Sprint 1 recheck
+
+An independent verifier pass at `c53d1e9` read every "Done when" line of G-1 to G-9 against the code as it stands, not against the round logs. All are met, or were superseded with the owner's yes (the extractor model, through G-8). Recall is the only failing criterion.
+
+Open items it found, none blocking:
+
+- **`total_chapters` is stale.** Config, the `novels` row and the blueprint say 2,673, and the folder holds 2,468 contiguous chapters. A bare `xn run --stage s0` aborts on 205 missing chapters, and `xn ask --full` bounds at 2,673. The default raw folder does not match the real one either.
+- **A follow-up may break on a future langgraph.** Each real follow-up logs that `RouterDecision`, `EvidencePack` and `Answer` are unregistered types that will be blocked later. `test_checkpoint_round_trip_gives_no_serializer_warning` can't see this, because the warning goes through logging.
+- **`test_criterion_8` depends on the console encoding.** It fails when output is UTF-8 and the reader uses cp1252.
+- **Not logged in `docs/GOALS.md`:** `cloud_spend_since` is a third exempt repository method, and `src/storage/qdrant_client.py` also keeps `src/config.py` alive.
+- **Stale text:** `README.md` still names Redis, blueprint §3.9 still shows `FROM qwen2.5:14b`, and `s0_parse.py` line 43 raises a SyntaxWarning on every run.
+- **Sprint 2 starts below its bar:** evidence-only context recall is 0.72 against 0.75.
+- **S1 speed:** this run measured 20.4 s/chapter on chapters 1-100, against the blueprint's 27.2 from 50 chapters across 1-1121.
+- **Nobody owns:** CI, ruff and mypy (OQ-03).
+
 ## Reproduce
 
 Paths outside the repo must use the `--option=value` form. With a space, pytest reads the path as a test target and takes its settings from the wrong checkout.

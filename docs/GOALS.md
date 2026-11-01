@@ -23,6 +23,7 @@ Rounds:
 - R-3 2026-11-01: fix the chapter 53 conflict flag -> PASS, 0 blockers, 62e21e2, 0 agy tokens
 - R-4 2026-11-01: deliver the alias pairs, Q&A and spoiler probes -> PASS, 0 blockers, 49e05fb, 0 agy tokens
 - R-5 2026-11-01: run the real ingest, score it and report the numbers -> FAIL, 1 blocker (recall 0.68 against 0.80), b7eb8b5, 0 agy tokens
+- R-6 2026-11-01: recheck all of Sprint 1 against today's code -> FAIL, 1 blocker (the same recall line), c53d1e9, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
