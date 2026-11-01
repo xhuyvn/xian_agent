@@ -2,9 +2,9 @@
 
 Date: 2026-10-31. Goal: G-7. Settles BP-OQ-1 for the installed models.
 
-**Result: `deepseek-r1:14b` is the production extractor**, served as `deepseek-r1-14b-12k` with `output_mode: native`.
+**Current production extractor: `qwen3.8:udiq4_hui`**, served as `qwen38-udiq4-hui-10k` with `output_mode: native` and `think: false`. The owner picked it in G-8; see the G-8 sections below.
 
-Both models passed the schema gate, and deepseek-r1 has the higher recall by 13 points, outside the 2-point margin. The rule was fixed before the run.
+The rest of this first part records the G-7 result, when `deepseek-r1:14b` won. Both models passed the schema gate, and deepseek-r1 has the higher recall by 13 points, outside the 2-point margin. The rule was fixed before the run.
 
 ## Results
 
@@ -74,7 +74,7 @@ Output ran well past the blueprint's 1.5k budget for `qwen3.5:Q8` (up to 2,853 h
 
 ## G-8: `qwen3.8:UD_Q3` against `deepseek-r1:14b`
 
-Date: 2026-11-01. `qwen3.8:UD_Q3` beat `deepseek-r1:14b`. The next section compares it with `qwen3.8:udiq4_hui`. The owner's pick is pending and config still names `deepseek-r1:14b`.
+Date: 2026-11-01. `qwen3.8:UD_Q3` beat `deepseek-r1:14b`. The next section compares it with `qwen3.8:udiq4_hui`, the model the owner picked.
 
 The same 50 chapters through the real S0 and S1 code. `qwen3.8:UD_Q3` ran at `num_ctx 10240` with thinking off. `deepseek-r1:14b` keeps its G-7 results at 12288. Recall here uses a new pool of these two models, so these numbers can't be compared with the G-7 table.
 
@@ -137,7 +137,7 @@ Thinking is off only because `think: false` is set. If this model is picked, con
 
 ## G-8: `qwen3.8:udiq4_hui` against `qwen3.8:UD_Q3`
 
-Date: 2026-11-01. **Recommendation: `qwen3.8:udiq4_hui`**, pending the owner's pick. It wins under the agreed rule, with recall 8 points higher, and it closes `qwen3.8:UD_Q3`'s gap on characters. It is a close call: speed is not part of the rule outside the 2-point margin, and this model costs about 72% more time. Its estimate for 2,673 chapters is just over the 20 h target, and that estimate is a floor.
+Date: 2026-11-01. **Picked by the owner: `qwen3.8:udiq4_hui`**, now set in `configs/config.yaml`. It wins under the agreed rule, with recall 8 points higher, and it closes `qwen3.8:UD_Q3`'s gap on characters. It is a close call: speed is not part of the rule outside the 2-point margin, and this model costs about 72% more time. Its estimate for 2,673 chapters is just over the 20 h target, and that estimate is a floor.
 
 The same 50 chapters through the real S0 and S1 code, both at `num_ctx 10240` with thinking off. `qwen3.8:UD_Q3` keeps its results from the previous section. Recall uses a new pool of these two models, so these numbers can't be compared with the earlier tables.
 

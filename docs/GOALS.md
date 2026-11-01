@@ -68,6 +68,7 @@ Sub-goals:
 Changes:
 - 2026-11-01: owner approved the goal and the decisions above
 - 2026-11-01: owner added `qwen3.8:udiq4_hui` against `qwen3.8:UD_Q3`, same chapters at `num_ctx 10240`, on a pool of those two; the pick stays open until this is compared
+- 2026-11-01: owner picked `qwen3.8:udiq4_hui` as the extractor (plan change: set in config with `think: false`)
 
 ## Parked
 
