@@ -70,18 +70,20 @@ S1 dropped 4 of 75 events, about 5%, so the evidence check is not the main cause
 
 ## G-10.1 prompt v2
 
-`prompts/s1_extract/v2.md` adds two rule blocks to v1: every named entity with a role gets its own event, the protagonist always does, and `name` holds exactly one verbatim name, never a joined list or a description. The first attempt on the 10 dev chapters cleared both lines, so no second attempt was used.
+`prompts/s1_extract/v2.md` adds two rule blocks to v1: every named entity with a role gets its own event, the protagonist always does, and `name` holds exactly one verbatim name, never a joined list or a description. Two of 3 allowed attempts were used.
 
-| Dev chapters | v1 | v2, attempt 1 |
-|---|---|---|
-| Recall | 0.62 | **0.96** |
-| Precision | 0.91 | 0.86 |
-| Category accuracy | 0.96 | 0.92 |
-| Event-type accuracy | 0.87 | 0.81 |
-| Events kept | 34 | 89 |
-| Events dropped | 4 | 0 |
+| Dev chapters | v1 | v2, attempt 1 | v2, attempt 2 (final) |
+|---|---|---|---|
+| Recall | 0.62 | 0.96 | **0.98** |
+| Precision | 0.91 | 0.86 | 0.89 |
+| Category accuracy | 0.96 | 0.92 | 0.94 |
+| Event-type accuracy | 0.87 | 0.81 | 0.84 |
+| Events kept | 34 | 89 | 87 |
+| Events dropped | 4 | 0 | 0 |
 
-The extra events cost some precision and event-type accuracy. These dev numbers are tuned, so they do not count toward the goal; the held-out chapters decide it.
+These dev numbers are tuned, so they do not count toward the goal; the held-out chapters decide it.
+
+**The hold-out is not fully clean.** The split was made after the 20-chapter v1 report, which showed misses and false names from all 20 chapters. Attempt 1 used two example phrases from that report that belong to held-out chapters 48 and 79, so attempt 2 replaced them. The rules themselves are general, but they were written after seeing that report, including the comma-joined name from chapter 27 and the missing protagonist in chapters 58 and 79. One replacement, "thanh trường kiếm", is a common phrase that also occurs in chapters 1-100. Scores on the held-out chapters may therefore read slightly high.
 
 ## Sprint 1 recheck
 
