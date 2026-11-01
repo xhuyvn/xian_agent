@@ -50,6 +50,21 @@ Changes:
 - 2026-10-31: owner approved the goal and the decisions above
 - 2026-10-31: verifier pass on the integrated branch at b2aaead -> PASS, every "Done when" line met
 
+### G-8: compare `qwen3.8:UD_Q3` with `deepseek-r1:14b` (active)
+Plan: follows G-7 and its `docs/S1_T7_BENCHMARK.md`. Depends on G-7, and this branch sits on top of PR #11.
+Owner decisions: the lead writes the code, with no agy. Only `qwen3.8:UD_Q3` joins; `qwen3.8:IQ3` is dropped. It runs at `num_ctx 10240` with thinking off; `deepseek-r1:14b` keeps its 12288 results from G-7. Same 50 chapters, rescored against a pool of these two models. The agreed rule gives a recommendation and the owner makes the final pick. Config and blueprint change only if the owner picks `qwen3.8:UD_Q3`.
+Done when:
+- `qwen3.8:UD_Q3` runs the G-7 chapters through the real S1 code
+- `xn.bench` can select which models run
+- The report compares both models on one shared reference, and states the context difference
+- A recommendation is given and the owner has picked a model
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-01: owner approved the goal and the decisions above
+
 ## Parked
 
 ## Archive

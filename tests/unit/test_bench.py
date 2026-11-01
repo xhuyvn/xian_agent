@@ -14,6 +14,7 @@ from pydantic_ai.profiles import ModelProfile
 from pydantic_ai.usage import RequestUsage
 
 from xn.bench import (
+    CANDIDATES,
     Candidate,
     ModelResult,
     choose_winner,
@@ -21,6 +22,7 @@ from xn.bench import (
     pooled_recall,
     render_report,
     run_benchmark,
+    select_candidates,
 )
 from xn.llm import extractor_output, extractor_settings
 from xn.schemas.extraction import MicroSummary
@@ -235,6 +237,22 @@ def test_rerun_makes_no_new_calls(tmp_path: Path) -> None:
     assert calls["n"] == made
     assert first[0].recall == second[0].recall
     assert first[0].schema_success == second[0].schema_success
+    assert first[0].peak_vram_mib == 9000
+    assert second[0].peak_vram_mib is None
+    assert second[0].baseline_vram_mib is None
+
+
+def test_select_candidates_by_serving_name() -> None:
+    assert select_candidates(None) == CANDIDATES
+    assert select_candidates([]) == CANDIDATES
+    picked = select_candidates(["qwen38-ud-q3-10k", "deepseek-r1-14b-12k"])
+    assert [c.base_name for c in picked] == ["qwen3.8:UD_Q3", "deepseek-r1:14b"]
+    assert picked[0].think is False
+
+
+def test_select_candidates_rejects_unknown_names() -> None:
+    with pytest.raises(ValueError, match="qwen3.8:IQ3"):
+        select_candidates(["qwen3.8:IQ3"])
 
 
 def test_report_names_each_model_and_the_winner() -> None:
