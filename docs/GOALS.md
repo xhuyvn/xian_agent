@@ -36,6 +36,7 @@ Sub-goals:
   - A real S0-to-S3 run on chapters 1-100, repeated, gives identical row counts
   - `py -m compileall -q src` and `uv run pytest tests/unit` pass
   Rounds:
+  - R-1 2026-11-01: measure the events S1 drops, by reason -> PASS, 0 blockers, 8b50481, 0 agy tokens
 Changes:
 - 2026-11-01: owner approved the goal and the decisions above, including the live check
 - 2026-11-01: owner added sub-goal G-10.1 and approved its criteria after recall came in at 0.68
