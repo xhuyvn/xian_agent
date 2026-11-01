@@ -29,6 +29,7 @@ Rounds:
 - R-2 2026-11-01: deliver the route, bound, resolve, retrieve and gate nodes -> PASS, 0 blockers, be5bb30, 0 agy tokens
 - R-3 2026-11-01: deliver synthesize, verify, the compiled graph and xn ask -> PASS, 0 blockers, 7e4e597, 0 agy tokens
 - R-4 2026-11-01: remove the prototype files and pass the whole branch -> PASS, 0 blockers, 34ae093, 0 agy tokens
+- R-5 2026-11-01: widen the chapter-bound parsing in bound -> PASS, 0 blockers, b8e528d, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
