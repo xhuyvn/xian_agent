@@ -68,6 +68,21 @@ Prompt v1 on all 20 gold chapters, through real S1, with `python -m xn.gold_run`
 
 S1 dropped 4 of 75 events, about 5%, so the evidence check is not the main cause of low recall and `EVIDENCE_MIN_SCORE` stays at 85. The model mostly never writes the missing events. Dev recall on this run is 0.62, with precision 0.91. It is the baseline for prompt v2.
 
+## G-10.1 prompt v2
+
+`prompts/s1_extract/v2.md` adds two rule blocks to v1: every named entity with a role gets its own event, the protagonist always does, and `name` holds exactly one verbatim name, never a joined list or a description. The first attempt on the 10 dev chapters cleared both lines, so no second attempt was used.
+
+| Dev chapters | v1 | v2, attempt 1 |
+|---|---|---|
+| Recall | 0.62 | **0.96** |
+| Precision | 0.91 | 0.86 |
+| Category accuracy | 0.96 | 0.92 |
+| Event-type accuracy | 0.87 | 0.81 |
+| Events kept | 34 | 89 |
+| Events dropped | 4 | 0 |
+
+The extra events cost some precision and event-type accuracy. These dev numbers are tuned, so they do not count toward the goal; the held-out chapters decide it.
+
 ## Sprint 1 recheck
 
 An independent verifier pass at `c53d1e9` read every "Done when" line of G-1 to G-9 against the code as it stands, not against the round logs. All are met, or were superseded with the owner's yes (the extractor model, through G-8). Recall is the only failing criterion.
