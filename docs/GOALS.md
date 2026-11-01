@@ -27,6 +27,7 @@ Done when:
 Rounds:
 - R-1 2026-11-01: deliver the state schemas, spend reads and OpenRouter wrapper -> PASS, 0 blockers, e2c1497, 0 agy tokens
 - R-2 2026-11-01: deliver the route, bound, resolve, retrieve and gate nodes -> PASS, 0 blockers, be5bb30, 0 agy tokens
+- R-3 2026-11-01: deliver synthesize, verify, the compiled graph and xn ask -> PASS, 0 blockers, 7e4e597, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
