@@ -25,6 +25,7 @@ Done when:
 - Unit tests use fake models
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
+- R-1 2026-11-01: deliver the state schemas, spend reads and OpenRouter wrapper -> PASS, 0 blockers, e2c1497, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
