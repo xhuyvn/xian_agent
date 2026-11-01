@@ -29,48 +29,6 @@ Changes:
 - 2026-10-31: owner approved the goal and the decisions above
 - 2026-10-31: verifier pass on the merged branch at fae527d -> PASS, every "Done when" line met
 
-### G-7: S1-T7 extractor benchmark (active)
-Plan: docs/IMPLEMENTATION_PLAN.md, S1-T7. Depends on G-4. Serves BP-OQ-1.
-Owner decisions: the lead writes the code for this goal, with no agy. The models are `qwen3.5:Q8` and `deepseek-r1:14b`, as in the S1-T7 title; BP-OQ-1 and the blueprint name models that are not installed. Recall is scored against the pooled evidence-backed entities of both models, which compares them but does not satisfy Sprint 1's recall >= 0.80 (S1-T9 keeps that). 50 chapters evenly spaced across 1-1121, because chapter 1122 is missing and S0 stops at a gap. Winner: at least 95% schema success, then higher recall, and within 2 points the faster model wins; if neither reaches 95%, stop and report. `qwen3.5:Q8` runs with thinking off, `deepseek-r1:14b` as it behaves, both one chapter at a time. Setting the winner in config and its Modelfile goes beyond S1-T7's listed files (plan deviation). The chapter gap and `total_chapters` are out of scope. Three rounds: harness, calibration, full run.
-Done when:
-- Both models run the same 50 chapters through the real S1 code
-- A report gives schema success, recall against the shared reference, s/chapter and peak VRAM for each model
-- The winner follows the agreed rule and is set in config and its Modelfile
-- `estimate_tokens` is calibrated from measured data
-- Measured s/chapter is in the blueprint §3.9 cost table
-- Unit tests use a fake model
-- `py -m compileall -q src` and `uv run pytest tests/unit` pass
-Rounds:
-- R-1 2026-10-31: deliver the benchmark harness, Modelfiles and output modes -> PASS, 0 blockers, 6691bc8, 0 agy tokens
-- R-2 2026-10-31: calibrate estimate_tokens and clean the VRAM baseline -> PASS, 0 blockers, 3f9a36a, 0 agy tokens
-- R-3 2026-10-31: run 50 chapters, record the results and set the winner -> PASS, 0 blockers, 7218978, 0 agy tokens
-Sub-goals:
-- none yet
-Changes:
-- 2026-10-31: owner approved the goal and the decisions above
-- 2026-10-31: verifier pass on the integrated branch at b2aaead -> PASS, every "Done when" line met
-
-### G-8: compare `qwen3.8:UD_Q3` with `deepseek-r1:14b` (active)
-Plan: follows G-7 and its `docs/S1_T7_BENCHMARK.md`. Depends on G-7, and this branch sits on top of PR #11.
-Owner decisions: the lead writes the code, with no agy. Only `qwen3.8:UD_Q3` joins; `qwen3.8:IQ3` is dropped. It runs at `num_ctx 10240` with thinking off; `deepseek-r1:14b` keeps its 12288 results from G-7. Same 50 chapters, rescored against a pool of these two models. The agreed rule gives a recommendation and the owner makes the final pick. Config and blueprint change only if the owner picks `qwen3.8:UD_Q3`.
-Done when:
-- `qwen3.8:UD_Q3` runs the G-7 chapters through the real S1 code
-- `xn.bench` can select which models run
-- The report compares both models on one shared reference, and states the context difference
-- A recommendation is given and the owner has picked a model
-- `py -m compileall -q src` and `uv run pytest tests/unit` pass
-Rounds:
-- R-1 2026-11-01: add `qwen3.8:UD_Q3`, its Modelfile and model selection -> PASS, 0 blockers, 7511ab0, 0 agy tokens
-- R-2 2026-11-01: run 50 chapters, compare on one reference and recommend -> PASS, 0 blockers, 287dbbb, 0 agy tokens
-- R-3 2026-11-01: compare `qwen3.8:udiq4_hui` with `qwen3.8:UD_Q3` and recommend -> PASS, 0 blockers, ff9cef5, 0 agy tokens
-- R-4 2026-11-01: set the owner's pick in config and the blueprint -> PASS, 0 blockers, 4f082e8, 0 agy tokens
-Sub-goals:
-- none yet
-Changes:
-- 2026-11-01: owner approved the goal and the decisions above
-- 2026-11-01: owner added `qwen3.8:udiq4_hui` against `qwen3.8:UD_Q3`, same chapters at `num_ctx 10240`, on a pool of those two; the pick stays open until this is compared
-- 2026-11-01: owner picked `qwen3.8:udiq4_hui` as the extractor (plan change: set in config with `think: false`)
-
 ## Parked
 
 ## Archive
@@ -177,3 +135,47 @@ Changes:
 - 2026-10-31: owner approved the goal and the decisions above, choosing the same-tokens guard
 - 2026-10-31: verifier pass on the merged branch at 7a92bee -> PASS, every "Done when" line met
 - 2026-10-31: PR #8 merged; owner approved marking the goal done
+
+### G-7: S1-T7 extractor benchmark (done)
+Plan: docs/IMPLEMENTATION_PLAN.md, S1-T7. Depends on G-4. Serves BP-OQ-1.
+Owner decisions: the lead writes the code for this goal, with no agy. The models are `qwen3.5:Q8` and `deepseek-r1:14b`, as in the S1-T7 title; BP-OQ-1 and the blueprint name models that are not installed. Recall is scored against the pooled evidence-backed entities of both models, which compares them but does not satisfy Sprint 1's recall >= 0.80 (S1-T9 keeps that). 50 chapters evenly spaced across 1-1121, because chapter 1122 is missing and S0 stops at a gap. Winner: at least 95% schema success, then higher recall, and within 2 points the faster model wins; if neither reaches 95%, stop and report. `qwen3.5:Q8` runs with thinking off, `deepseek-r1:14b` as it behaves, both one chapter at a time. Setting the winner in config and its Modelfile goes beyond S1-T7's listed files (plan deviation). The chapter gap and `total_chapters` are out of scope. Three rounds: harness, calibration, full run.
+Done when:
+- Both models run the same 50 chapters through the real S1 code
+- A report gives schema success, recall against the shared reference, s/chapter and peak VRAM for each model
+- The winner follows the agreed rule and is set in config and its Modelfile
+- `estimate_tokens` is calibrated from measured data
+- Measured s/chapter is in the blueprint §3.9 cost table
+- Unit tests use a fake model
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-10-31: deliver the benchmark harness, Modelfiles and output modes -> PASS, 0 blockers, 6691bc8, 0 agy tokens
+- R-2 2026-10-31: calibrate estimate_tokens and clean the VRAM baseline -> PASS, 0 blockers, 3f9a36a, 0 agy tokens
+- R-3 2026-10-31: run 50 chapters, record the results and set the winner -> PASS, 0 blockers, 7218978, 0 agy tokens
+Sub-goals:
+- none yet
+Changes:
+- 2026-10-31: owner approved the goal and the decisions above
+- 2026-10-31: verifier pass on the integrated branch at b2aaead -> PASS, every "Done when" line met
+- 2026-11-01: PR #11 merged; owner approved marking the goal done. G-8 later replaced `deepseek-r1:14b` in config and the blueprint
+
+### G-8: compare `qwen3.8:UD_Q3` with `deepseek-r1:14b` (done)
+Plan: follows G-7 and its `docs/S1_T7_BENCHMARK.md`. Depends on G-7.
+Owner decisions: the lead writes the code, with no agy. Only `qwen3.8:UD_Q3` joins; `qwen3.8:IQ3` is dropped. It runs at `num_ctx 10240` with thinking off; `deepseek-r1:14b` keeps its 12288 results from G-7. Same 50 chapters, rescored against a pool of these two models. The agreed rule gives a recommendation and the owner makes the final pick. Config and blueprint change only for the owner's pick.
+Done when:
+- `qwen3.8:UD_Q3` runs the G-7 chapters through the real S1 code
+- `xn.bench` can select which models run
+- The report compares both models on one shared reference, and states the context difference
+- A recommendation is given and the owner has picked a model
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-01: add `qwen3.8:UD_Q3`, its Modelfile and model selection -> PASS, 0 blockers, 7511ab0, 0 agy tokens
+- R-2 2026-11-01: run 50 chapters, compare on one reference and recommend -> PASS, 0 blockers, 287dbbb, 0 agy tokens
+- R-3 2026-11-01: compare `qwen3.8:udiq4_hui` with `qwen3.8:UD_Q3` and recommend -> PASS, 0 blockers, ff9cef5, 0 agy tokens
+- R-4 2026-11-01: set the owner's pick in config and the blueprint -> PASS, 0 blockers, 4f082e8, 0 agy tokens
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-01: owner approved the goal and the decisions above
+- 2026-11-01: owner added `qwen3.8:udiq4_hui` against `qwen3.8:UD_Q3`, same chapters at `num_ctx 10240`, on a pool of those two; the pick stays open until this is compared
+- 2026-11-01: owner picked `qwen3.8:udiq4_hui` as the extractor (plan change: set in config with `think: false`), so the last owner decision now reads "only for the owner's pick"
+- 2026-11-01: PR #12 merged into the PR #11 branch instead of `main`, so a further PR carries the work to `main`; owner approved marking the goal done
