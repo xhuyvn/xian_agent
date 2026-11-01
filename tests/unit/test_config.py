@@ -116,7 +116,7 @@ def test_real_pntt1_config_loads() -> None:
 
     # Acceptance criteria from brief
     assert cfg["genre"] == "xianxia"
-    assert cfg["total_chapters"] == 2673
+    assert cfg["total_chapters"] == 2468
     assert "models" in cfg
     assert isinstance(cfg["models"], dict)
     assert "local_extractor" in cfg["models"]

@@ -43,6 +43,23 @@ Changes:
 - 2026-11-01: owner approved the goal and the decisions above, including the live check
 - 2026-11-01: owner added sub-goal G-10.1 and approved its criteria after recall came in at 0.68
 
+### G-11: clear the non-blocking Sprint 1 recheck items (active)
+Plan: docs/S1_T9_EVAL.md, "Sprint 1 recheck". Follows G-10, whose recall line stays open there. Cut from `cld/s1-t9-feature-a3a0ec`.
+Owner decisions: the lead writes the code, with no agy, because it is two small changes that must be run to be proven. `total_chapters` becomes 2468, the chapters on disk. `pntt1.yaml` gains `raw_dir: data/novel/pham_nhan_tu_tien_1`, and `xn run` falls back to `data/novels/<id>/raw` only without it (this changes the G-6 decision on the raw path; the folder stays where it is). The checkpoint serializer gets an explicit allowlist covering every `xn.schemas.state` model stored in a checkpoint, which includes `EvidenceItem` if it logs too. `novels` rows in existing databases keep their old value: there is no `data/xn.db`, and S0 only writes a missing row. Blueprint history (old benchmark plans) stays as written. The extraction prompt, the gold set, the extractor model and the other recheck items are out of scope. One round.
+Done when:
+- `configs/novels/pntt1.yaml`, the blueprint's chapter-count lines and `--to` examples in the blueprint and `docs/IMPLEMENTATION_PLAN.md` say 2468, and a bare `xn run --novel pntt1 --stage s0` finds the real folder without the missing-chapter abort
+- A real follow-up logs no unregistered type, and `test_checkpoint_round_trip_gives_no_serializer_warning` checks logging as well as warnings, resets langgraph's warn-once record, and fails when the allowlist is removed
+- `test_criterion_8_module_execution_and_pyproject_scripts` passes `encoding="utf-8"`, sets UTF-8 for the child, and passes under a cp1252 reader
+- `s0_parse.py` raises no SyntaxWarning, `README.md` no longer names Redis, and blueprint §3.9 shows the Modelfile of `qwen3.8:udiq4_hui`
+- G-9's Changes record that `cloud_spend_since` is a third exempt repository method and that `src/storage/qdrant_client.py` also keeps `src/config.py`
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass under both Bash and PowerShell
+Rounds:
+- R-1 2026-11-01: clear the five recheck items -> PASS, 0 blockers, 06bf95c, 0 agy tokens
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-01: owner approved the goal and the decisions above
+
 ## Parked
 
 ## Archive
@@ -245,3 +262,5 @@ Changes:
 - 2026-11-01: verifier pass on the whole branch at 34ae093 -> PASS, every "Done when" line met
 - 2026-11-01: owner approved R-5, widening the chapter-bound parsing in `bound` before merge
 - 2026-11-01: PR #14 merged; owner approved marking the goal done
+- 2026-11-01: recheck found `cloud_spend_since` is a third exempt repository method, beside the two in G-2, because cloud spend spans novels
+- 2026-11-01: recheck found `src/storage/qdrant_client.py` also keeps `src/config.py` alive, so removing `src/timeline/arc_detector.py` alone won't free it

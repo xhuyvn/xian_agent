@@ -630,7 +630,7 @@ def test_criterion_7_failed_or_stopped_exits_1_successful_exits_0(
 def test_cli_raw_dir_defaults_to_novel_folder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    create_chapter_files(tmp_path / "data" / "novels" / "pntt1" / "raw", count=2)
+    create_chapter_files(tmp_path / "data" / "novel" / "pham_nhan_tu_tien_1", count=2)
     monkeypatch.chdir(tmp_path)
 
     res = CliRunner().invoke(app, [
@@ -650,12 +650,13 @@ def test_cli_raw_dir_defaults_to_novel_folder(
 
 
 def test_criterion_8_module_execution_and_pyproject_scripts() -> None:
-    env = {**os.environ, "PYTHONPATH": str(SRC_DIR)}
+    env = {**os.environ, "PYTHONPATH": str(SRC_DIR), "PYTHONIOENCODING": "utf-8"}
     proc = subprocess.run(
         [sys.executable, "-m", "xn", "run", "--help"],
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
     )
     assert proc.returncode == 0
     assert "--novel" in proc.stdout
@@ -663,6 +664,38 @@ def test_criterion_8_module_execution_and_pyproject_scripts() -> None:
 
     pyproject_text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
     assert 'xn = "xn.cli.main:app"' in pyproject_text
+
+
+@pytest.mark.parametrize(
+    ("config_line", "expected"),
+    [
+        ("raw_dir: books/one\n", Path("books/one")),
+        ("", Path("data/novels/nov/raw")),
+    ],
+)
+def test_run_default_raw_dir_comes_from_the_novel_config(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, config_line: str, expected: Path
+) -> None:
+    configs_dir = tmp_path / "configs"
+    (configs_dir / "novels").mkdir(parents=True)
+    (configs_dir / "genres").mkdir()
+    (configs_dir / "config.yaml").write_text("{}\n", encoding="utf-8")
+    (configs_dir / "genres" / "xianxia.yaml").write_text("{}\n", encoding="utf-8")
+    (configs_dir / "novels" / "nov.yaml").write_text(f"genre: xianxia\n{config_line}", encoding="utf-8")
+    seen: dict[str, Any] = {}
+
+    def fake_run_stage(repo: Any, **kwargs: Any) -> S0Result:
+        seen.update(kwargs)
+        return S0Result(processed=0, written=0, skipped=0)
+
+    monkeypatch.setattr("xn.cli.main.run_stage", fake_run_stage)
+    result = CliRunner().invoke(
+        app,
+        ["run", "--novel", "nov", "--stage", "s0", "--db", str(tmp_path / "x.db"),
+         "--configs-dir", str(configs_dir)],
+    )
+    assert result.exit_code == 0, result.output
+    assert seen["raw_dir"] == expected
 
 
 # ---------------------------------------------------------------------------

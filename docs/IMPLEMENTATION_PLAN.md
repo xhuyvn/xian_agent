@@ -108,7 +108,7 @@ flowchart TD
 - **S1-T6: Pipeline Stage S3 — Idempotent Ledger Write** (§3.2 S3, G-03, G-04)
   - *Files created:* `src/xn/pipeline/s3_ledger.py` (proposal), `src/xn/schemas/lifecycle.py` (proposal), `src/xn/pipeline/runner.py` (proposal), `src/xn/cli/main.py` (proposal: implements initial CLI entry point and `xn run`), `src/xn/__main__.py` (proposal, subject to OQ-01: package execution entry point for `python -m xn`).
   - *Files changed/deleted:* Supersedes `src/schemas/lifecycle.py`.
-  - *Details:* Writes `entity_events` with unique key `(novel_id, chapter_id, entity_id, event_type, ordinal)`. Per-chapter transactions. Records job status in `jobs`. Implements `xn run --novel pntt1 --stage s1 --from 1 --to 2673 [--stale-only]` CLI runner logic (blueprint §3.2 general form; Sprint 1 execution scope runs `--to 100`).
+  - *Details:* Writes `entity_events` with unique key `(novel_id, chapter_id, entity_id, event_type, ordinal)`. Per-chapter transactions. Records job status in `jobs`. Implements `xn run --novel pntt1 --stage s1 --from 1 --to 2468 [--stale-only]` CLI runner logic (blueprint §3.2 general form; Sprint 1 execution scope runs `--to 100`).
   - *Dependencies:* S1-T2, S1-T5 (derived from data flow: writes resolved entity events to ledger).
 - **S1-T7: Extractor Benchmark (qwen3.5:Q8 vs deepseek-r1:14b)** (Phase 2 table, Phase 4 Sprint 1, BP-OQ-1)
   - *Files changed:* `ARCHITECTURE_BLUEPRINT_v3.md` (record measured s/chapter in §3.9 cost table per Sprint 1 Acceptance Criterion 4).
@@ -224,10 +224,10 @@ flowchart TD
 
 ### Sprint 4 — Full Run, LLMOps, Multi-Novel Proof
 
-*Goal:* Complete ingestion of all 2,673 chapters of *Phàm Nhân Tu Tiên 1*, pass all evaluation thresholds, implement FastAPI/SSE endpoints, and prove multi-novel extensibility with zero code modifications.
+*Goal:* Complete ingestion of all 2,468 chapters of *Phàm Nhân Tu Tiên 1*, pass all evaluation thresholds, implement FastAPI/SSE endpoints, and prove multi-novel extensibility with zero code modifications.
 
 #### Task Ordering & File Matrix
-- **S4-T1: Full Ingestion Run on `pntt1` (Ch. 1–2,673)** (§3.2, §3.9, §3.10)
+- **S4-T1: Full Ingestion Run on `pntt1` (Ch. 1–2,468)** (§3.2, §3.9, §3.10)
   - *Task:* Execute S0 → S7 over entire novel using 2-slot Ollama concurrency. Monitor and clear failure queue (`jobs.status = 'failed'`). Verify wall-clock time $\le 20$ h and total cloud spend $\le \$5$ (owns Sprint 4 Acceptance Criterion 4).
   - *Dependencies:* S2-T2, S3-T2, S3-T3, S3-T4 (derived from data flow: full ingestion stages S0–S7 operational).
 - **S4-T2: Full Evaluation Suite & Benchmark** (§3.8, OQ-09, OQ-14)
