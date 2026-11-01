@@ -57,6 +57,17 @@ Q&A and spoiler scores cover what the graph retrieves and shows before any cloud
 3. **Extraction recall >= 0.80: not met.** 0.68.
 4. **Measured s/chapter in the blueprint: met** by G-8, at 27.2 s/chapter.
 
+## G-10.1 drop measurement
+
+Prompt v1 on all 20 gold chapters, through real S1, with `python -m xn.gold_run`. Every second gold chapter is held out, so its names and scores stay hidden until the last round.
+
+| Split | Chapters | Events kept | Dropped, low evidence | Dropped, invalid category |
+|---|---|---|---|---|
+| Dev | 1, 11, 22, 32, 43, 53, 64, 74, 84, 95 | 34 | 4 | 0 |
+| Held out | 6, 17, 27, 37, 48, 58, 69, 79, 90, 100 | 37 | 0 | 0 |
+
+S1 dropped 4 of 75 events, about 5%, so the evidence check is not the main cause of low recall and `EVIDENCE_MIN_SCORE` stays at 85. The model mostly never writes the missing events. Dev recall on this run is 0.62, with precision 0.91. It is the baseline for prompt v2.
+
 ## Sprint 1 recheck
 
 An independent verifier pass at `c53d1e9` read every "Done when" line of G-1 to G-9 against the code as it stands, not against the round logs. All are met, or were superseded with the owner's yes (the extractor model, through G-8). Recall is the only failing criterion.

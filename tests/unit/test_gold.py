@@ -344,6 +344,8 @@ def test_gold_report_covers_every_asset(repo: Repository) -> None:
 
     assert report["meta"]["annotator"] == "claude"
     assert report["extraction"]["recall"] == 1.0
+    assert report["extraction_dev"]["recall"] == 1.0
+    assert report["extraction_held_out"]["gold_entities"] == 0
     assert report["aliases"]["wrong"] == []
     assert report["qa"]["refused"] == 1
     assert report["spoilers"]["leaks"] == 0

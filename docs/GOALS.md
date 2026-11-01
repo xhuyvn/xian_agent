@@ -25,9 +25,20 @@ Rounds:
 - R-5 2026-11-01: run the real ingest, score it and report the numbers -> FAIL, 1 blocker (recall 0.68 against 0.80), b7eb8b5, 0 agy tokens
 - R-6 2026-11-01: recheck all of Sprint 1 against today's code -> FAIL, 1 blocker (the same recall line), c53d1e9, 0 agy tokens
 Sub-goals:
-- none yet
+- G-10.1: raise extraction recall to 0.80 (active)
+  Owner decisions: the lead writes the code, with no agy, running the same two checks before each verifier pass. `eval/` does not change, and the extractor stays `qwen3.8:udiq4_hui`. Every second gold chapter is held out, not tuned on, and scored only in the last round. At most 3 prompt attempts; if none reaches 0.80, stop and report what each reached. `EVIDENCE_MIN_SCORE` stays 85; if drops are the main cause, ask the owner. Tuning runs on copies, so `data/eval/s1t9.db` stays as it is. No cloud calls. Three rounds: measure drops, prompt v2, full run and score.
+  Done when:
+  - Events dropped by S1 are measured on the 20 gold chapters, by reason
+  - `prompts/s1_extract/v2.md` exists and is pinned in config, with `v1` kept
+  - Recall is at least 0.80 across all 20 gold chapters, with the 10 held-out chapters reported apart
+  - Precision is at least 0.80
+  - `eval/` is unchanged and the extractor is still `qwen3.8:udiq4_hui`
+  - A real S0-to-S3 run on chapters 1-100, repeated, gives identical row counts
+  - `py -m compileall -q src` and `uv run pytest tests/unit` pass
+  Rounds:
 Changes:
 - 2026-11-01: owner approved the goal and the decisions above, including the live check
+- 2026-11-01: owner added sub-goal G-10.1 and approved its criteria after recall came in at 0.68
 
 ## Parked
 
