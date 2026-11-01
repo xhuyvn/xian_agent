@@ -8,6 +8,21 @@ Round line: `R-<n> <date>: <what this round had to achieve> -> PASS|FAIL, <n> bl
 
 ## Active
 
+### G-10: S1-T9 gold set and eval harness, then Sprint 1 recheck (active)
+Plan: docs/IMPLEMENTATION_PLAN.md, S1-T9. Depends on G-4, G-5, G-6 and G-9.
+Owner decisions: the lead writes the code for this goal, with no agy, on one feature branch, running `py -m compileall -q src` and `uv run pytest tests/unit` before each verifier pass. The lead drafts the gold from chapter text without reading model output, labelled `annotator: claude`, and commits it before any scoring (plan deviation: §6 names a person as annotator). OQ-09: Sprint 1 sizes and thresholds here; 40/150/40/30 stays in S4-T2. Gold chapters are 20 evenly spaced across 1-100. OQ-14: `eval/<novel>/gold/` holds `chapters.jsonl`, `aliases.jsonl`, `qa.jsonl` and `spoilers.jsonl`; `baseline.json` stays in S4-T2. A name counts as found on a normalized match, whatever its category; category accuracy is reported apart. Q&A and spoiler probes are scored offline on the evidence pack with the local router. If recall is below 0.80 the lead stops and reports, without changing the gold or the prompt. One live deep-dive on 3 entities through OpenRouter is approved, at about 3 calls under the $1 cap, run from the main checkout so the app reads `.env` itself. Fixes found in the recheck are new work. Five rounds: harness, chapter gold, other gold, real run, recheck.
+Done when:
+- `eval/pntt1/gold/` holds 20 chapters, 80 alias pairs, 15 Q&A and 10 spoiler probes, and every gold name is checked against the chapter text
+- `pytest tests/eval -m gold --novel pntt1` works, is skipped in a normal test run, and its scoring has unit tests
+- A real S0-to-S3 run on chapters 1-100, repeated, gives identical row counts
+- The report gives entity recall and precision, event-type accuracy, flag F1, alias F1, Q&A citation hit rate and spoiler leaks, and recall is at least 0.80
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-01: owner approved the goal and the decisions above, including the live check
+
 ## Parked
 
 ## Archive

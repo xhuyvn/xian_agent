@@ -588,6 +588,40 @@ def make_adjudicator(
     return adjudicate
 
 
+def load_adjudicate_prompt(config: dict[str, Any], prompts_dir: Path) -> Any:
+    r"""Load the adjudicator prompt at the version pinned in config."""
+    prompts_cfg = config.get("prompts") or {}
+    adjudicate_version = prompts_cfg.get("s2_adjudicate", "v1")
+    return load_prompt(
+        "s2_adjudicate", adjudicate_version, profile_from_config(config), prompts_dir
+    )
+
+
+def build_adjudicator(
+    repo: Repository,
+    *,
+    novel_id: str,
+    config: dict[str, Any],
+    model: Any,
+    prompt: Any,
+) -> Callable[[Mention, Candidate], bool]:
+    r"""Construct the configured adjudicator on the given model and prompt."""
+    agent = Agent(
+        model,
+        output_type=extractor_output(AdjudicationDecision, config),
+        system_prompt=prompt.text,
+        retries=3,
+        model_settings=extractor_settings(config),
+    )
+    return make_adjudicator(
+        agent,
+        repo=repo,
+        novel_id=novel_id,
+        serving_name=config["models"]["local_extractor"]["serving_name"],
+        prompt_version=prompt.prompt_version,
+    )
+
+
 @dataclass(frozen=True)
 class S2Result:
     r"""Result metrics for an S2 pipeline run."""
@@ -636,24 +670,10 @@ def run_s2(
 
     profile = profile_from_config(config)
 
-    prompts_cfg = config.get("prompts") or {}
-    adjudicate_version = prompts_cfg.get("s2_adjudicate", "v1")
+    prompt = load_adjudicate_prompt(config, prompts_dir)
 
-    prompt = load_prompt("s2_adjudicate", adjudicate_version, profile, prompts_dir)
-
-    agent = Agent(
-        model,
-        output_type=extractor_output(AdjudicationDecision, config),
-        system_prompt=prompt.text,
-        retries=3,
-        model_settings=extractor_settings(config),
-    )
-    adjudicator = make_adjudicator(
-        agent,
-        repo=repo,
-        novel_id=novel_id,
-        serving_name=serving_name,
-        prompt_version=prompt.prompt_version,
+    adjudicator = build_adjudicator(
+        repo, novel_id=novel_id, config=config, model=model, prompt=prompt
     )
 
     # 2. Seed aliases and identity links
