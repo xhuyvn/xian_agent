@@ -40,7 +40,7 @@ Done when:
 - G-9's Changes record that `cloud_spend_since` is a third exempt repository method and that `src/storage/qdrant_client.py` also keeps `src/config.py`
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass under both Bash and PowerShell
 Rounds:
-- none yet
+- R-1 2026-11-01: clear the five recheck items -> PASS, 0 blockers, 06bf95c, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
