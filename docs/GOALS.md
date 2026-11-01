@@ -37,6 +37,7 @@ Done when:
 - ADR-03 and §3.2 record the BM25 decision
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
+- R-1 2026-11-01: deliver the Qdrant store, config and tests -> PASS, 0 blockers, 755bb5b, 0 agy tokens on the delivered code
 Sub-goals:
 - none yet
 Changes:
