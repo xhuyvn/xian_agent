@@ -8,41 +8,6 @@ Round line: `R-<n> <date>: <what this round had to achieve> -> PASS|FAIL, <n> bl
 
 ## Active
 
-### G-10: S1-T9 gold set and eval harness, then Sprint 1 recheck (active)
-Plan: docs/IMPLEMENTATION_PLAN.md, S1-T9. Depends on G-4, G-5, G-6 and G-9.
-Owner decisions: the lead writes the code for this goal, with no agy, on one feature branch, running `py -m compileall -q src` and `uv run pytest tests/unit` before each verifier pass. The lead drafts the gold from chapter text without reading model output, labelled `annotator: claude`, and commits it before any scoring (plan deviation: §6 names a person as annotator). OQ-09: Sprint 1 sizes and thresholds here; 40/150/40/30 stays in S4-T2. Gold chapters are 20 evenly spaced across 1-100. OQ-14: `eval/<novel>/gold/` holds `chapters.jsonl`, `aliases.jsonl`, `qa.jsonl` and `spoilers.jsonl`; `baseline.json` stays in S4-T2. A name counts as found on a normalized match, whatever its category; category accuracy is reported apart. Q&A and spoiler probes are scored offline on the evidence pack with the local router. If recall is below 0.80 the lead stops and reports, without changing the gold or the prompt. One live deep-dive on 3 entities through OpenRouter is approved, at about 3 calls under the $1 cap, run from the main checkout so the app reads `.env` itself. Fixes found in the recheck are new work. Five rounds: harness, chapter gold, other gold, real run, recheck.
-Done when:
-- `eval/pntt1/gold/` holds 20 chapters, 80 alias pairs, 15 Q&A and 10 spoiler probes, and every gold name is checked against the chapter text
-- `pytest tests/eval -m gold --novel pntt1` works, is skipped in a normal test run, and its scoring has unit tests
-- A real S0-to-S3 run on chapters 1-100, repeated, gives identical row counts
-- The report gives entity recall and precision, event-type accuracy, flag F1, alias F1, Q&A citation hit rate and spoiler leaks, and recall is at least 0.80
-- `py -m compileall -q src` and `uv run pytest tests/unit` pass
-Rounds:
-- R-1 2026-11-01: deliver the gold loader, scoring and eval harness -> PASS, 0 blockers, d73284a, 0 agy tokens
-- R-2 2026-11-01: annotate 20 chapters from the text -> FAIL, 1 blocker, 4da44e9, 0 agy tokens
-- R-3 2026-11-01: fix the chapter 53 conflict flag -> PASS, 0 blockers, 62e21e2, 0 agy tokens
-- R-4 2026-11-01: deliver the alias pairs, Q&A and spoiler probes -> PASS, 0 blockers, 49e05fb, 0 agy tokens
-- R-5 2026-11-01: run the real ingest, score it and report the numbers -> FAIL, 1 blocker (recall 0.68 against 0.80), b7eb8b5, 0 agy tokens
-- R-6 2026-11-01: recheck all of Sprint 1 against today's code -> FAIL, 1 blocker (the same recall line), c53d1e9, 0 agy tokens
-Sub-goals:
-- G-10.1: raise extraction recall to 0.80 (active)
-  Owner decisions: the lead writes the code, with no agy, running the same two checks before each verifier pass. `eval/` does not change, and the extractor stays `qwen3.8:udiq4_hui`. Every second gold chapter is held out, not tuned on, and scored only in the last round. At most 3 prompt attempts; if none reaches 0.80, stop and report what each reached. `EVIDENCE_MIN_SCORE` stays 85; if drops are the main cause, ask the owner. Tuning runs on copies, so `data/eval/s1t9.db` stays as it is. No cloud calls. Three rounds: measure drops, prompt v2, full run and score.
-  Done when:
-  - Events dropped by S1 are measured on the 20 gold chapters, by reason
-  - `prompts/s1_extract/v2.md` exists and is pinned in config, with `v1` kept
-  - Recall is at least 0.80 across all 20 gold chapters, with the 10 held-out chapters reported apart
-  - Precision is at least 0.80
-  - `eval/` is unchanged and the extractor is still `qwen3.8:udiq4_hui`
-  - A real S0-to-S3 run on chapters 1-100, repeated, gives identical row counts
-  - `py -m compileall -q src` and `uv run pytest tests/unit` pass
-  Rounds:
-  - R-1 2026-11-01: measure the events S1 drops, by reason -> PASS, 0 blockers, 8b50481, 0 agy tokens
-  - R-2 2026-11-01: deliver prompt v2 tuned on the dev chapters -> PASS, 0 blockers, 4772e13, 0 agy tokens
-  - R-3 2026-11-01: run prompt v2 on chapters 1-100 twice and score the held-out chapters -> PASS, 0 blockers, 71200c8, 0 agy tokens
-Changes:
-- 2026-11-01: owner approved the goal and the decisions above, including the live check
-- 2026-11-01: owner added sub-goal G-10.1 and approved its criteria after recall came in at 0.68
-
 ### G-11: clear the non-blocking Sprint 1 recheck items (active)
 Plan: docs/S1_T9_EVAL.md, "Sprint 1 recheck". Follows G-10, whose recall line stays open there. Cut from `cld/s1-t9-feature-a3a0ec`.
 Owner decisions: the lead writes the code, with no agy, because it is two small changes that must be run to be proven. `total_chapters` becomes 2468, the chapters on disk. `pntt1.yaml` gains `raw_dir: data/novel/pham_nhan_tu_tien_1`, and `xn run` falls back to `data/novels/<id>/raw` only without it (this changes the G-6 decision on the raw path; the folder stays where it is). The checkpoint serializer gets an explicit allowlist covering every `xn.schemas.state` model stored in a checkpoint, which includes `EvidenceItem` if it logs too. `novels` rows in existing databases keep their old value: there is no `data/xn.db`, and S0 only writes a missing row. Blueprint history (old benchmark plans) stays as written. The extraction prompt, the gold set, the extractor model and the other recheck items are out of scope. One round.
@@ -264,3 +229,39 @@ Changes:
 - 2026-11-01: PR #14 merged; owner approved marking the goal done
 - 2026-11-01: recheck found `cloud_spend_since` is a third exempt repository method, beside the two in G-2, because cloud spend spans novels
 - 2026-11-01: recheck found `src/storage/qdrant_client.py` also keeps `src/config.py` alive, so removing `src/timeline/arc_detector.py` alone won't free it
+
+### G-10: S1-T9 gold set and eval harness, then Sprint 1 recheck (done)
+Plan: docs/IMPLEMENTATION_PLAN.md, S1-T9. Depends on G-4, G-5, G-6 and G-9.
+Owner decisions: the lead writes the code for this goal, with no agy, on one feature branch, running `py -m compileall -q src` and `uv run pytest tests/unit` before each verifier pass. The lead drafts the gold from chapter text without reading model output, labelled `annotator: claude`, and commits it before any scoring (plan deviation: §6 names a person as annotator). OQ-09: Sprint 1 sizes and thresholds here; 40/150/40/30 stays in S4-T2. Gold chapters are 20 evenly spaced across 1-100. OQ-14: `eval/<novel>/gold/` holds `chapters.jsonl`, `aliases.jsonl`, `qa.jsonl` and `spoilers.jsonl`; `baseline.json` stays in S4-T2. A name counts as found on a normalized match, whatever its category; category accuracy is reported apart. Q&A and spoiler probes are scored offline on the evidence pack with the local router. If recall is below 0.80 the lead stops and reports, without changing the gold or the prompt. One live deep-dive on 3 entities through OpenRouter is approved, at about 3 calls under the $1 cap, run from the main checkout so the app reads `.env` itself. Fixes found in the recheck are new work. Five rounds: harness, chapter gold, other gold, real run, recheck.
+Done when:
+- `eval/pntt1/gold/` holds 20 chapters, 80 alias pairs, 15 Q&A and 10 spoiler probes, and every gold name is checked against the chapter text
+- `pytest tests/eval -m gold --novel pntt1` works, is skipped in a normal test run, and its scoring has unit tests
+- A real S0-to-S3 run on chapters 1-100, repeated, gives identical row counts
+- The report gives entity recall and precision, event-type accuracy, flag F1, alias F1, Q&A citation hit rate and spoiler leaks, and recall is at least 0.80
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-01: deliver the gold loader, scoring and eval harness -> PASS, 0 blockers, d73284a, 0 agy tokens
+- R-2 2026-11-01: annotate 20 chapters from the text -> FAIL, 1 blocker, 4da44e9, 0 agy tokens
+- R-3 2026-11-01: fix the chapter 53 conflict flag -> PASS, 0 blockers, 62e21e2, 0 agy tokens
+- R-4 2026-11-01: deliver the alias pairs, Q&A and spoiler probes -> PASS, 0 blockers, 49e05fb, 0 agy tokens
+- R-5 2026-11-01: run the real ingest, score it and report the numbers -> FAIL, 1 blocker (recall 0.68 against 0.80), b7eb8b5, 0 agy tokens
+- R-6 2026-11-01: recheck all of Sprint 1 against today's code -> FAIL, 1 blocker (the same recall line), c53d1e9, 0 agy tokens
+Sub-goals:
+- G-10.1: raise extraction recall to 0.80 (done)
+  Owner decisions: the lead writes the code, with no agy, running the same two checks before each verifier pass. `eval/` does not change, and the extractor stays `qwen3.8:udiq4_hui`. Every second gold chapter is held out, not tuned on, and scored only in the last round. At most 3 prompt attempts; if none reaches 0.80, stop and report what each reached. `EVIDENCE_MIN_SCORE` stays 85; if drops are the main cause, ask the owner. Tuning runs on copies, so `data/eval/s1t9.db` stays as it is. No cloud calls. Three rounds: measure drops, prompt v2, full run and score.
+  Done when:
+  - Events dropped by S1 are measured on the 20 gold chapters, by reason
+  - `prompts/s1_extract/v2.md` exists and is pinned in config, with `v1` kept
+  - Recall is at least 0.80 across all 20 gold chapters, with the 10 held-out chapters reported apart
+  - Precision is at least 0.80
+  - `eval/` is unchanged and the extractor is still `qwen3.8:udiq4_hui`
+  - A real S0-to-S3 run on chapters 1-100, repeated, gives identical row counts
+  - `py -m compileall -q src` and `uv run pytest tests/unit` pass
+  Rounds:
+  - R-1 2026-11-01: measure the events S1 drops, by reason -> PASS, 0 blockers, 8b50481, 0 agy tokens
+  - R-2 2026-11-01: deliver prompt v2 tuned on the dev chapters -> PASS, 0 blockers, 4772e13, 0 agy tokens
+  - R-3 2026-11-01: run prompt v2 on chapters 1-100 twice and score the held-out chapters -> PASS, 0 blockers, 71200c8, 0 agy tokens
+Changes:
+- 2026-11-01: owner approved the goal and the decisions above, including the live check
+- 2026-11-01: owner added sub-goal G-10.1 and approved its criteria after recall came in at 0.68
+- 2026-11-01: owner approved marking G-10 and G-10.1 done, after recall reached 0.98 on prompt v2 and G-10.1 R-3 passed
