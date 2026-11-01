@@ -33,7 +33,7 @@ Hệ thống AI Agent phân tích và tóm tắt tiểu thuyết trường thiê
 ```
 novel_agent_architecture/
 ├── ARCHITECTURE_BLUEPRINT.md        # Đặc tả kiến trúc LangGraph + Pydantic-AI
-├── docker-compose.yml               # Qdrant & Redis
+├── docker-compose.yml               # Qdrant
 ├── requirements.txt                 # LangGraph, Pydantic-AI, Qdrant, etc.
 ├── .env.example                     # Cấu hình môi trường mẫu
 ├── configs/

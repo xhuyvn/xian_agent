@@ -38,7 +38,7 @@ class S0Result:
 
 
 def _extract_title(body: str, chapter_id: int) -> str:
-    """Extract chapter title from stripped body using fallback rules.
+    r"""Extract chapter title from stripped body using fallback rules.
 
     1. First heading matching ^#{1,3}\s*(.+)$ in multiline mode.
     2. Else first line matching ^Chương\s+\d+.
