@@ -25,25 +25,6 @@ Sub-goals:
 Changes:
 - 2026-11-01: owner approved the goal and the decisions above
 
-### G-12: S2-T1 Qdrant multi-tenant setup and manager (active)
-Plan: docs/IMPLEMENTATION_PLAN.md, S2-T1. Depends on G-2.
-Owner decisions: dense vectors are BGE-M3 through Ollama (1024 cosine), kept over `embeddinggemma-2:570m` by the benchmark rule of 0.05 hybrid recall@8 (0.90 against 0.867 on chapters 1-100). Ollama returns dense only, so sparse vectors are BM25 built in our code and stored in Qdrant with the IDF modifier (blueprint change to ADR-03). The project's compose Qdrant is used, port 6233 bound to `127.0.0.1`, not `platform-qdrant`. The lead writes the code, with no agy, after agy was blocked twice, running the same two checks and the integration test before the verifier pass. Filling the vectors is S2-T2, and the reranker is S2-T3. One round.
-Done when:
-- `src/xn/storage/qdrant.py` creates `xn_chunks` with `dense` 1024 cosine and `sparse` with IDF, plus `xn_arcs`, and running it twice is safe
-- The payload indexes match the plan, with `novel_id` as the tenant index
-- Point IDs are deterministic UUID5, so a re-upsert adds no duplicates
-- A test against the real Qdrant shows that a query on novel A never returns novel B, and nothing past `chapter_max` comes back
-- `configs/config.yaml` uses the new collections, and `src/storage/qdrant_client.py` is deleted
-- ADR-03 and §3.2 record the BM25 decision
-- `py -m compileall -q src` and `uv run pytest tests/unit` pass
-Rounds:
-- R-1 2026-11-01: deliver the Qdrant store, config and tests -> PASS, 0 blockers, 755bb5b, 0 agy tokens on the delivered code
-Sub-goals:
-- none yet
-Changes:
-- 2026-11-01: owner approved the goal and the decisions above
-- 2026-11-01: owner moved the code from agy to the lead, after two agy runs (157018 tokens) were blocked by a denied MCP call and a denied `read_file`, with no code written
-
 ## Parked
 
 ## Archive
@@ -284,3 +265,23 @@ Changes:
 - 2026-11-01: owner approved the goal and the decisions above, including the live check
 - 2026-11-01: owner added sub-goal G-10.1 and approved its criteria after recall came in at 0.68
 - 2026-11-01: owner approved marking G-10 and G-10.1 done, after recall reached 0.98 on prompt v2 and G-10.1 R-3 passed
+
+### G-12: S2-T1 Qdrant multi-tenant setup and manager (done)
+Plan: docs/IMPLEMENTATION_PLAN.md, S2-T1. Depends on G-2.
+Owner decisions: dense vectors are BGE-M3 through Ollama (1024 cosine), kept over `embeddinggemma-2:570m` by the benchmark rule of 0.05 hybrid recall@8 (0.90 against 0.867 on chapters 1-100). Ollama returns dense only, so sparse vectors are BM25 built in our code and stored in Qdrant with the IDF modifier (blueprint change to ADR-03). The project's compose Qdrant is used, port 6233 bound to `127.0.0.1`, not `platform-qdrant`. The lead writes the code, with no agy, after agy was blocked twice, running the same two checks and the integration test before the verifier pass. Filling the vectors is S2-T2, and the reranker is S2-T3. One round.
+Done when:
+- `src/xn/storage/qdrant.py` creates `xn_chunks` with `dense` 1024 cosine and `sparse` with IDF, plus `xn_arcs`, and running it twice is safe
+- The payload indexes match the plan, with `novel_id` as the tenant index
+- Point IDs are deterministic UUID5, so a re-upsert adds no duplicates
+- A test against the real Qdrant shows that a query on novel A never returns novel B, and nothing past `chapter_max` comes back
+- `configs/config.yaml` uses the new collections, and `src/storage/qdrant_client.py` is deleted
+- ADR-03 and §3.2 record the BM25 decision
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-01: deliver the Qdrant store, config and tests -> PASS, 0 blockers, 755bb5b, 0 agy tokens on the delivered code
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-01: owner approved the goal and the decisions above
+- 2026-11-01: owner moved the code from agy to the lead, after two agy runs (157018 tokens) were blocked by a denied MCP call and a denied `read_file`, with no code written
+- 2026-11-01: verifier pass at 755bb5b -> PASS, every "Done when" line met; owner approved marking the goal done, recorded with PR #18
