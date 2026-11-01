@@ -74,7 +74,7 @@ Output ran well past the blueprint's 1.5k budget for `qwen3.5:Q8` (up to 2,853 h
 
 ## G-8: `qwen3.8:UD_Q3` against `deepseek-r1:14b`
 
-Date: 2026-11-01. **Recommendation: `qwen3.8:UD_Q3`**, pending the owner's pick. Config still names `deepseek-r1:14b`.
+Date: 2026-11-01. `qwen3.8:UD_Q3` beat `deepseek-r1:14b`. The next section compares it with `qwen3.8:udiq4_hui`. The owner's pick is pending and config still names `deepseek-r1:14b`.
 
 The same 50 chapters through the real S0 and S1 code. `qwen3.8:UD_Q3` ran at `num_ctx 10240` with thinking off. `deepseek-r1:14b` keeps its G-7 results at 12288. Recall here uses a new pool of these two models, so these numbers can't be compared with the G-7 table.
 
@@ -134,6 +134,58 @@ Thinking is off only because `think: false` is set. If this model is picked, con
 ### Source changes during the benchmark
 
 `chapter_1122.md` now exists, so the gap the G-7 sampling worked around is closed, and the folder holds chapters 1-2468 with none missing. `chapter_1121.md` also changed, with a new title and text. The 50 chapters are unchanged and both models here were scored on the new chapter 1121. Chapters after 1121 are still unsampled, and `total_chapters` still says 2673.
+
+## G-8: `qwen3.8:udiq4_hui` against `qwen3.8:UD_Q3`
+
+Date: 2026-11-01. **Recommendation: `qwen3.8:udiq4_hui`**, pending the owner's pick. It wins under the agreed rule, with recall 8 points higher, and it closes `qwen3.8:UD_Q3`'s gap on characters. The price is speed and memory, and speed is not part of the rule outside the 2-point margin.
+
+The same 50 chapters through the real S0 and S1 code, both at `num_ctx 10240` with thinking off. `qwen3.8:UD_Q3` keeps its results from the previous section. Recall uses a new pool of these two models, so these numbers can't be compared with the earlier tables.
+
+| Metric | `qwen3.8:udiq4_hui` | `qwen3.8:UD_Q3` |
+|---|---|---|
+| Quantization | IQ4_XS | Q3_K_L |
+| Schema success | 100% | 100% |
+| Pooled recall | **0.84** | 0.76 |
+| Names found in the chapter text | 253 | 228 |
+| Names not in the chapter text | 27 | 30 |
+| Pure English names | 1 | 1 |
+| Events per chapter | 6.0 | 5.4 |
+| s/chapter, mean | 27.2 | **15.8** |
+| s/chapter, p95 | 40.2 | **24.9** |
+| Output tokens per chapter, mean | 731 | 673 |
+| Peak VRAM, 50 chapters (MiB) | 15,425 | **14,783** |
+| Peak VRAM, longest chapter at 10240 (MiB) | 15,678 | **14,819** |
+| GPU share | 92% | **100%** |
+| Chapters flagged `location_change` | 19 | 7 |
+| Chapters flagged `major_conflict` | 25 | 26 |
+| Chapters naming "Hàn Lập" (all 50 mention him) | 16 | 15 |
+
+The pool holds 301 names: 180 from both models, 73 only from `qwen3.8:udiq4_hui` and 48 only from `qwen3.8:UD_Q3`. The English counts are "Chu Nho" and "Hoa Lam", which are unaccented names rather than translations. All 50 chapters had the same text in both runs.
+
+Names found in the text, by category:
+
+| Category | `qwen3.8:udiq4_hui` | `qwen3.8:UD_Q3` |
+|---|---|---|
+| `character` | **84** | 63 |
+| `weapon_treasure` | **83** | 76 |
+| `technique` | 37 | **44** |
+| `puppet_beast` | 27 | 28 |
+| `dungeon` | **23** | 17 |
+
+### End-to-end check
+
+`xn run` S0 to S3 on chapters 1-15 with `qwen3.8:udiq4_hui` selected in a temporary config: every stage finished with 0 failures, with 15 S1 calls and 5 real S2 adjudications, none retried. S1 took 20.4 s/chapter. The run produced 35 entities, 40 aliases and 62 ledger events, against 27, 30 and 42 for `qwen3.8:UD_Q3`.
+
+The list has no English or combined names, and "Hàn Lập" is a single entity. It does file two names under two categories: "Thất Huyền môn" and "Thái Hà sơn" each appear as `character` and as `dungeon`. S2 matches within one category, so each becomes two entities. `qwen3.8:UD_Q3` had one such error in the same chapters ("Thất Tuyệt đường" as `character`) but no name split this way.
+
+### Trade-offs
+
+- **Time:** 2,673 chapters at 27.2 s is about 20.2 h, just over the blueprint's 20 h target, against 11.7 h. The raw folder holds 2,468 chapters, which is about 18.6 h against 10.8 h. Every S1 rerun, such as after a prompt change, costs the same again.
+- **Memory:** about 0.6 GB stays free, against 1.5 GB, and 8% of the model already runs on the CPU. Other GPU use during a long run could slow it further. The reranker will not fit alongside it, so the model must unload first at query time.
+- **Coverage:** it finds 33% more characters than `qwen3.8:UD_Q3`, which was that model's main weakness.
+- **Unchecked:** no gold set exists, so 0.84 means more names than the other model, not 84% of the true names. It was tested on 50 chapters from the first 1,121 only.
+
+Choose `qwen3.8:UD_Q3` instead if you expect to rerun S1 often, or need the PC free during ingest.
 
 ## Reproduce
 
