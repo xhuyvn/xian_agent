@@ -64,8 +64,8 @@ class QueryState(TypedDict, total=False):
     entity_ids: list[int]
     unresolved_mentions: list[str]
     suggestions: dict[str, list[str]]
-    evidence: EvidencePack
-    answer: Answer
-    grounding_ratio: float
+    evidence: Optional[EvidencePack]
+    answer: Optional[Answer]
+    grounding_ratio: Optional[float]
     refusal: Optional[str]
     errors: Annotated[list[str], operator.add]
