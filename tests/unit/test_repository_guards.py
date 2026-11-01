@@ -40,6 +40,7 @@ STORY_READ_METHODS = [
     "list_extractions",
     "list_aliases",
     "find_entities_by_alias",
+    "get_entity",
 ]
 
 OPERATIONAL_METHODS = [
@@ -61,6 +62,7 @@ OPERATIONAL_METHODS = [
 
 EXEMPT_METHODS = [
     "list_novels",
+    "cloud_spend_since",
 ]
 
 
@@ -166,6 +168,7 @@ def test_story_reads_parameter_guards(repo: Repository) -> None:
         "list_extractions": {},
         "list_aliases": {},
         "find_entities_by_alias": {"alias_norm": "hl", "category": "character"},
+        "get_entity": {"entity_id": 1},
     }
 
     for method_name in STORY_READ_METHODS:
@@ -905,3 +908,22 @@ def test_next_entity_id_scoped_to_novel(
 
     assert repo.next_entity_id(novel_id="nov_a") == 2
     assert repo.next_entity_id(novel_id="nov_b") == 11
+
+
+def test_get_entity_honours_bound_and_hides_future_fields(
+    repo: Repository, db_conn: sqlite3.Connection
+) -> None:
+    """Verify get_entity is bounded, novel-scoped and omits last_chapter and mention_count."""
+    repo.add_novel(novel_id="nov_1", title="Novel 1", genre_profile="xianxia", total_chapters=100)
+    repo.add_novel(novel_id="nov_2", title="Novel 2", genre_profile="xianxia", total_chapters=100)
+    db_conn.execute(
+        "INSERT INTO entities (novel_id, entity_id, canonical_name, category, first_chapter, last_chapter, mention_count) "
+        "VALUES ('nov_1', 1, 'Hàn Lập', 'character', 5, 90, 100)"
+    )
+    db_conn.commit()
+
+    row = repo.get_entity(novel_id="nov_1", entity_id=1, chapter_max=5)
+    assert row is not None and row["canonical_name"] == "Hàn Lập"
+    assert set(row.keys()) == {"entity_id", "canonical_name", "category", "first_chapter"}
+    assert repo.get_entity(novel_id="nov_1", entity_id=1, chapter_max=4) is None
+    assert repo.get_entity(novel_id="nov_2", entity_id=1, chapter_max=5) is None

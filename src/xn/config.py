@@ -15,7 +15,18 @@ from __future__ import annotations
 import copy
 from pathlib import Path
 from typing import Any, Dict
+from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 import yaml
+
+
+class CloudSettings(BaseSettings):
+    """OpenRouter connection settings from the environment or .env, read when instantiated."""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    openrouter_api_key: SecretStr = SecretStr("")
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
 
 def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
