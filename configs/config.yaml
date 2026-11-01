@@ -1,5 +1,5 @@
 fallback_model: null
-daily_spend_cap_usd: null
+daily_spend_cap_usd: 1.0
 long_context_model: null
 prompts: {}
 

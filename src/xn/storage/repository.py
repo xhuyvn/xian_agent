@@ -158,6 +158,17 @@ class Repository:
         )
         return cur.fetchall()
 
+    @story_read
+    def get_entity(
+        self, *, novel_id: str, entity_id: int, chapter_max: int
+    ) -> sqlite3.Row | None:
+        cur = self._conn.execute(
+            "SELECT entity_id, canonical_name, category, first_chapter FROM entities "
+            "WHERE novel_id = ? AND entity_id = ? AND first_chapter <= ?",
+            (novel_id, entity_id, chapter_max),
+        )
+        return cur.fetchone()
+
     # --- Operational ---
 
     def add_novel(
@@ -538,7 +549,7 @@ class Repository:
         latency_ms: int,
         retries: int | None,
         ok: int,
-        cost_usd: float,
+        cost_usd: float | None,
         egress_class: str,
         payload_chapters: str | None,
     ) -> None:
@@ -575,3 +586,16 @@ class Repository:
     def list_novels(self) -> list[sqlite3.Row]:
         cur = self._conn.execute("SELECT * FROM novels ORDER BY novel_id")
         return cur.fetchall()
+
+    def cloud_spend_since(self, *, since: str) -> tuple[float, int]:
+        """Return (usd spent, calls with unknown cost) on cloud calls since an ISO time.
+
+        Spans all novels, because the cap is on one OpenRouter account.
+        """
+        cur = self._conn.execute(
+            "SELECT COALESCE(SUM(cost_usd), 0.0), COALESCE(SUM(cost_usd IS NULL), 0) FROM llm_runs "
+            "WHERE egress_class != 'local' AND created_at >= ?",
+            (since,),
+        )
+        spent, unknown = cur.fetchone()
+        return float(spent), int(unknown)

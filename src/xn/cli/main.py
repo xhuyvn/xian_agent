@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
+import sys
 from typing import Any
+import uuid
 import typer
 
+from pydantic_ai.exceptions import ModelAPIError
+
 from xn.config import load_config
+from xn.graph.deps import GraphDeps, QueryError
+from xn.graph.workflow import ask as ask_graph, build_graph, open_checkpointer, thread_novel
+from xn.llm import EgressError, SpendCapError, UpstreamError
 from xn.pipeline.runner import RunRequestError, run_stage
 from xn.pipeline.s0_parse import ChapterSetError
 from xn.pipeline.s2_resolve import S2StaleError
@@ -102,3 +110,106 @@ def run(
     stopped_at = getattr(result, "stopped_at", None)
     if failed > 0 or stopped_at is not None:
         raise typer.Exit(code=1)
+
+
+def format_answer(state: dict[str, Any]) -> str:
+    """Format a query result; the resolved bound leads every answer and refusal."""
+    lines = []
+    if state.get("chapter_max") is not None:
+        lines.append(f"Phạm vi: chương 1–{state['chapter_max']}")
+
+    if state.get("refusal"):
+        lines.append(str(state["refusal"]))
+        for mention, names in (state.get("suggestions") or {}).items():
+            if names:
+                lines.append(f"Không tìm thấy \"{mention}\". Có phải: {', '.join(names)}?")
+        return "\n".join(lines)
+
+    answer = state["answer"]
+    lines.append(answer.markdown)
+    cited = ", ".join(str(c) for c in answer.citations) or "không có"
+    lines.append(f"Trích dẫn: {cited}")
+    lines.append(f"Độ bám nguồn: {state.get('grounding_ratio') or 0.0:.0%}")
+    return "\n".join(lines)
+
+
+def _fail(code: str, message: object) -> typer.Exit:
+    """Print a coded error and return the exit to raise."""
+    typer.echo(f"Error [{code}]: {message}")
+    return typer.Exit(code=1)
+
+
+@app.command("ask")
+def ask(
+    question: str = typer.Argument(..., help="Question about the novel"),
+    novel: str | None = typer.Option(
+        None, "--novel", help="Novel ID (a follow-up inherits it from the thread)"
+    ),
+    until: int | None = typer.Option(None, "--until", help="Spoiler bound: read up to this chapter"),
+    full: bool = typer.Option(False, "--full", help="Remove the spoiler bound explicitly"),
+    thread: str | None = typer.Option(None, "--thread", help="Continue this conversation"),
+    db: Path = typer.Option(Path("data/xn.db"), "--db", help="Path to SQLite database file"),
+    checkpoints: Path = typer.Option(
+        Path("data/graph_checkpoints.db"), "--checkpoints", help="Path to graph checkpoint file"
+    ),
+    configs_dir: Path = typer.Option(Path("configs"), "--configs-dir", help="Path to configs directory"),
+    prompts_dir: Path = typer.Option(Path("prompts"), "--prompts-dir", help="Path to prompts directory"),
+) -> None:
+    """Ask a spoiler-bounded question, answered in compact mode from the ledger."""
+    logging.basicConfig(level=logging.WARNING)
+    os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+
+    if full and until is not None:
+        raise _fail("VALIDATION_FAILED", "Use either --until or --full, not both")
+
+    thread_id = thread or uuid.uuid4().hex
+    saver = open_checkpointer(checkpoints)
+    saved_novel = thread_novel(saver, thread_id)
+    if novel and saved_novel and novel != saved_novel:
+        saver.conn.close()
+        raise _fail("VALIDATION_FAILED", f"Thread {thread_id} belongs to novel {saved_novel}")
+    novel = novel or saved_novel
+    if not novel:
+        saver.conn.close()
+        raise _fail("VALIDATION_FAILED", "--novel is required for a new thread")
+
+    try:
+        config = load_config(novel, configs_dir=configs_dir)
+    except FileNotFoundError as err:
+        saver.conn.close()
+        raise _fail("NOVEL_NOT_FOUND", err)
+
+    db_path = Path(db)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = connect(db_path)
+    try:
+        init_schema(conn)
+        repo = Repository(conn)
+        record = repo.get_novel(novel_id=novel)
+        if record is None:
+            raise QueryError("NOVEL_NOT_FOUND", f"Novel not found: {novel}")
+        bound_to = record["total_chapters"] if full else until
+        graph = build_graph(
+            GraphDeps(repo=repo, config=config, prompts_dir=prompts_dir), saver
+        )
+        state = ask_graph(
+            graph, thread_id=thread_id, novel_id=novel, query=question, until=bound_to
+        )
+    except QueryError as err:
+        raise _fail(err.code, err)
+    except UpstreamError as err:
+        raise _fail(err.code, err)
+    except SpendCapError as err:
+        raise _fail("SPEND_CAP", err)
+    except EgressError as err:
+        raise _fail("EGRESS_REFUSED", err)
+    except ModelAPIError as err:
+        raise _fail("UPSTREAM_ERROR", err)
+    finally:
+        conn.close()
+        saver.conn.close()
+
+    typer.echo(format_answer(state))
+    typer.echo(f"Thread: {thread_id}")

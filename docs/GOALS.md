@@ -8,6 +8,35 @@ Round line: `R-<n> <date>: <what this round had to achieve> -> PASS|FAIL, <n> bl
 
 ## Active
 
+### G-9: S1-T8 grounded query graph, ledger slice (active)
+Plan: docs/IMPLEMENTATION_PLAN.md, S1-T8. Depends on G-2 and G-6.
+Owner decisions: the lead writes the code for this goal, with no agy, on one feature branch, running `py -m compileall -q src` and `uv run pytest tests/unit` before each verifier pass. OQ-08: `daily_spend_cap_usd` is 1.00 and an unset cap refuses cloud calls; `fallback_model` stays unset, and the call then stops with an upstream error after the retries. OQ-07: `deep_dive` and `compare` need at least 1 resolved entity and 3 events; `timeline` and `factual_qa` need at least 1 resolved entity and 1 event. Cloud evidence is event type, chapter, description and realm only, at most 25 events per entity within the 20k-token budget, and quotes stay local. A different `--until` or a chapter number in a follow-up is refused with "start a new thread". Display name is `canonical_name`. Out of scope: the L5 scan, `xn progress`, token streaming, long-context mode and a live run. `src/schemas/extraction.py` and `src/config.py` stay until S3-T1 replaces `src/timeline/arc_detector.py` (plan deviation). `langgraph-checkpoint-sqlite` is added for `SqliteSaver`. Four rounds: foundations, first five nodes, last two nodes with graph and CLI, prototype removal.
+Done when:
+- The LangGraph flow runs route, bound, resolve_entities, retrieve, gate, synthesize, verify, and reads only from the ledger
+- `route` falls back to `factual_qa` with no mentions when the model fails
+- `bound` follows the §3.3 formula, and every answer prints "Phạm vi: chương 1–N"
+- Entity resolution uses only aliases and links visible at N, and an unresolved name gets the top 3 fuzzy suggestions
+- `gate` refuses with "Không đủ dữ liệu đến chương N" and makes no cloud call
+- `verify` strips any citation not in the evidence or above N, and a test shows a deep-dive on 3 entities cites only chapters <= N
+- The OpenRouter wrapper enforces `compact` egress in code, writes `egress_class` and `payload_chapters` to `llm_runs`, uses a 90 s timeout and 3 retries with backoff on 429/5xx then the fallback model, and checks the daily cap against `llm_runs.cost_usd`
+- `SqliteSaver` checkpoints to `data/graph_checkpoints.db`, and a follow-up inherits `novel_id` and `chapter_max` from the thread
+- `xn ask` works, also as `python -m xn`
+- `src/agents/graph_workflow.py`, `src/agents/pydantic_agents.py`, `src/cli.py`, `src/schemas/state.py`, `src/schemas/lifecycle.py`, `src/storage/sqlite_ledger.py` and `src/ingestion/pydantic_extractor.py` are deleted
+- Unit tests use fake models
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-01: deliver the state schemas, spend reads and OpenRouter wrapper -> PASS, 0 blockers, e2c1497, 0 agy tokens
+- R-2 2026-11-01: deliver the route, bound, resolve, retrieve and gate nodes -> PASS, 0 blockers, be5bb30, 0 agy tokens
+- R-3 2026-11-01: deliver synthesize, verify, the compiled graph and xn ask -> PASS, 0 blockers, 7e4e597, 0 agy tokens
+- R-4 2026-11-01: remove the prototype files and pass the whole branch -> PASS, 0 blockers, 34ae093, 0 agy tokens
+- R-5 2026-11-01: widen the chapter-bound parsing in bound -> PASS, 0 blockers, b8e528d, 0 agy tokens
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-01: owner approved the goal and the decisions above
+- 2026-11-01: verifier pass on the whole branch at 34ae093 -> PASS, every "Done when" line met
+- 2026-11-01: owner approved R-5, widening the chapter-bound parsing in `bound` before merge
+
 ## Parked
 
 ## Archive
