@@ -68,9 +68,72 @@ Output ran well past the blueprint's 1.5k budget for `qwen3.5:Q8` (up to 2,853 h
 
 ## Limits of this run
 
-- Chapter 1122 is missing, so S0 stops there and nothing after it was tested.
+- Chapter 1122 was missing at the time, so S0 stopped there and nothing after it was tested. See the G-8 section.
 - `configs/novels/pntt1.yaml` has no realm ladder, seed aliases or cleaning patterns yet.
 - The blueprint's 2-slot setup and `num_ctx 10240` fallback were not tested.
+
+## G-8: `qwen3.8:UD_Q3` against `deepseek-r1:14b`
+
+Date: 2026-11-01. **Recommendation: `qwen3.8:UD_Q3`**, pending the owner's pick. Config still names `deepseek-r1:14b`.
+
+The same 50 chapters through the real S0 and S1 code. `qwen3.8:UD_Q3` ran at `num_ctx 10240` with thinking off. `deepseek-r1:14b` keeps its G-7 results at 12288. Recall here uses a new pool of these two models, so these numbers can't be compared with the G-7 table.
+
+| Metric | `qwen3.8:UD_Q3` | `deepseek-r1:14b` |
+|---|---|---|
+| Schema success | 100% | 100% |
+| Pooled recall | **0.75** | 0.47 |
+| Names found in the chapter text | 228 | 144 |
+| Names not in the chapter text | 30 | 32 |
+| Pure English names | 1 | 15 |
+| Names with Chinese characters | 0 | 3 |
+| Events per chapter | 5.4 | 4.1 |
+| s/chapter, mean | 15.8 | 18.5 |
+| s/chapter, p95 | 24.9 | 29.8 |
+| Output tokens per chapter, mean | 673 | 1,141 |
+| Peak VRAM (MiB) | 14,783 | 12,775 (G-7 run) |
+| Chapters flagged `location_change` | 7 | 41 |
+| Chapters flagged `major_conflict` | 26 | 45 |
+| Chapters naming "Hàn Lập" (all 50 mention him) | 15 | 28 |
+
+The harness reported 98% first-try success, 18.8 s/chapter and 10,919 MiB for `deepseek-r1:14b`. All three come from a repeat of chapter 1121, described below. The table counts that chapter once, and takes peak VRAM from the G-7 run. The English count uses a pattern match, and "Hoa Lam", the one hit for `qwen3.8:UD_Q3`, is an unaccented name rather than a translation.
+
+Recall by category, as names found in the text:
+
+| Category | `qwen3.8:UD_Q3` | `deepseek-r1:14b` |
+|---|---|---|
+| `weapon_treasure` | 76 | 32 |
+| `technique` | 44 | 21 |
+| `character` | 63 | 74 |
+| `puppet_beast` | 28 | 11 |
+| `dungeon` | 17 | 8 |
+
+### End-to-end check
+
+`xn run` S0 to S3 on chapters 1-15 with `qwen3.8:UD_Q3` selected in a temporary config: every stage finished with 0 failures, with 15 S1 calls and 3 real S2 adjudications, none retried. S1 took 10.1 s/chapter. The run produced 27 entities, 30 aliases and 42 ledger events.
+
+The entity list has no English names and no combined names, and "Hàn Lập" is a single entity. In the same test `deepseek-r1:14b` produced "Han Li", "Mysterious Bottle" and "Hàn Lập và Trương Thiết". The list is not clean: the same bottle appears as "Bình bí ẩn" and "Thần bí bình tử", and "Thất Tuyệt đường" is filed as a `character`.
+
+### Trade-offs
+
+- **`qwen3.8:UD_Q3` is stronger on** recall, name quality and speed. It finds about twice as many items, techniques and places.
+- **`qwen3.8:UD_Q3` is weaker on** memory and characters. It leaves about 1.5 GB of the 16 GB free, against about 3.5 GB. It lists the protagonist less often, and finds slightly fewer characters.
+- **Query time may not fit.** Blueprint §3.9 keeps the local model and the 1.2 GB reranker on the GPU together. With this model that reaches about 16 GB, so it needs testing when the reranker exists, or the model must unload first.
+- **Two slots are unlikely.** There is little memory left for a second slot.
+- **The flags are unchecked.** `deepseek-r1:14b` flags a location change in 82% of chapters and `qwen3.8:UD_Q3` in 14%. The first looks like over-flagging, but no gold set exists to confirm either. These flags feed arc detection, so S1-T9 should check them.
+
+### Context size
+
+Tested on the longest chapter with thinking off, `qwen3.8:UD_Q3` stayed 100% on the GPU at every size. Peak VRAM was 14,766 MiB at 8192, 14,819 at 10240 and 14,895 at 12288. In the 50 chapters the largest input plus output was 4,867 tokens, and the longest chapter uses about 7,600. So 10240 leaves room. Thinking must stay off: at default thinking, chapter 1 used all of an 8192 context and returned nothing.
+
+Thinking is off only because `think: false` is set. If this model is picked, config must carry that line.
+
+### Full-book estimate
+
+2,673 chapters at 15.8 s is about 11.7 h in one slot, against 13.6 h for `deepseek-r1:14b`. The raw folder holds 2,468 chapters, which is about 10.8 h.
+
+### Source changes during the benchmark
+
+`chapter_1122.md` now exists, so the gap the G-7 sampling worked around is closed, and the folder holds chapters 1-2468 with none missing. `chapter_1121.md` also changed, with a new title and text. The 50 chapters are unchanged and both models here were scored on the new chapter 1121. Chapters after 1121 are still unsampled, and `total_chapters` still says 2673.
 
 ## Reproduce
 
