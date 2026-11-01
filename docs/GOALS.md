@@ -63,6 +63,7 @@ Rounds:
 - R-1 2026-11-01: add `qwen3.8:UD_Q3`, its Modelfile and model selection -> PASS, 0 blockers, 7511ab0, 0 agy tokens
 - R-2 2026-11-01: run 50 chapters, compare on one reference and recommend -> PASS, 0 blockers, 287dbbb, 0 agy tokens
 - R-3 2026-11-01: compare `qwen3.8:udiq4_hui` with `qwen3.8:UD_Q3` and recommend -> PASS, 0 blockers, ff9cef5, 0 agy tokens
+- R-4 2026-11-01: set the owner's pick in config and the blueprint -> PASS, 0 blockers, 4f082e8, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:

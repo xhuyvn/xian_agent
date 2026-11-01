@@ -451,7 +451,7 @@ eval/pntt1/{gold,baseline.json}
 
 | Item | Formula | Estimate |
 |---|---|---|
-| S1 extraction | 2,673 × 27.2 s/chapter (measured in G-8: `qwen3.8:udiq4_hui`, `num_ctx 10240`, 50 chapters, 1 slot, p95 40.2 s; see `docs/S1_T7_BENCHMARK.md`) | ≈ 20.2 h sequential; ≈ 18.6 h for the 2,468 chapters on disk (2 slots not measured) |
+| S1 extraction | 2,673 × 27.2 s/chapter (measured in G-8: `qwen3.8:udiq4_hui`, `num_ctx 10240`, 50 chapters, 1 slot, p95 40.2 s; see `docs/S1_T7_BENCHMARK.md`) | ≈ 20.2 h sequential; ≈ 18.7 h for the 2,468 chapters on disk (2 slots not measured) |
 | S2 adjudication + S7 digests | local | ≈ 2–3 h |
 | S4 embedding | ~23k items @ ~60/s | ≈ 7 min |
 | Arc prefix summaries (every 10 ch.) | ~267 × local call | ≈ 1.5 h |

@@ -182,7 +182,7 @@ The list has no English or combined names, and "Hàn Lập" is a single entity. 
 
 ### Trade-offs
 
-- **Time:** 2,673 chapters at 27.2 s is about 20.2 h, just over the blueprint's 20 h target, against 11.7 h. The raw folder holds 2,468 chapters, which is about 18.6 h against 10.8 h. Every S1 rerun, such as after a prompt change, costs the same again.
+- **Time:** 2,673 chapters at 27.2 s is about 20.2 h, just over the blueprint's 20 h target, against 11.7 h. The raw folder holds 2,468 chapters, which is about 18.7 h against 10.8 h. Every S1 rerun, such as after a prompt change, costs the same again.
 - **Memory:** at its highest reading about 0.6 GB stays free, against 1.5 GB, and 8% of the model already runs on the CPU. Other GPU use during a long run could slow it further. The reranker will not fit alongside it, so the model must unload first at query time.
 - **Coverage:** it finds 33% more characters than `qwen3.8:UD_Q3`, which was that model's main weakness.
 - **Unchecked:** no gold set exists, so 0.84 means more names than the other model, not 84% of the true names. It was tested on 50 chapters from the first 1,121 only.
@@ -190,6 +190,14 @@ The list has no English or combined names, and "Hàn Lập" is a single entity. 
 Choose `qwen3.8:UD_Q3` instead if you expect to rerun S1 often, or need the PC free during ingest.
 
 ## Reproduce
+
+```bash
+ollama create qwen38-udiq4-hui-10k -f ollama/Modelfile.qwen38-udiq4-hui-10k
+```
+
+```bash
+ollama create qwen38-ud-q3-10k -f ollama/Modelfile.qwen38-ud-q3-10k
+```
 
 ```bash
 ollama create qwen35-q8-12k -f ollama/Modelfile.qwen35-q8-12k
