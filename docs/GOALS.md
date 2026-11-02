@@ -304,6 +304,21 @@ Rounds:
 - R-1 2026-11-02: deliver the chunker, BM25 vectors, embed client and alias tagger -> PASS, 0 blockers, 6fc9cef, 0 agy tokens
 - R-2 2026-11-02: deliver stage S4 with its runner, CLI and config -> PASS, 0 blockers, 7ca6b97, 0 agy tokens
 - R-3 2026-11-02: run S4 live on chapters 1-100 twice and correct the docs -> PASS, 0 blockers, d7351ac, 0 agy tokens
+### G-13: benchmark the cloud model on S1 extraction (done)
+Plan: chat plan of 2026-11-02. Prompt v2 unchanged, chapters 1-100.
+Owner decisions: raw chapter text may go to OpenRouter for this benchmark only, as one exception to A-04; production S1 stays local. Concurrency starts at 10 with a hard limit of 20. The run skips `daily_spend_cap_usd`, and the owner monitors cost.
+Done when:
+- `deepseek/deepseek-v4.1-flash-1017` runs prompt v2 unchanged on 50 chapters: the 20 gold chapters and 30 others from chapters 1-100
+- The report compares it with local `qwen3.8:udiq4_hui` on recall, precision, category accuracy, event-type accuracy and flag F1, with held-out chapters shown apart
+- The report gives schema success, retries, 429 errors, s/chapter, tokens and actual cost per chapter, plus estimated time and cost for all 2,468 chapters
+- Name overlap with the local run is shown for the 30 non-gold chapters
+- `eval/`, the prompt, production config and production S1 are unchanged
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-02: deliver the benchmark runner and its unit tests -> FAIL, 2 blockers (resume counts and timing), 2f72e51, 0 agy tokens
+- R-2 2026-11-02: fix the resume counts and timing -> PASS, 0 blockers, 8e2c73a, 0 agy tokens
+- R-3 2026-11-02: run the 50 chapters and report the numbers -> FAIL, 1 blocker (a cause the data does not show), d531267, 0 agy tokens
+- R-4 2026-11-02: fix the report wording -> PASS, 0 blockers, 913e631, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
@@ -311,3 +326,4 @@ Changes:
 - 2026-11-02: live run on `data/eval/g15-s4.db`, the copy of `g101-full.db`: run 1 wrote 704 points (604 text, 100 summary) in 32.6 s, run 2 skipped all 100 chapters at 704 points. Four real queries, dense and sparse, stayed within `chapter_max` 10 and returned nothing for another novel. Ollama's `/api/ps` showed BGE-M3 at 689 MB resident
 - 2026-11-02: verifier pass on the whole branch at d7351ac -> PASS, every "Done when" line met. Its NIT on plan assumption A-02 still saying "Ollama unloaded" was fixed after that pass
 - 2026-11-02: owner approved marking the goal done, recorded with PR #22
+- 2026-11-02: the guard blocked the agy run, so the owner chose to have the lead write the runner, with no agy
