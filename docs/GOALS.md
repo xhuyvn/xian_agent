@@ -40,6 +40,7 @@ Sub-goals:
 - none yet
 Changes:
 - 2026-11-02: owner approved the goal and the decisions above
+- 2026-11-02: the guard blocked the agy run, so the owner chose to have the lead write the runner, with no agy
 
 ## Parked
 
