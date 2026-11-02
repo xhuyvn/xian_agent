@@ -42,11 +42,13 @@ Done when:
 Rounds:
 - R-1 2026-11-02: deliver the chunker, BM25 vectors, embed client and alias tagger -> PASS, 0 blockers, 6fc9cef, 0 agy tokens
 - R-2 2026-11-02: deliver stage S4 with its runner, CLI and config -> PASS, 0 blockers, 7ca6b97, 0 agy tokens
+- R-3 2026-11-02: run S4 live on chapters 1-100 twice and correct the docs -> PASS, 0 blockers, d7351ac, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
 - 2026-11-02: owner approved the goal and the decisions above
-- 2026-11-02: live run on `data/eval/g15-s4.db`, the copy of `g101-full.db`: run 1 wrote 704 points (604 text, 100 summary) in 32.6 s, run 2 skipped all 100 chapters at 704 points. Four real queries, dense and sparse, stayed within `chapter_max` 10 and returned nothing for another novel
+- 2026-11-02: live run on `data/eval/g15-s4.db`, the copy of `g101-full.db`: run 1 wrote 704 points (604 text, 100 summary) in 32.6 s, run 2 skipped all 100 chapters at 704 points. Four real queries, dense and sparse, stayed within `chapter_max` 10 and returned nothing for another novel. Ollama's `/api/ps` showed BGE-M3 at 689 MB resident
+- 2026-11-02: verifier pass on the whole branch at d7351ac -> PASS, every "Done when" line met. Its NIT on plan assumption A-02 still saying "Ollama unloaded" was fixed after that pass
 
 ## Parked
 
