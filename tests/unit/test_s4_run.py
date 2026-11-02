@@ -10,7 +10,7 @@ from typer.testing import CliRunner
 
 import xn.cli.main as cli
 from xn.config import load_config
-from xn.embed import EmbedError
+from xn.embed import EmbedError, OllamaEmbedder
 from xn.pipeline.runner import RunRequestError, run_stage
 from xn.pipeline.s4_embed import STAGE, VERSION, S4RequestError, run_s4
 from xn.schemas.extraction import ChapterExtraction
@@ -469,8 +469,8 @@ class TestCli:
     @staticmethod
     def wire(monkeypatch, store, embedder):
         monkeypatch.setattr(cli, "load_config", lambda novel, configs_dir: CONFIG)
-        monkeypatch.setattr("xn.pipeline.runner.QdrantStore.from_config", lambda config: store)
-        monkeypatch.setattr("xn.pipeline.runner.OllamaEmbedder.from_config", lambda config: embedder)
+        monkeypatch.setattr(QdrantStore, "from_config", lambda config: store)
+        monkeypatch.setattr(OllamaEmbedder, "from_config", lambda config: embedder)
 
     def test_from_and_to_run_and_report(self, db, store, client, monkeypatch):
         self.wire(monkeypatch, store, FakeEmbedder())
