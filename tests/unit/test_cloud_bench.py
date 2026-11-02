@@ -4,15 +4,17 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 import sqlite3
 from typing import Any
 
 from pydantic_ai.exceptions import ModelHTTPError
-from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
+from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.models.openrouter import OpenRouterModel
 from pydantic_ai.providers.openrouter import OpenRouterProvider
+from pydantic_ai.usage import RequestUsage
 import pytest
 from typer.testing import CliRunner
 import typer
@@ -20,15 +22,23 @@ import typer
 from xn import cloud_bench
 from xn.cloud_bench import (
     MAX_CONCURRENCY,
+    MISATTRIBUTED,
+    PAIR_RULES,
     BenchRequestError,
+    check_pairs,
     check_request,
+    deepseek_cost,
     filter_events,
+    is_deepseek_peak,
     name_overlap,
+    pair_chapters,
     pick_chapters,
     run_bench,
 )
 from xn.gold import GoldChapter, GoldEntity, GoldSet
+from xn.config import CloudSettings
 from xn.gold_run import INVALID_CATEGORY, LOW_EVIDENCE
+from xn.llm import UpstreamError
 from xn.schemas.extraction import ChapterExtraction
 from xn.storage.database import connect, init_schema
 from xn.storage.repository import Repository
@@ -410,6 +420,195 @@ def test_run_bench_opens_the_baseline_through_the_read_only_helper(
     monkeypatch.setattr(cloud_bench, "_open_read_only", spy)
     env.run(only=[1])
     assert opened == [env.baseline]
+
+
+def pair_payload(first: str, second: str, **kwargs: Any) -> str:
+    return json.dumps({
+        "first_chapter": json.loads(payload(first, **kwargs)),
+        "second_chapter": json.loads(payload(second, **kwargs)),
+    })
+
+
+def test_pair_chapters_keeps_each_gold_chapter_with_its_fixed_partner() -> None:
+    assert pair_chapters({1, 4, 7, 8, 100}, 100) == [1, 2, 3, 4, 7, 8, 99, 100]
+    assert pair_chapters({5}, 5) == [5]
+
+
+def test_check_pairs_names_a_lone_chapter() -> None:
+    check_pairs([1, 2, 3, 4])
+    with pytest.raises(BenchRequestError, match=r"\[2, 3\]"):
+        check_pairs([2, 3])
+
+
+def test_pairs_refuses_a_lone_chapter_before_building_anything(env: Env) -> None:
+    def factory(_: str) -> Any:
+        raise AssertionError("model built")
+
+    with pytest.raises(BenchRequestError, match="whole pairs"):
+        env.run(only=[1, 2, 3], pairs=True, model_factory=factory)
+    assert not env.db.exists()
+
+
+def test_an_unknown_provider_is_refused() -> None:
+    with pytest.raises(BenchRequestError, match="--provider"):
+        check_request(allow_raw_egress=True, concurrency=1, provider="nope")
+
+
+def test_a_pair_is_one_call_with_one_result_per_chapter(env: Env) -> None:
+    seen: list[ModelMessage] = []
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        seen.extend(messages)
+        return ModelResponse(parts=[TextPart(pair_payload("Hàn Lập", "Trương Thiết"))])
+
+    report = env.run(only=[1, 2], pairs=True, model_factory=lambda _: FunctionModel(respond))
+    rows = env.llm_rows()
+    assert len(rows) == 1
+    assert rows[0]["payload_chapters"] == "1,2"
+    assert rows[0]["prompt_version"].endswith("+pair")
+    sent = str(seen[-1].parts[-1].content)
+    assert sent.count("<chapter>") == 2 and sent.index("#1#") < sent.index("#2#")
+    assert PAIR_RULES.strip() in str(seen[0].parts[0].content)
+    assert report["reliability"]["chapters_ok"] == 2
+    assert report["reliability"]["first_try_success"] == 1
+    assert report["meta"]["pairs"] is True
+
+    conn = connect(env.db)
+    try:
+        saved = Repository(conn).list_extractions(novel_id="pntt1", chapter_max=4)
+    finally:
+        conn.close()
+    assert {r["chapter_id"]: json.loads(r["payload"])["events"][0]["name"] for r in saved} == {
+        1: "Hàn Lập", 2: "Trương Thiết",
+    }
+    assert {r["chapter_id"]: json.loads(r["payload"])["chapter_id"] for r in saved} == {1: 1, 2: 2}
+
+
+def test_a_quote_from_the_partner_chapter_is_dropped_as_misattributed() -> None:
+    extraction = ChapterExtraction.model_validate_json(payload("Hàn Lập"))
+    kept, dropped = filter_events(extraction, "zzzzzzzz " * 20, {"character"}, TEXT)
+    assert kept == [] and dropped == {MISATTRIBUTED: 1}
+
+    kept, dropped = filter_events(extraction, "zzzzzzzz " * 20, {"character"}, "qqqqqqqq " * 20)
+    assert kept == [] and dropped == {LOW_EVIDENCE: 1}
+
+
+def test_a_pair_marks_events_quoted_from_the_wrong_chapter(env: Env) -> None:
+    only_second = "Mặc đại phu nhìn lò đan cháy đỏ trong gian phòng tối."
+    (env.raw / "chapter_0002.md").write_text(f"# Chương 2: Tên\n\n{only_second}\n" * 30, encoding="utf-8")
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[TextPart(pair_payload("Hàn Lập", "Lý", evidence=only_second))])
+
+    report = env.run(only=[1, 2], pairs=True, model_factory=lambda _: FunctionModel(respond))
+    assert report["dropped"]["by_reason"] == {MISATTRIBUTED: 1}
+    assert report["dropped"]["events_kept"] == 1
+
+
+def test_a_failed_pair_fails_both_chapters_and_a_half_saved_pair_runs_again(env: Env) -> None:
+    async def fails(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        raise ModelHTTPError(400, "fake")
+
+    report = env.run(only=[1, 2], pairs=True, model_factory=lambda _: FunctionModel(fails))
+    assert sorted(report["reliability"]["chapters_failed"]) == [1, 2]
+
+    calls = 0
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        return ModelResponse(parts=[TextPart(pair_payload("Hàn Lập", "Hàn Lập"))])
+
+    env.run(only=[1, 2], pairs=True, model_factory=lambda _: FunctionModel(respond))
+    conn = connect(env.db)
+    try:
+        with conn:
+            conn.execute("DELETE FROM jobs WHERE chapter_id = 2")
+    finally:
+        conn.close()
+    env.run(only=[1, 2], pairs=True, model_factory=lambda _: FunctionModel(respond))
+    assert calls == 2
+
+
+def test_gold_pairs_runs_the_same_chapters_in_both_modes(env: Env) -> None:
+    single = env.run(gold_pairs=True, gold=gold_set(1, 4))
+    assert single["meta"]["chapters"] == [1, 2, 3, 4]
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[TextPart(pair_payload("Hàn Lập", "Hàn Lập"))])
+
+    paired = env.run(
+        gold_pairs=True, gold=gold_set(1, 4), pairs=True, model_factory=lambda _: FunctionModel(respond)
+    )
+    assert paired["meta"]["chapters"] == single["meta"]["chapters"]
+
+
+@pytest.mark.parametrize(
+    ("at", "peak"),
+    [
+        (datetime(2026, 11, 2, 1, 0, tzinfo=timezone.utc), True),
+        (datetime(2026, 11, 2, 3, 59, tzinfo=timezone.utc), True),
+        (datetime(2026, 11, 2, 4, 0, tzinfo=timezone.utc), False),
+        (datetime(2026, 11, 2, 9, 59, tzinfo=timezone.utc), True),
+        (datetime(2026, 11, 2, 10, 0, tzinfo=timezone.utc), False),
+        (datetime(2026, 11, 1, 8, 0, tzinfo=timezone.utc), False),
+    ],
+)
+def test_deepseek_peak_hours(at: datetime, peak: bool) -> None:
+    assert is_deepseek_peak(at) is peak
+
+
+def test_deepseek_cost_splits_cached_input_and_doubles_at_peak() -> None:
+    usage = RequestUsage(
+        input_tokens=1_000_000, output_tokens=1_000_000, details={"prompt_cache_hit_tokens": 400_000}
+    )
+    messages: list[ModelMessage] = [ModelResponse(parts=[TextPart("x")], usage=usage)]
+    off_peak = datetime(2026, 11, 2, 12, 0, tzinfo=timezone.utc)
+    peak = datetime(2026, 11, 2, 2, 0, tzinfo=timezone.utc)
+    assert deepseek_cost(messages, off_peak) == (pytest.approx(0.6912), 400_000, 600_000)
+    assert deepseek_cost(messages, peak)[0] == pytest.approx(1.3824)
+
+
+def test_deepseek_run_uses_tool_output_turns_thinking_off_and_counts_the_cache(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings: list[Any] = []
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        settings.append(info.model_settings)
+        usage = RequestUsage(input_tokens=100, output_tokens=10, details={"prompt_cache_hit_tokens": 75})
+        name = info.output_tools[0].name
+        return ModelResponse(parts=[ToolCallPart(name, payload("Hàn Lập"))], usage=usage)
+
+    report = env.run(
+        only=[1], provider_name="deepseek", model_factory=lambda _: FunctionModel(respond)
+    )
+    assert report["meta"]["provider"] == "deepseek"
+    assert report["meta"]["model"] == "deepseek-flash"
+    assert settings[0]["extra_body"] == {"thinking": {"type": "disabled"}}
+    assert "openrouter_usage" not in settings[0]
+    assert report["usage"]["cache_hit_rate"] == 0.75
+    assert report["usage"]["cost_usd"] > 0
+
+    rerun = env.run(only=[1], provider_name="deepseek")
+    assert rerun["usage"]["cache_hit_tokens"] == 75
+
+
+def test_deepseek_model_needs_its_key_and_uses_the_settings(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        cloud_bench, "CloudSettings", lambda: CloudSettings(_env_file=None, deepseek_api_key="")
+    )
+    with pytest.raises(UpstreamError, match="DEEPSEEK_API_KEY"):
+        cloud_bench.deepseek_model("deepseek-flash")
+
+    monkeypatch.setattr(
+        cloud_bench, "CloudSettings",
+        lambda: CloudSettings(_env_file=None, deepseek_api_key="fake", deepseek_base_url="https://x.test/v1"),
+    )
+    model = cloud_bench.deepseek_model("deepseek-flash")
+    assert model.model_name == "deepseek-flash"
+    assert str(model.client.base_url).startswith("https://x.test/v1")
+    assert model.client.max_retries == 0
 
 
 def test_spend_cap_of_zero_does_not_stop_the_run(env: Env) -> None:
