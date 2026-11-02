@@ -25,26 +25,6 @@ Sub-goals:
 Changes:
 - 2026-11-01: owner approved the goal and the decisions above
 
-### G-13: benchmark the cloud model on S1 extraction (active)
-Plan: chat plan of 2026-11-02. Prompt v2 unchanged, chapters 1-100.
-Owner decisions: raw chapter text may go to OpenRouter for this benchmark only, as one exception to A-04; production S1 stays local. Concurrency starts at 10 with a hard limit of 20. The run skips `daily_spend_cap_usd`, and the owner monitors cost.
-Done when:
-- `deepseek/deepseek-v4.1-flash-1017` runs prompt v2 unchanged on 50 chapters: the 20 gold chapters and 30 others from chapters 1-100
-- The report compares it with local `qwen3.8:udiq4_hui` on recall, precision, category accuracy, event-type accuracy and flag F1, with held-out chapters shown apart
-- The report gives schema success, retries, 429 errors, s/chapter, tokens and actual cost per chapter, plus estimated time and cost for all 2,468 chapters
-- Name overlap with the local run is shown for the 30 non-gold chapters
-- `eval/`, the prompt, production config and production S1 are unchanged
-- `py -m compileall -q src` and `uv run pytest tests/unit` pass
-Rounds:
-- R-1 2026-11-02: deliver the benchmark runner and its unit tests -> FAIL, 2 blockers (resume counts and timing), 2f72e51, 0 agy tokens
-- R-2 2026-11-02: fix the resume counts and timing -> PASS, 0 blockers, 8e2c73a, 0 agy tokens
-- R-3 2026-11-02: run the 50 chapters and report the numbers -> FAIL, 1 blocker (a cause the data does not show), d531267, 0 agy tokens
-Sub-goals:
-- none yet
-Changes:
-- 2026-11-02: owner approved the goal and the decisions above
-- 2026-11-02: the guard blocked the agy run, so the owner chose to have the lead write the runner, with no agy
-
 ## Parked
 
 ## Archive
@@ -305,3 +285,24 @@ Changes:
 - 2026-11-01: owner approved the goal and the decisions above
 - 2026-11-01: owner moved the code from agy to the lead, after two agy runs (157018 tokens) were blocked by a denied MCP call and a denied `read_file`, with no code written
 - 2026-11-01: verifier pass at 755bb5b -> PASS, every "Done when" line met; owner approved marking the goal done, recorded with PR #18
+
+### G-13: benchmark the cloud model on S1 extraction (done)
+Plan: chat plan of 2026-11-02. Prompt v2 unchanged, chapters 1-100.
+Owner decisions: raw chapter text may go to OpenRouter for this benchmark only, as one exception to A-04; production S1 stays local. Concurrency starts at 10 with a hard limit of 20. The run skips `daily_spend_cap_usd`, and the owner monitors cost.
+Done when:
+- `deepseek/deepseek-v4.1-flash-1017` runs prompt v2 unchanged on 50 chapters: the 20 gold chapters and 30 others from chapters 1-100
+- The report compares it with local `qwen3.8:udiq4_hui` on recall, precision, category accuracy, event-type accuracy and flag F1, with held-out chapters shown apart
+- The report gives schema success, retries, 429 errors, s/chapter, tokens and actual cost per chapter, plus estimated time and cost for all 2,468 chapters
+- Name overlap with the local run is shown for the 30 non-gold chapters
+- `eval/`, the prompt, production config and production S1 are unchanged
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-02: deliver the benchmark runner and its unit tests -> FAIL, 2 blockers (resume counts and timing), 2f72e51, 0 agy tokens
+- R-2 2026-11-02: fix the resume counts and timing -> PASS, 0 blockers, 8e2c73a, 0 agy tokens
+- R-3 2026-11-02: run the 50 chapters and report the numbers -> FAIL, 1 blocker (a cause the data does not show), d531267, 0 agy tokens
+- R-4 2026-11-02: fix the report wording -> PASS, 0 blockers, 913e631, 0 agy tokens
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-02: owner approved the goal and the decisions above
+- 2026-11-02: the guard blocked the agy run, so the owner chose to have the lead write the runner, with no agy
