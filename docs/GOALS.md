@@ -46,6 +46,7 @@ Sub-goals:
 - none yet
 Changes:
 - 2026-11-02: owner approved the goal and the decisions above
+- 2026-11-02: live run on `data/eval/g15-s4.db`, the copy of `g101-full.db`: run 1 wrote 704 points (604 text, 100 summary) in 32.6 s, run 2 skipped all 100 chapters at 704 points. Four real queries, dense and sparse, stayed within `chapter_max` 10 and returned nothing for another novel
 
 ## Parked
 

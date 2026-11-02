@@ -87,6 +87,14 @@ class TestIsolation:
         assert sorted(h.payload["chapter_id"] for h in hits) == [1, 5]
 
 
+def test_delete_chapter_removes_one_chapter_of_one_novel(seeded):
+    seeded.delete_chapter(novel_id="a", chapter_id=1)
+    hits_a = seeded.query_chunks(novel_id="a", chapter_max=100, using=DENSE_VECTOR, query=TARGET, limit=50)
+    hits_b = seeded.query_chunks(novel_id="b", chapter_max=100, using=DENSE_VECTOR, query=TARGET, limit=50)
+    assert sorted(h.payload["chapter_id"] for h in hits_a) == [5, 6]
+    assert sorted(h.payload["chapter_id"] for h in hits_b) == [1, 2]
+
+
 def test_payload_indexes_exist(store, client):
     chunks_name, arcs_name = store.names
     chunks = client.get_collection(chunks_name).payload_schema

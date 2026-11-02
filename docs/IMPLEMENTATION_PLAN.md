@@ -150,7 +150,7 @@ flowchart TD
   - *Dependencies:* S1-T2 (derived from data flow: storage/repository configuration).
 - **S2-T2: Pipeline Stage S4 — Chunk & Embed** (§3.2 S4, §3.9)
   - *Files created:* `src/xn/pipeline/s4_embed.py` (proposal).
-  - *Details:* Runs in a separate GPU window (Ollama stopped). Paragraph chunks ~450 tokens (60 overlap) + micro-summaries from S1 (§3.2 S4). BGE-M3 dense (Ollama) + BM25 sparse vectors written to `xn_chunks`. Payload fields include `entity_ids` and `arc_id` (§3.2); how these two are populated is unsettled (OQ-17).
+  - *Details:* Runs in a separate GPU window, refusing to start while Ollama holds any model but BGE-M3. Paragraph chunks ~450 tokens (60 overlap) + micro-summaries from S1 (§3.2 S4). BGE-M3 dense (Ollama) + BM25 sparse vectors written to `xn_chunks`. Payload fields include `entity_ids` and `arc_id` (§3.2), populated as OQ-17 records.
   - *Dependencies:* S1-T3, S1-T4, S1-T5, S2-T1 (derived from data flow: S1-T3 provides clean text from `chapters`, S1-T4 persists `micro_summary` in `extractions` per §3.2 S4, S1-T5 provides the entity IDs stored in `entity_ids`, and S2-T1 provides Qdrant `xn_chunks` collection setup).
 - **S2-T3: Hybrid Retrieval & Reranker** (§3.2 S4, §3.3, §3.9)
   - *Files created:* `src/xn/storage/retriever.py` (proposal).
@@ -178,7 +178,7 @@ flowchart TD
 
 #### Parallelism & Ordering Constraints
 - *Parallel groups:* S2-T1/S2-T2 (vector storage and chunk embedding) and S2-T5 (reading progress CLI command and repository/bound update) touch disjoint files and have no dependency path between them, so they can run in parallel.
-- *Internal constraints:* S4 embedding (S2-T2) must unload Ollama to avoid 16 GB VRAM thrashing on RTX 5070 Ti (§3.9). Query reranker (S2-T3) must precede `factual_qa` gate wiring (S2-T4). S2-T6 integrates into the verify node after bound resolution in S2-T5 is ready.
+- *Internal constraints:* S4 embedding (S2-T2) must run with no other Ollama model loaded, to avoid 16 GB VRAM thrashing on RTX 5070 Ti (§3.9). Query reranker (S2-T3) must precede `factual_qa` gate wiring (S2-T4). S2-T6 integrates into the verify node after bound resolution in S2-T5 is ready.
 
 ---
 
@@ -190,7 +190,7 @@ flowchart TD
 - **S3-T1: Pipeline Stage S5 — Smoothed DP Arc Segmentation** (§3.2 S5, G-11, OQ-04)
   - *Files created:* `src/xn/pipeline/s5_segment.py` (proposal), `prompts/s5_boundary_review/v1.md` (proposal).
   - *Files changed/deleted:* Supersedes `src/timeline/arc_detector.py`.
-  - *Details:* Chapter score $s_i = \sum w \cdot \text{flag}$; centered smoothing window 5; DP segmentation picking boundaries subject to $30 \le \text{len} \le 90$; local LLM reviews boundary with micro-summaries $\pm 5$ chapters (shift $\le 5$). Output storage for S5 boundaries is an inference (inferred: records boundaries to `chapters.arc_id`; S6 writes full `StoryArc` JSON to `arcs`, §3.1, §3.2 S6). Whether S5 writes placeholder rows to `arcs` or stores boundaries via stage jobs / in-memory is an open question (OQ-05).
+  - *Details:* Chapter score $s_i = \sum w \cdot \text{flag}$; centered smoothing window 5; DP segmentation picking boundaries subject to $30 \le \text{len} \le 90$; local LLM reviews boundary with micro-summaries $\pm 5$ chapters (shift $\le 5$). Output storage for S5 boundaries is an inference (inferred: records boundaries to `chapters.arc_id`; S6 writes full `StoryArc` JSON to `arcs`, §3.1, §3.2 S6). Whether S5 writes placeholder rows to `arcs` or stores boundaries via stage jobs / in-memory is an open question (OQ-05). After writing `chapters.arc_id`, S5 sets `arc_id` on that chapter's `xn_chunks` points in place, with no re-embedding (OQ-17).
   - *Dependencies:* S1-T4, S1-T6 (derived from data flow, §3.1 diagram: requires S1 extraction flags across all chapters in range).
 - **S3-T2: Pipeline Stage S6 — Macro StoryArc Synthesis** (§3.2 S6)
   - *Files created:* `src/xn/pipeline/s6_synthesize.py` (proposal), `src/xn/schemas/arc.py` (proposal), `prompts/s6_arc_synthesize/v1.md` (proposal).
@@ -571,6 +571,7 @@ The following genuine ambiguities, contradictions, and underspecified items are 
 - **Why it matters:** §3.2 lists both as payload indexes, and §3.3 `deep_dive` retrieval uses "top-8 entity-filtered chunks". The blueprint does not say how a chunk is matched to entities. `arc_id` is not known at S4 time, because the §3.1 diagram runs S4 from S0 and S5 assigns arcs later, and the blueprint does not say whether points are updated afterwards.
 - **Which task it blocks:** S2-T2, S3-T1, S3-T5.
 - **Options named/apparent:** None named in blueprint.
+- **Decision (closed 2026-11-02, G-15):** `entity_ids` comes from whole-word matches of a chunk's text against the aliases whose `first_chapter` is at or before the chunk's chapter, tagging every entity that shares a matched alias. `arc_id` copies `chapters.arc_id`, null until S5 runs; S5 then sets it on the points in place (S3-T1), and it is left out of the S4 input hash.
 
 ---
 
