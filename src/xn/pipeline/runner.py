@@ -6,16 +6,19 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from xn.embed import OllamaEmbedder
 from xn.pipeline.s0_parse import S0Result, run_s0
 from xn.pipeline.s1_extract import S1Result, run_s1
 from xn.pipeline.s2_resolve import S2Result, run_s2
 from xn.pipeline.s3_ledger import S3Result, compute_input_hash, run_s3
+from xn.pipeline.s4_embed import Embedder, S4Result, run_s4
 from xn.prompts import load_prompt, profile_from_config
+from xn.storage.qdrant import QdrantStore
 from xn.storage.repository import Repository
 
 logger = logging.getLogger(__name__)
 
-STAGES = ("s0", "s1", "s2", "s3")
+STAGES = ("s0", "s1", "s2", "s3", "s4")
 
 
 class RunRequestError(ValueError):
@@ -35,7 +38,9 @@ def run_stage(
     raw_dir: str | Path | None = None,
     model: Any = None,
     prompts_dir: Path = Path("prompts"),
-) -> S0Result | S1Result | S2Result | S3Result:
+    store: QdrantStore | None = None,
+    embedder: Embedder | None = None,
+) -> S0Result | S1Result | S2Result | S3Result | S4Result:
     """Run a pipeline stage with request validation and error checking."""
     # 1. Validation before touching the database
     if stage not in STAGES:
@@ -52,7 +57,7 @@ def run_stage(
             f"chapter_from ({chapter_from}) cannot be greater than chapter_to ({chapter_to})"
         )
 
-    if stale_only and stage in ("s0", "s2"):
+    if stale_only and stage in ("s0", "s2", "s4"):
         raise RunRequestError(f"stale_only is not supported on stage {stage}")
 
     if chapter_from > 1 and stage in ("s0", "s2"):
@@ -163,6 +168,17 @@ def run_stage(
             chapter_from=chapter_from,
             chapter_to=chapter_to,
             only_chapters=only_chapters,
+        )
+
+    if stage == "s4":
+        return run_s4(
+            repo,
+            novel_id=novel_id,
+            config=config,
+            store=store if store is not None else QdrantStore.from_config(config),
+            embedder=embedder if embedder is not None else OllamaEmbedder.from_config(config),
+            chapter_from=chapter_from,
+            chapter_to=chapter_to,
         )
 
     raise RunRequestError(f"Unhandled stage: {stage}")

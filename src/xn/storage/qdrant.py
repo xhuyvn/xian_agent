@@ -130,6 +130,22 @@ class QdrantStore:
             wait=True,
         )
 
+    def delete_chapter(self, *, novel_id: str, chapter_id: int) -> None:
+        """Remove one chapter's points, so a shorter re-chunk leaves none behind."""
+        _validate_novel_id(novel_id)
+        self._client.delete(
+            collection_name=self._chunks,
+            points_selector=models.FilterSelector(
+                filter=models.Filter(
+                    must=[
+                        models.FieldCondition(key="novel_id", match=models.MatchValue(value=novel_id)),
+                        models.FieldCondition(key="chapter_id", match=models.MatchValue(value=chapter_id)),
+                    ]
+                )
+            ),
+            wait=True,
+        )
+
     @staticmethod
     def _to_point(novel_id: str, point: ChunkPoint) -> models.PointStruct:
         return models.PointStruct(
