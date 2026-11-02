@@ -11,6 +11,8 @@ from typing import Any
 from pydantic_ai.exceptions import ModelHTTPError
 from pydantic_ai.messages import ModelMessage, ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
+from pydantic_ai.models.openrouter import OpenRouterModel
+from pydantic_ai.providers.openrouter import OpenRouterProvider
 import pytest
 from typer.testing import CliRunner
 import typer
@@ -127,6 +129,13 @@ class Env:
 @pytest.fixture
 def env(tmp_path: Path) -> Env:
     return Env(tmp_path)
+
+
+def test_bench_model_turns_on_json_schema_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    base = OpenRouterModel("deepseek/fake", provider=OpenRouterProvider(api_key="fake"))
+    assert not base.profile.get("supports_json_schema_output", False)
+    monkeypatch.setattr(cloud_bench, "cloud_model", lambda _: base)
+    assert cloud_bench.bench_model("deepseek/fake").profile["supports_json_schema_output"]
 
 
 def test_refuses_without_raw_egress_before_building_a_model(env: Env) -> None:

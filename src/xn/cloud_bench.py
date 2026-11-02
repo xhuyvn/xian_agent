@@ -23,6 +23,7 @@ import uuid
 
 from pydantic_ai import Agent, NativeOutput, capture_run_messages
 from pydantic_ai.exceptions import ModelHTTPError
+from pydantic_ai.models.openrouter import OpenRouterModel
 import rapidfuzz
 import typer
 
@@ -103,6 +104,16 @@ def filter_events(
         else:
             kept.append(ev)
     return kept, dropped
+
+
+def bench_model(model_name: str) -> OpenRouterModel:
+    """Build the OpenRouter model with JSON-schema output on, as S1 uses locally.
+
+    pydantic-ai assumes DeepSeek models lack it; OpenRouter lists structured_outputs for this one.
+    """
+    base = cloud_model(model_name)
+    profile = {**base.profile, "supports_json_schema_output": True}
+    return OpenRouterModel(model_name, provider=base._provider, profile=profile)
 
 
 def _error_text(err: Exception) -> str:
@@ -496,7 +507,7 @@ def run_bench(
     extra_chapters: int = 30,
     only: list[int] | None = None,
     allow_raw_egress: bool = False,
-    model_factory: Callable[[str], Any] = cloud_model,
+    model_factory: Callable[[str], Any] = bench_model,
     sleep: Sleep = asyncio.sleep,
     prompts_dir: Path = Path("prompts"),
 ) -> dict[str, Any]:
