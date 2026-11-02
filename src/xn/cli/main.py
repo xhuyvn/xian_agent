@@ -19,6 +19,7 @@ from xn.llm import EgressError, SpendCapError, UpstreamError
 from xn.pipeline.runner import RunRequestError, run_stage
 from xn.pipeline.s0_parse import ChapterSetError
 from xn.pipeline.s2_resolve import S2StaleError
+from xn.pipeline.s4_embed import S4RequestError
 from xn.storage.database import connect, init_schema
 from xn.storage.repository import Repository
 
@@ -34,7 +35,7 @@ def callback() -> None:
 def format_result(stage: str, result: Any) -> str:
     """Format stage execution result on one line."""
     parts = [f"{stage}:"]
-    for attr in ("processed", "written", "skipped", "failed"):
+    for attr in ("processed", "written", "skipped", "failed", "points"):
         val = getattr(result, attr, None)
         if val is not None:
             parts.append(f"{attr}={val}")
@@ -47,7 +48,7 @@ def format_result(stage: str, result: Any) -> str:
 @app.command("run")
 def run(
     novel: str = typer.Option(..., "--novel", help="Novel ID"),
-    stage: str = typer.Option(..., "--stage", help="Stage to run (s0, s1, s2, s3)"),
+    stage: str = typer.Option(..., "--stage", help="Stage to run (s0, s1, s2, s3, s4)"),
     chapter_from: int = typer.Option(1, "--from", help="Starting chapter number"),
     chapter_to: int | None = typer.Option(None, "--to", help="Ending chapter number"),
     stale_only: bool = typer.Option(False, "--stale-only", help="Process only stale chapters"),
@@ -96,7 +97,7 @@ def run(
     except S2StaleError as err:
         typer.echo(f"Error: {err}. Use --rebuild to redo the novel.")
         raise typer.Exit(code=1)
-    except ChapterSetError as err:
+    except (ChapterSetError, S4RequestError) as err:
         typer.echo(f"Error: {err}")
         raise typer.Exit(code=1)
     except FileNotFoundError as err:

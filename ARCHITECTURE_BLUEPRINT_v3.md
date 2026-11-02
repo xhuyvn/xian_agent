@@ -168,7 +168,7 @@ sequenceDiagram
 | **S1 Extract** | Local Qwen via Pydantic-AI, temperature 0.1, prompt templated with the genre profile (§3.11). Chapter ≤ 7,000 tokens → one call; longer → 2 parts with 300-token overlap, merged in code (union events, OR booleans, local re-summary). Output `ChapterExtraction` (below). Evidence quote check drops unverifiable events |
 | **S2 Resolve** | Within one `novel_id` only. (1) exact normalized alias; (2) diacritics-stripped; (3) `rapidfuzz` token_set ≥ 92, same category; (4) 80–92 → local LLM adjudication with both contexts; (5) new entity. Seed aliases from `configs/novels/{id}.yaml`. Records `first_chapter` per entity and per alias. Identity reveals (one person behind two names) go to `entity_links`, never merged (§3.4) |
 | **S3 Ledger** | `entity_events` keyed by `entity_id` with unique `(novel_id, chapter_id, entity_id, event_type, ordinal)` |
-| **S4 Embed** | Separate GPU window (Ollama unloaded). Paragraph chunks ~450 tokens, 60 overlap (~20k chunks for `pntt1`) + each `micro_summary`. BGE-M3 dense + BM25 sparse (ADR-03) |
+| **S4 Embed** | Separate GPU window: BGE-M3 runs in Ollama, and S4 refuses to start while any other model is loaded. Paragraph chunks ~450 tokens, 60 overlap (~15k chunks for `pntt1`) + each `micro_summary`. BGE-M3 dense + BM25 sparse (ADR-03). `entity_ids` come from aliases visible at the chunk's chapter; `arc_id` is set by S5 |
 | **S5 Segment** | Score `s_i = Σ w·flag` (weights per novel); centered smoothing window 5; DP picks boundaries maximizing Σ scores subject to `min_len ≤ len ≤ max_len`; LLM reviews each boundary with micro-summaries ±5 chapters and may shift ≤ 5 |
 | **S6 Synthesize** | OpenRouter macro model → `StoryArc` from the arc's micro-summaries (~12k tokens in) |
 | **S7 Digests** | For each (entity, arc) with ≥ 3 events: 80–150-word digest (local model). Also prefix digests at spoiler checkpoints (§3.4) |
@@ -414,7 +414,7 @@ Spoiler probes target the known leak sources: hidden identities, items destroyed
 | Mode | Resident on GPU | Est. VRAM |
 |---|---|---|
 | Ingestion S1/S2/S7 | Qwen 14B Q4_K_M (~9.0 GB) + KV cache q8_0, `num_ctx 12288` × 2 slots (~2.3 GB) + buffers (~0.8 GB) | ≈ 12.1 GB (+ ~1 GB Windows desktop) |
-| Ingestion S4 | Ollama unloaded (`ollama stop`); BGE-M3 fp16 + batch activations | ≈ 4–5 GB |
+| Ingestion S4 | No other Ollama model loaded; BGE-M3 F16 in Ollama (0.7 GB resident, G-15) | ≈ 1 GB |
 | Query time | Qwen 14B (router) + bge-reranker-v2-m3 fp16 (~1.2 GB); BGE-M3 **query** encoding on CPU (~0.3 s) | ≈ 13 GB |
 
 KV estimate for Qwen2.5-14B (48 layers × 8 KV heads × 128 dim): ~0.19 MB/token fp16, ~0.09 MB/token q8_0. Qwen3-14B is smaller (40 layers) `[verify]`.
@@ -428,7 +428,7 @@ PARAMETER temperature 0.1
 ```
 Environment: `OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0`, `OLLAMA_NUM_PARALLEL=2`, `OLLAMA_KEEP_ALIVE=30m`. Why 10,240: system + schema ≈ 1.2k, chapter ≤ 7k (longer chapters are split), output ≤ 1.5k → ~9.7k with headroom. If VRAM pressure appears, use `NUM_PARALLEL=1`.
 
-Blackwell note: PyTorch for BGE-M3/reranker must be a CUDA 12.8+ build that supports sm_120 `[verify current wheel]`; Ollama ships its own runtime.
+Blackwell note: PyTorch for the reranker must be a CUDA 12.8+ build that supports sm_120 `[verify current wheel]`; Ollama ships its own runtime.
 
 **Services** (`docker-compose.yml`): Qdrant at a current 1.x with query API, sparse vectors and tenant indexes `[verify version at pin time]`; optional Langfuse. Redis removed.
 
@@ -453,7 +453,7 @@ eval/pntt1/{gold,baseline.json}
 |---|---|---|
 | S1 extraction | 2,468 × 27.2 s/chapter (measured in G-8: `qwen3.8:udiq4_hui`, `num_ctx 10240`, 50 chapters, 1 slot, p95 40.2 s; see `docs/S1_T7_BENCHMARK.md`) | ≈ 18.7 h sequential (2 slots not measured) |
 | S2 adjudication + S7 digests | local | ≈ 2–3 h |
-| S4 embedding | ~23k items @ ~60/s | ≈ 7 min |
+| S4 embedding | ~17k items (7.04 per chapter) @ ~25/s (measured in G-15 on chapters 1-100: 704 items in 28 s, including Qdrant writes) | ≈ 12 min |
 | Arc prefix summaries (every 10 ch.) | ~267 × local call | ≈ 1.5 h |
 | S6 arc synthesis | ~45 × (13k in + 1.5k out) | ≈ $0.25 |
 | Per query (compact) | ≤ 20k in + ≤ 2.5k out (+1 regeneration if leak) | ≤ $0.01–0.02 |
