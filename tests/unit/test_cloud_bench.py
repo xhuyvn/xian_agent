@@ -178,6 +178,9 @@ def test_filter_keeps_only_what_s1_would_keep() -> None:
     wrong_category = filter_events(extraction, TEXT, {"weapon"})
     assert wrong_category[0] == [] and wrong_category[1] == {INVALID_CATEGORY: 1}
 
+    spaced = ChapterExtraction.model_validate_json(payload("Hàn Lập", evidence=f"  {TEXT[:20]} \n"))
+    assert len(filter_events(spaced, TEXT, {"character"})[0]) == 1
+
     no_evidence = ChapterExtraction.model_validate_json(payload("Hàn Lập", evidence="zzzzzzzz qqqqqqqq"))
     dropped = filter_events(no_evidence, TEXT, {"character"})
     assert dropped[0] == [] and dropped[1] == {LOW_EVIDENCE: 1}
@@ -231,6 +234,109 @@ def test_a_failing_chapter_does_not_stop_the_others(env: Env) -> None:
     assert len(env.llm_rows()) == 3
 
 
+def test_cli_exits_nonzero_after_writing_the_report_when_a_chapter_fails(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        raise ModelHTTPError(400, "fake")
+
+    original = cloud_bench.run_bench
+
+    def fake_run_bench(**kwargs: Any) -> dict[str, Any]:
+        kwargs.update(model_factory=lambda _: FunctionModel(respond), prompts_dir=REPO_ROOT / "prompts")
+        return original(**kwargs)
+
+    monkeypatch.setattr(cloud_bench, "load_config", lambda *a, **k: CONFIG)
+    monkeypatch.setattr(cloud_bench, "load_gold", lambda _: gold_set(1, 2))
+    monkeypatch.setattr(cloud_bench, "run_bench", fake_run_bench)
+    app = typer.Typer()
+    app.command()(cloud_bench.main)
+    result = CliRunner().invoke(app, [
+        "--db", str(env.db), "--raw-dir", str(env.raw), "--out", str(env.out),
+        "--baseline-db", str(env.baseline), "--only", "1", "--allow-raw-egress",
+    ])
+    assert result.exit_code == 1
+    assert json.loads(env.out.read_text(encoding="utf-8"))["reliability"]["chapters_failed"] == {
+        "1": "ModelHTTPError 400"
+    }
+
+
+def test_failure_text_holds_no_error_message(env: Env) -> None:
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        raise ModelHTTPError(400, "fake", body=TEXT)
+
+    env.run(only=[1], model_factory=lambda _: FunctionModel(respond))
+    assert TEXT not in env.out.read_text(encoding="utf-8")
+
+
+def test_waiting_for_a_backoff_holds_no_slot(env: Env) -> None:
+    calls = 0
+    other_chapter_ran = False
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ModelHTTPError(500, "fake")
+        return ModelResponse(parts=[TextPart(payload("Hàn Lập"))])
+
+    async def backoff(_: float) -> None:
+        nonlocal other_chapter_ran
+        before = calls
+        await asyncio.sleep(0.05)
+        other_chapter_ran = other_chapter_ran or calls > before
+
+    env.run(only=[1, 2], concurrency=1, sleep=backoff, model_factory=lambda _: FunctionModel(respond))
+    assert other_chapter_ran
+
+
+def test_a_rerun_with_nothing_to_do_keeps_counts_timing_and_projection(env: Env) -> None:
+    calls = 0
+
+    async def respond(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise ModelHTTPError(429, "fake")
+        return ModelResponse(parts=[TextPart(payload("Hàn Lập"))])
+
+    first = env.run(only=[1], model_factory=lambda _: FunctionModel(respond))
+    second = env.run(only=[1])
+    assert second["reliability"]["http_429"] == 1
+    assert second["dropped"] == first["dropped"]
+    assert second["meta"]["wall_seconds"] == first["meta"]["wall_seconds"]
+    assert second["projection"] == first["projection"]
+    assert second["projection"]["hours"] is not None
+
+
+def test_a_partial_resume_times_every_chapter(env: Env) -> None:
+    first = env.run(only=[1])
+    second = env.run(only=[1, 2])
+    assert second["meta"]["wall_seconds"] > first["meta"]["wall_seconds"]
+    assert second["usage"]["wall_seconds_per_chapter"] == pytest.approx(second["meta"]["wall_seconds"] / 2)
+
+
+def test_a_new_database_ignores_the_old_report(env: Env) -> None:
+    async def low_evidence(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[TextPart(payload("Hàn Lập", evidence="zzzzzzzz qqqqqqqq"))])
+
+    env.run(only=[1], model_factory=lambda _: FunctionModel(low_evidence))
+    for path in env.db.parent.glob("bench.db*"):
+        path.unlink()
+    report = env.run(only=[1], model_factory=lambda _: FunctionModel(low_evidence))
+    assert report["dropped"]["by_reason"] == {LOW_EVIDENCE: 1}
+
+
+def test_a_failed_chapter_does_not_score_another_models_extraction(env: Env) -> None:
+    async def fails(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        raise ModelHTTPError(400, "fake")
+
+    env.run(only=[1], model_name="first-model")
+    report = env.run(only=[1], model_name="second-model", model_factory=lambda _: FunctionModel(fails))
+    assert report["reliability"]["chapters_ok"] == 0
+    assert report["cloud"]["all"] is None
+
+
 def test_resume_skips_saved_chapters_and_keeps_earlier_counts(env: Env) -> None:
     first = env.run(only=[1])
     calls = 0
@@ -282,9 +388,21 @@ def test_name_overlap_with_nothing_in_common_chapters() -> None:
     assert name_overlap({}, {}, set())["jaccard"] is None
 
 
-def test_spend_cap_is_not_consulted(monkeypatch: pytest.MonkeyPatch, env: Env) -> None:
-    def refuse(*args: Any) -> None:
-        raise AssertionError("spend cap checked")
+def test_run_bench_opens_the_baseline_through_the_read_only_helper(
+    env: Env, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    opened = []
+    original = cloud_bench._open_read_only
 
-    monkeypatch.setattr("xn.llm._check_spend_cap", refuse)
-    assert env.run(only=[1])["reliability"]["chapters_ok"] == 1
+    def spy(path: Path) -> sqlite3.Connection:
+        opened.append(path)
+        return original(path)
+
+    monkeypatch.setattr(cloud_bench, "_open_read_only", spy)
+    env.run(only=[1])
+    assert opened == [env.baseline]
+
+
+def test_spend_cap_of_zero_does_not_stop_the_run(env: Env) -> None:
+    config = {**CONFIG, "daily_spend_cap_usd": 0.0}
+    assert env.run(only=[1], config=config)["reliability"]["chapters_ok"] == 1

@@ -46,7 +46,6 @@ MAX_CONCURRENCY = 20
 BENCH_MAX_TOKENS = 8000
 RATE_LIMIT_PAUSE_S = 5.0
 EGRESS_CLASS = "long_context"
-ERROR_TEXT_LIMIT = 200
 
 Sleep = Callable[[float], Awaitable[None]]
 
@@ -107,7 +106,9 @@ def filter_events(
 
 
 def _error_text(err: Exception) -> str:
-    return f"{type(err).__name__}: {str(err)[:ERROR_TEXT_LIMIT]}"
+    """Name the failure without its message, which could echo chapter text."""
+    status = f" {err.status_code}" if isinstance(err, ModelHTTPError) else ""
+    return f"{type(err).__name__}{status}"
 
 
 async def _call_with_retries(
@@ -270,9 +271,24 @@ async def run_chapters(
     return shared, len(todo)
 
 
-def _payloads(repo: Repository, *, novel_id: str, chapter_max: int, ids: set[int]) -> dict[int, dict[str, Any]]:
+def _payloads(
+    repo: Repository,
+    *,
+    novel_id: str,
+    chapter_max: int,
+    ids: set[int],
+    model_name: str | None = None,
+    prompt_version: str | None = None,
+) -> dict[int, dict[str, Any]]:
+    """Read extractions for ids, limited to one model and prompt version when given."""
     rows = repo.list_extractions(novel_id=novel_id, chapter_max=chapter_max)
-    return {r["chapter_id"]: json.loads(r["payload"]) for r in rows if r["chapter_id"] in ids}
+    return {
+        r["chapter_id"]: json.loads(r["payload"])
+        for r in rows
+        if r["chapter_id"] in ids
+        and model_name in (None, r["model"])
+        and prompt_version in (None, r["prompt_version"])
+    }
 
 
 def _scores(chapters: list[GoldChapter], payloads: dict[int, dict[str, Any]]) -> dict[str, Any] | None:
@@ -319,6 +335,47 @@ def _p95(values: list[float]) -> float:
     return ordered[math.ceil(0.95 * len(ordered)) - 1]
 
 
+def add_totals(
+    conn: sqlite3.Connection,
+    *,
+    model_name: str,
+    prompt_version: str,
+    shared: _Shared,
+    wall_seconds: float,
+    chapters_ok: int,
+) -> dict[str, Any]:
+    """Add this run's counts to the totals kept in the benchmark database, and return them.
+
+    llm_runs can't hold these, and keeping them here means they go when the database goes.
+    """
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS bench_totals (model TEXT, prompt_version TEXT, http_429 INTEGER, "
+        "wall_seconds REAL, chapters_ok INTEGER, dropped TEXT, PRIMARY KEY (model, prompt_version))"
+    )
+    row = conn.execute(
+        "SELECT http_429, wall_seconds, chapters_ok, dropped FROM bench_totals "
+        "WHERE model = ? AND prompt_version = ?",
+        (model_name, prompt_version),
+    ).fetchone()
+    dropped = Counter(json.loads(row["dropped"]) if row else {})
+    dropped.update(shared.dropped)
+    totals = {
+        "http_429": (row["http_429"] if row else 0) + shared.http_429,
+        "wall_seconds": (row["wall_seconds"] if row else 0.0) + wall_seconds,
+        "chapters_ok": (row["chapters_ok"] if row else 0) + chapters_ok,
+        "dropped": dict(dropped),
+    }
+    with conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO bench_totals VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                model_name, prompt_version, totals["http_429"], totals["wall_seconds"],
+                totals["chapters_ok"], json.dumps(totals["dropped"]),
+            ),
+        )
+    return totals
+
+
 def _llm_rows(
     conn: sqlite3.Connection, *, novel_id: str, model_name: str, prompt_version: str, ids: set[int]
 ) -> list[sqlite3.Row]:
@@ -344,15 +401,16 @@ def build_report(
     prompt_version: str,
     concurrency: int,
     started_at: str,
-    wall_seconds: float,
-    ran: int,
-    shared: _Shared,
-    earlier: dict[str, Any],
+    totals: dict[str, Any],
+    failed: dict[int, str],
 ) -> dict[str, Any]:
-    """Build the report from the database, adding what earlier runs of this report counted."""
+    """Build the report from the database, so a resumed run reports every chapter."""
     ids = set(chapter_ids)
     gold_ids = {c.chapter_id for c in gold.chapters}
-    cloud = _payloads(repo, novel_id=novel_id, chapter_max=chapter_max, ids=ids)
+    cloud = _payloads(
+        repo, novel_id=novel_id, chapter_max=chapter_max, ids=ids,
+        model_name=model_name, prompt_version=prompt_version,
+    )
     local = _payloads(baseline, novel_id=novel_id, chapter_max=chapter_max, ids=set(cloud))
 
     rows = _llm_rows(conn, novel_id=novel_id, model_name=model_name, prompt_version=prompt_version, ids=ids)
@@ -365,11 +423,8 @@ def build_report(
     cost = sum(r["cost_usd"] or 0.0 for r in rows)
     done = len(cloud)
     kept = sum(len(p["events"]) for p in cloud.values())
-    wall_per_chapter = wall_seconds / ran if ran else None
-
-    earlier_reliability = earlier.get("reliability", {})
-    dropped = Counter(earlier.get("dropped", {}).get("by_reason", {}))
-    dropped.update(shared.dropped)
+    timed = totals["chapters_ok"]
+    wall_per_chapter = totals["wall_seconds"] / timed if timed else None
     return {
         "meta": {
             "model": model_name,
@@ -377,17 +432,16 @@ def build_report(
             "concurrency": concurrency,
             "chapters": chapter_ids,
             "started_at": started_at,
-            "wall_seconds": wall_seconds,
-            "chapters_run_now": ran,
+            "wall_seconds": totals["wall_seconds"],
         },
         "reliability": {
             "chapters_ok": done,
-            "chapters_failed": shared.failed,
+            "chapters_failed": {n: failed.get(n, "failed earlier") for n in sorted(ids - set(cloud))},
             "schema_success": done / len(ids) if ids else None,
             "first_try_success": first_try / len(ids) if ids else None,
             "attempts": len(rows),
             "retries": sum(r["retries"] or 0 for r in rows),
-            "http_429": earlier_reliability.get("http_429", 0) + shared.http_429,
+            "http_429": totals["http_429"],
         },
         "usage": {
             "input_tokens": input_tokens,
@@ -402,7 +456,7 @@ def build_report(
             "wall_seconds_per_chapter": wall_per_chapter,
         },
         "dropped": {
-            "by_reason": dict(dropped),
+            "by_reason": totals["dropped"],
             "events_kept": kept,
             "events_per_chapter": kept / done if done else None,
         },
@@ -462,7 +516,6 @@ def run_bench(
     )
     profile = profile_from_config(config)
     prompt = load_prompt("s1_extract", config["prompts"]["s1_extract"], profile, prompts_dir)
-    earlier = json.loads(out.read_text(encoding="utf-8")) if out.is_file() else {}
 
     db.parent.mkdir(parents=True, exist_ok=True)
     conn = connect(db)
@@ -485,12 +538,16 @@ def run_bench(
             allowed_categories=set(profile.get("categories") or []), concurrency=concurrency,
             model_factory=model_factory, sleep=sleep,
         ))
+        totals = add_totals(
+            conn, model_name=model_name, prompt_version=prompt.prompt_version, shared=shared,
+            wall_seconds=time.perf_counter() - start_time if ran else 0.0,
+            chapters_ok=ran - len(shared.failed),
+        )
         report = build_report(
             conn, repo, Repository(baseline_conn), gold=gold, novel_id=novel_id,
             chapter_ids=chapter_ids, chapter_max=chapter_max, total_chapters=config["total_chapters"],
             model_name=model_name, prompt_version=prompt.prompt_version, concurrency=concurrency,
-            started_at=started_at, wall_seconds=time.perf_counter() - start_time, ran=ran,
-            shared=shared, earlier=earlier,
+            started_at=started_at, totals=totals, failed=shared.failed,
         )
     finally:
         baseline_conn.close()
