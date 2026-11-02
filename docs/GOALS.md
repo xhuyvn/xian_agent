@@ -36,6 +36,7 @@ Done when:
 - `eval/`, the prompt, production config and production S1 are unchanged
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
+- R-1 2026-11-02: deliver the benchmark runner and its unit tests -> FAIL, 2 blockers (resume counts and timing), 2f72e51, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
