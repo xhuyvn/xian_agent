@@ -25,22 +25,6 @@ Sub-goals:
 Changes:
 - 2026-11-01: owner approved the goal and the decisions above
 
-### G-14: test DeepSeek's own API, one chapter against two chapters per call (active)
-Plan: chat plan of 2026-11-02. Prompt v2, every fixed pair (1-2, 3-4, ...) in chapters 1-100 that holds a gold chapter. Cut from `cld/g13-cloud-bench`.
-Owner decisions: raw chapter text may go directly to DeepSeek for this test only, as one exception to A-04; production S1 stays local. Model `deepseek-flash` with thinking off, concurrency 10, and the owner monitors cost. Two-chapter mode counts as better only if name recall and precision do not drop and at least one flag score rises. The lead writes the code, with no agy. S2 and S3 are out of scope.
-Done when:
-- One-chapter and two-chapter calls both finish through DeepSeek directly, on the same chapters, using prompt v2 plus only the pairing instructions
-- Two-chapter mode gives one full result per chapter, scored by the same gold, and drops and counts any event whose quote is not in its assigned chapter
-- The report compares both modes with the OpenRouter and local results on names, categories, events, flags, misattributed events, tokens, cache hits, time and cost, and gives the verdict by the rule above
-- `eval/`, `prompts/`, production config and production S1 are unchanged
-- `py -m compileall -q src` and `uv run pytest tests/unit` pass, and the verifier passes
-Rounds:
-- R-1 2026-11-02: deliver the DeepSeek provider and two-chapter mode -> PASS, 0 blockers, 02e28d1, 0 agy tokens
-Sub-goals:
-- none yet
-Changes:
-- 2026-11-02: owner approved the goal and the decisions above
-
 ## Parked
 
 ## Archive
@@ -322,3 +306,21 @@ Sub-goals:
 Changes:
 - 2026-11-02: owner approved the goal and the decisions above
 - 2026-11-02: the guard blocked the agy run, so the owner chose to have the lead write the runner, with no agy
+
+### G-14: test DeepSeek's own API, one chapter against two chapters per call (done)
+Plan: chat plan of 2026-11-02. Prompt v2, every fixed pair (1-2, 3-4, ...) in chapters 1-100 that holds a gold chapter. Cut from `cld/g13-cloud-bench`.
+Owner decisions: raw chapter text may go directly to DeepSeek for this test only, as one exception to A-04; production S1 stays local. Model `deepseek-flash` with thinking off, concurrency 10, and the owner monitors cost. Two-chapter mode counts as better only if name recall and precision do not drop and at least one flag score rises. The lead writes the code, with no agy. S2 and S3 are out of scope.
+Done when:
+- One-chapter and two-chapter calls both finish through DeepSeek directly, on the same chapters, using prompt v2 plus only the pairing instructions
+- Two-chapter mode gives one full result per chapter, scored by the same gold, and drops and counts any event whose quote is not in its assigned chapter
+- The report compares both modes with the OpenRouter and local results on names, categories, events, flags, misattributed events, tokens, cache hits, time and cost, and gives the verdict by the rule above
+- `eval/`, `prompts/`, production config and production S1 are unchanged
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass, and the verifier passes
+Rounds:
+- R-1 2026-11-02: deliver the DeepSeek provider and two-chapter mode -> PASS, 0 blockers, 02e28d1, 0 agy tokens
+- R-2 2026-11-02: run both modes and report the numbers -> PASS, 0 blockers, 9b446bb, 0 agy tokens
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-02: owner approved the goal and the decisions above
+- 2026-11-02: verifier pass at 9b446bb, verdict: two-chapter calls did not beat one-chapter calls, goal marked done
