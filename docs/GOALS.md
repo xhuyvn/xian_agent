@@ -35,6 +35,7 @@ Done when:
 - `eval/`, `prompts/`, production config and production S1 are unchanged
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass, and the verifier passes
 Rounds:
+- R-1 2026-11-02: deliver the DeepSeek provider and two-chapter mode -> PASS, 0 blockers, 02e28d1, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
