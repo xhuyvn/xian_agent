@@ -38,6 +38,7 @@ Done when:
 Rounds:
 - R-1 2026-11-02: deliver the benchmark runner and its unit tests -> FAIL, 2 blockers (resume counts and timing), 2f72e51, 0 agy tokens
 - R-2 2026-11-02: fix the resume counts and timing -> PASS, 0 blockers, 8e2c73a, 0 agy tokens
+- R-3 2026-11-02: run the 50 chapters and report the numbers -> FAIL, 1 blocker (a cause the data does not show), d531267, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:

@@ -2,7 +2,7 @@
 
 Date: 2026-11-02. Goal: G-13.
 
-**`deepseek/deepseek-v4.1-flash-1017` beat the local extractor on names and was far faster, but it scored worse on the chapter flags.** Recall is 1.00 against 0.98 and precision 0.94 against 0.88. All 50 chapters cost $0.11. The extractor has not changed: production S1 stays local, and raw text left the machine for this benchmark only, as a one-off exception to A-04.
+**`deepseek/deepseek-v4.1-flash-1017` beat the local extractor on names and was far faster at concurrency 10, but it scored worse on `major_conflict` and `realm_breakthrough`.** Recall is 1.00 against 0.98 and precision 0.94 against 0.88. All 50 chapters cost $0.11. The extractor has not changed: production S1 stays local, and raw text left the machine for this benchmark only, as a one-off exception to A-04.
 
 ## Results
 
@@ -50,9 +50,9 @@ Both are straight-line estimates from chapters 1-100, so later, longer chapters 
 
 ## How to read this
 
-- **The flags are the cost of the better names.** On `major_conflict` cloud marked 4 chapters that the gold says have none (17, 22, 53 and 58), where local marked one. On `location_change` it marked 7 extra chapters, against 3 for local. It also missed the one gold `realm_breakthrough`, chapter 43, so that 0.00 rests on a single chapter. Flag gold rests on few positive chapters, so these scores move a lot on one chapter.
+- **Cloud sets flags on more chapters than the gold does.** On `major_conflict` cloud marked 4 chapters that the gold says have none (17, 22, 53 and 58), where local marked one. On `location_change` it marked 7 extra chapters, against 3 for local. It also missed the one gold `realm_breakthrough`, chapter 43, so that 0.00 rests on a single chapter. Flag gold rests on few positive chapters, so these scores move a lot on one chapter.
 - **Name agreement with local:** Jaccard 0.71 on the 30 non-gold chapters, with 202 names shared, 54 cloud only and 30 local only. Nothing scores those 84 differing names, so this shows how far the two differ, not which is right.
-- **The connection errors came in one burst.** All 5 failed in about 0.3 s, near the start of the run, cost nothing and passed on retry. The cause was not traced. The pilot had one more at concurrency 3.
+- **The connection errors came in one burst.** All 5 failed in about 0.3 s, near the start of the run, cost nothing and passed on retry. The cause was not traced. The pilot database shows 4 failed attempts: one connection error at concurrency 3, and 3 from an earlier launch that stopped before sending anything, because JSON-schema output was off.
 - **Concurrency stayed at 10.** With no 429s, the 20 limit may also work, but it was not tested.
 - **S2 and S3 were not run on the cloud output**, so nothing here shows how many duplicate entities it would produce, or the effect on Q&A and aliases.
 - **The hold-out was already seen.** Prompt v2 was tuned on the local model and not changed here, but this is the same data as G-10.1, with the same caveats in `docs/S1_T9_EVAL.md`. The gold was drafted by Claude.
