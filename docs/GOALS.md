@@ -25,31 +25,6 @@ Sub-goals:
 Changes:
 - 2026-11-01: owner approved the goal and the decisions above
 
-### G-15: S2-T2 pipeline stage S4, chunk and embed (active)
-Plan: docs/IMPLEMENTATION_PLAN.md, S2-T2. Depends on G-3, G-4, G-5 and G-12.
-Owner decisions: the lead writes the code, with no agy, running the same two checks before each verifier pass. OQ-17: `entity_ids` comes from whole-word matches against the aliases visible at the chunk's chapter, tagging every entity that shares a matched alias; `arc_id` copies `chapters.arc_id`, null for now, and S5 sets it on the points later (S3-T1 gains that step). BGE-M3 stays in Ollama, so S4 refuses to start while any other model is loaded (blueprint and plan wording change: "Ollama unloaded" no longer applies). BM25 is new shared code that S2-T3 will reuse: word tokens, stable hashed term IDs, BM25 term weights, IDF from Qdrant. The input hash covers chunk text, entity tags and settings; an unchanged chapter makes no embed call, and a changed chapter deletes its points and writes new ones. S4 stops at the first chapter where S2 is not done, takes `--from` and `--to`, and refuses `--stale-only`. S4 writes `jobs` rows and no `llm_runs` rows. The live run uses a copy of `data/eval/g101-full.db` (prompt v2) on chapters 1-100, into `xn_chunks`, whose data stays for S2-T3. Three rounds: foundations, stage, live run.
-Done when:
-- `xn run --novel pntt1 --stage s4 --from --to` works, also as `python -m xn`
-- Text chunks are ~450 tokens with 60 overlap, plus one `summary` point per chapter from `micro_summary`
-- Each point has BGE-M3 dense and BM25 sparse vectors, and a payload with `entity_ids` and `arc_id`
-- `entity_ids` uses only aliases visible at that chapter, and a test proves it
-- A second run makes no embed calls and adds no points, and a changed chapter rewrites only that chapter and leaves no stale points
-- A failed chapter is marked `failed` and stops the run
-- The live run gives identical point counts on both runs, dense and sparse queries respect `chapter_max`, and measured items/s is in the blueprint §3.9 cost table
-- OQ-17 is closed in the plan, and the blueprint's Ollama lines are corrected
-- Unit tests use a fake embedder
-- `py -m compileall -q src` and `uv run pytest tests/unit` pass
-Rounds:
-- R-1 2026-11-02: deliver the chunker, BM25 vectors, embed client and alias tagger -> PASS, 0 blockers, 6fc9cef, 0 agy tokens
-- R-2 2026-11-02: deliver stage S4 with its runner, CLI and config -> PASS, 0 blockers, 7ca6b97, 0 agy tokens
-- R-3 2026-11-02: run S4 live on chapters 1-100 twice and correct the docs -> PASS, 0 blockers, d7351ac, 0 agy tokens
-Sub-goals:
-- none yet
-Changes:
-- 2026-11-02: owner approved the goal and the decisions above
-- 2026-11-02: live run on `data/eval/g15-s4.db`, the copy of `g101-full.db`: run 1 wrote 704 points (604 text, 100 summary) in 32.6 s, run 2 skipped all 100 chapters at 704 points. Four real queries, dense and sparse, stayed within `chapter_max` 10 and returned nothing for another novel. Ollama's `/api/ps` showed BGE-M3 at 689 MB resident
-- 2026-11-02: verifier pass on the whole branch at d7351ac -> PASS, every "Done when" line met. Its NIT on plan assumption A-02 still saying "Ollama unloaded" was fixed after that pass
-
 ## Parked
 
 ## Archive
@@ -310,3 +285,29 @@ Changes:
 - 2026-11-01: owner approved the goal and the decisions above
 - 2026-11-01: owner moved the code from agy to the lead, after two agy runs (157018 tokens) were blocked by a denied MCP call and a denied `read_file`, with no code written
 - 2026-11-01: verifier pass at 755bb5b -> PASS, every "Done when" line met; owner approved marking the goal done, recorded with PR #18
+
+### G-15: S2-T2 pipeline stage S4, chunk and embed (done)
+Plan: docs/IMPLEMENTATION_PLAN.md, S2-T2. Depends on G-3, G-4, G-5 and G-12.
+Owner decisions: the lead writes the code, with no agy, running the same two checks before each verifier pass. OQ-17: `entity_ids` comes from whole-word matches against the aliases visible at the chunk's chapter, tagging every entity that shares a matched alias; `arc_id` copies `chapters.arc_id`, null for now, and S5 sets it on the points later (S3-T1 gains that step). BGE-M3 stays in Ollama, so S4 refuses to start while any other model is loaded (blueprint and plan wording change: "Ollama unloaded" no longer applies). BM25 is new shared code that S2-T3 will reuse: word tokens, stable hashed term IDs, BM25 term weights, IDF from Qdrant. The input hash covers chunk text, entity tags and settings; an unchanged chapter makes no embed call, and a changed chapter deletes its points and writes new ones. S4 stops at the first chapter where S2 is not done, takes `--from` and `--to`, and refuses `--stale-only`. S4 writes `jobs` rows and no `llm_runs` rows. The live run uses a copy of `data/eval/g101-full.db` (prompt v2) on chapters 1-100, into `xn_chunks`, whose data stays for S2-T3. Three rounds: foundations, stage, live run.
+Done when:
+- `xn run --novel pntt1 --stage s4 --from --to` works, also as `python -m xn`
+- Text chunks are ~450 tokens with 60 overlap, plus one `summary` point per chapter from `micro_summary`
+- Each point has BGE-M3 dense and BM25 sparse vectors, and a payload with `entity_ids` and `arc_id`
+- `entity_ids` uses only aliases visible at that chapter, and a test proves it
+- A second run makes no embed calls and adds no points, and a changed chapter rewrites only that chapter and leaves no stale points
+- A failed chapter is marked `failed` and stops the run
+- The live run gives identical point counts on both runs, dense and sparse queries respect `chapter_max`, and measured items/s is in the blueprint §3.9 cost table
+- OQ-17 is closed in the plan, and the blueprint's Ollama lines are corrected
+- Unit tests use a fake embedder
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-02: deliver the chunker, BM25 vectors, embed client and alias tagger -> PASS, 0 blockers, 6fc9cef, 0 agy tokens
+- R-2 2026-11-02: deliver stage S4 with its runner, CLI and config -> PASS, 0 blockers, 7ca6b97, 0 agy tokens
+- R-3 2026-11-02: run S4 live on chapters 1-100 twice and correct the docs -> PASS, 0 blockers, d7351ac, 0 agy tokens
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-02: owner approved the goal and the decisions above
+- 2026-11-02: live run on `data/eval/g15-s4.db`, the copy of `g101-full.db`: run 1 wrote 704 points (604 text, 100 summary) in 32.6 s, run 2 skipped all 100 chapters at 704 points. Four real queries, dense and sparse, stayed within `chapter_max` 10 and returned nothing for another novel. Ollama's `/api/ps` showed BGE-M3 at 689 MB resident
+- 2026-11-02: verifier pass on the whole branch at d7351ac -> PASS, every "Done when" line met. Its NIT on plan assumption A-02 still saying "Ollama unloaded" was fixed after that pass
+- 2026-11-02: owner approved marking the goal done, recorded with PR #22
