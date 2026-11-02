@@ -25,6 +25,26 @@ Sub-goals:
 Changes:
 - 2026-11-01: owner approved the goal and the decisions above
 
+### G-15: S2-T2 pipeline stage S4, chunk and embed (active)
+Plan: docs/IMPLEMENTATION_PLAN.md, S2-T2. Depends on G-3, G-4, G-5 and G-12.
+Owner decisions: the lead writes the code, with no agy, running the same two checks before each verifier pass. OQ-17: `entity_ids` comes from whole-word matches against the aliases visible at the chunk's chapter, tagging every entity that shares a matched alias; `arc_id` copies `chapters.arc_id`, null for now, and S5 sets it on the points later (S3-T1 gains that step). BGE-M3 stays in Ollama, so S4 refuses to start while any other model is loaded (blueprint and plan wording change: "Ollama unloaded" no longer applies). BM25 is new shared code that S2-T3 will reuse: word tokens, stable hashed term IDs, BM25 term weights, IDF from Qdrant. The input hash covers chunk text, entity tags and settings; an unchanged chapter makes no embed call, and a changed chapter deletes its points and writes new ones. S4 stops at the first chapter where S2 is not done, takes `--from` and `--to`, and refuses `--stale-only`. S4 writes `jobs` rows and no `llm_runs` rows. The live run uses a copy of `data/eval/g101-full.db` (prompt v2) on chapters 1-100, into `xn_chunks`, whose data stays for S2-T3. Three rounds: foundations, stage, live run.
+Done when:
+- `xn run --novel pntt1 --stage s4 --from --to` works, also as `python -m xn`
+- Text chunks are ~450 tokens with 60 overlap, plus one `summary` point per chapter from `micro_summary`
+- Each point has BGE-M3 dense and BM25 sparse vectors, and a payload with `entity_ids` and `arc_id`
+- `entity_ids` uses only aliases visible at that chapter, and a test proves it
+- A second run makes no embed calls and adds no points, and a changed chapter rewrites only that chapter and leaves no stale points
+- A failed chapter is marked `failed` and stops the run
+- The live run gives identical point counts on both runs, dense and sparse queries respect `chapter_max`, and measured items/s is in the blueprint §3.9 cost table
+- OQ-17 is closed in the plan, and the blueprint's Ollama lines are corrected
+- Unit tests use a fake embedder
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-02: owner approved the goal and the decisions above
+
 ## Parked
 
 ## Archive
