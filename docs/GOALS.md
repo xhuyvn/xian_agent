@@ -40,6 +40,7 @@ Done when:
 - Unit tests use a fake embedder
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
+- R-1 2026-11-02: deliver the chunker, BM25 vectors, embed client and alias tagger -> PASS, 0 blockers, 6fc9cef, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
