@@ -46,10 +46,12 @@ Done when:
 - Context recall >= 0.75 on the 15 Q&A
 - factual_qa p95 latency <= 15 s
 Rounds:
+- R-1 2026-11-03: run the 10 spoiler probes and 15 Q&A through the full graph at cdcf999 -> FAIL on latency, 0 leaks, recall met, p95 25.5 s; $0.035, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
 - 2026-11-03: owner approved the goal and the decisions above
+- 2026-11-03: R-1 on a copy of `data/eval/g15-s4.db` (ledger and `xn_chunks` for chapters 1-100), `qwen38-udiq4-hui-10k` resident, `deepseek/deepseek-v4.1-flash-1017`, prompt v3. Leaks: 0 of 10 probes on the final answers; the L5 scan regenerated s09 ("khu vật thuật") and q03 ("chiếc bình thần bí", a descriptive alias), and both retries came back clean; nothing was redacted. Context recall 0.84 on ledger events (the S1-T9 metric), 0.91 with chunks; q01 failed with a connection error and q13 missed its chapters. Latency: 23 factual_qa runs, p95 25.5 s. 26 of 53 cloud attempts failed in under 0.2 s with "Connection error", and curl to openrouter.ai failed TLS setup (exit 35) on 6 of 8 tries right after, so the network inflated the run. Even without backoff, s04 and s07 take about 16 s, and s01 (26.4 s) includes the ~14 s reranker cold load; runs with no failed attempt took 4.6-14.3 s. Successful cloud calls averaged 6.7 s, max 13.9 s
 
 ### G-11: clear the non-blocking Sprint 1 recheck items (active)
 Plan: docs/S1_T9_EVAL.md, "Sprint 1 recheck". Follows G-10, whose recall line stays open there. Cut from `cld/s1-t9-feature-a3a0ec`.
