@@ -43,6 +43,7 @@ Sub-goals:
 Changes:
 - 2026-11-03: owner approved the goal and the decisions above
 - 2026-11-03: live check route to gate on a copy of `data/bench/e2e/xn.db` (ledger chapters 2-15) with `xn_chunks` and `qwen38-udiq4-hui-10k` resident. Three factual_qa at N=100: 8 chunks each, top rerank 0.996/0.994/0.989, gate passes. Compare Hàn Lập vs Trương Thiết at N=15: 6 chunks tagged 7/13 in turns, 20 events, gate passes. Compare Hàn Lập vs Mặc đại phu at N=15: refused, Mặc đại phu has 2 events. Warm route-to-gate 2-3 s, first query ~13 s (reranker load); VRAM 14,184 of 16,303 MiB. The router added junk mentions on two questions (out of scope). Synthesize not reached: OPENROUTER_API_KEY not set in the session; owner is setting it
+- 2026-11-03: live check completed with the key set, the same 5 questions through `xn ask` on `deepseek/deepseek-v4.1-flash-1017`, compact egress. The three factual_qa answers cite chunk-only chapters (67/74/75, 23/26, 65/68/69), and `payload_chapters` lists them beside the ledger chapters; all citations are <= N. Compare Hàn Lập vs Trương Thiết answered per aspect, grounding 42%; Hàn Lập vs Mặc đại phu refused with no cloud call. Grounding 70/60/60/42%. 4 successful calls, $0.0062 in total, 4.0-5.7k input tokens; 3 attempts failed with "Connection error" and the retries recovered them
 
 ## Parked
 
