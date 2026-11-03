@@ -23,21 +23,27 @@ class OllamaEmbedder:
         model: str,
         batch_size: int,
         dense_size: int,
+        options: dict[str, Any] | None = None,
         client: httpx.Client | None = None,
     ) -> None:
         self.model = model
         self._batch_size = batch_size
         self._dense_size = dense_size
+        self._options = options
         self._client = client or httpx.Client(base_url=base_url, timeout=TIMEOUT_SECONDS)
 
     @classmethod
-    def from_config(cls, config: dict[str, Any], client: httpx.Client | None = None) -> OllamaEmbedder:
+    def from_config(
+        cls, config: dict[str, Any], client: httpx.Client | None = None, *, query: bool = False
+    ) -> OllamaEmbedder:
+        """Build the S4 embedder, or with query=True the query encoder with its Ollama options."""
         embedder = config["models"]["embedder"]
         return cls(
             base_url=embedder["base_url"],
             model=embedder["name"],
             batch_size=embedder["batch_size"],
             dense_size=config["qdrant"]["dense_size"],
+            options=embedder.get("query_options") if query else None,
             client=client,
         )
 
@@ -51,9 +57,10 @@ class OllamaEmbedder:
         vectors: list[list[float]] = []
         for start in range(0, len(texts), self._batch_size):
             batch = texts[start : start + self._batch_size]
-            data = self._request(
-                "POST", "/api/embed", json={"model": self.model, "input": batch, "truncate": False}
-            )
+            body: dict[str, Any] = {"model": self.model, "input": batch, "truncate": False}
+            if self._options:
+                body["options"] = self._options
+            data = self._request("POST", "/api/embed", json=body)
             embeddings = data.get("embeddings") or []
             if len(embeddings) != len(batch):
                 raise EmbedError(f"expected {len(batch)} embeddings, got {len(embeddings)}")

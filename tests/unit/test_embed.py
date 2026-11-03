@@ -94,3 +94,23 @@ def test_from_config_reads_the_embedder_settings():
     assert embedder.model == "m"
     assert embedder._batch_size == 8
     assert embedder._dense_size == 1024
+
+
+def test_query_encoder_sends_the_query_options():
+    calls = []
+    client = httpx.Client(base_url="http://ollama", transport=httpx.MockTransport(echo_handler(calls)))
+    config = {
+        "models": {
+            "embedder": {
+                "name": "m",
+                "base_url": "http://ollama",
+                "batch_size": 8,
+                "query_options": {"num_gpu": 0},
+            }
+        },
+        "qdrant": {"dense_size": SIZE},
+    }
+    OllamaEmbedder.from_config(config, client, query=True).embed(["q"])
+    OllamaEmbedder.from_config(config, client).embed(["d"])
+    assert calls[0]["options"] == {"num_gpu": 0}
+    assert "options" not in calls[1]
