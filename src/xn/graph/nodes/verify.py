@@ -38,7 +38,9 @@ def _grounding_ratio(markdown: str) -> float:
 def verify(state: QueryState, deps: GraphDeps) -> dict[str, Any]:
     """Strip citations that are not in the evidence or are above N, and log grounding."""
     chapter_max = state["chapter_max"]
-    allowed = {i.chapter_id for i in state["evidence"].items if i.chapter_id <= chapter_max}
+    evidence = state["evidence"]
+    chapters = {i.chapter_id for i in evidence.items} | {c.chapter_id for c in evidence.chunks}
+    allowed = {c for c in chapters if c <= chapter_max}
     answer = state["answer"]
 
     markdown = _strip_invalid(normalize_text(answer.markdown), allowed)

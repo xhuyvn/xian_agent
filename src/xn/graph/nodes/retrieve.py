@@ -120,7 +120,7 @@ def _chunks(state: QueryState, deps: GraphDeps) -> tuple[list[ChunkEvidence], li
 
 
 def retrieve(state: QueryState, deps: GraphDeps) -> dict[str, Any]:
-    """Build the evidence pack; compare gives each entity half the budget."""
+    """Build the evidence pack; compare gives each entity half of the budget left after chunks."""
     chunks: list[ChunkEvidence] = []
     errors: list[str] = []
     if state["decision"].intent in ("factual_qa", "compare"):

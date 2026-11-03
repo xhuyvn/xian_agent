@@ -146,6 +146,14 @@ def test_prompt_holds_only_question_and_items_as_escaped_data(repo: Repository) 
     assert render_compact_prompt("q", []) == "<question>q</question>\n<evidence>\n\n</evidence>"
 
 
+def test_chunk_items_are_marked_and_events_are_not() -> None:
+    prompt = render_compact_prompt(
+        "q", [CompactItem("event", 3, "sự kiện"), CompactItem("chunk", 4, "đoạn <trích>")]
+    )
+    assert '<item chapter="3">sự kiện</item>' in prompt
+    assert '<item chapter="4" kind="chunk">đoạn &lt;trích&gt;</item>' in prompt
+
+
 @pytest.mark.parametrize(
     "items, match",
     [

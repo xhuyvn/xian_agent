@@ -82,9 +82,17 @@ def validate_compact(items: list[CompactItem], chapter_max: int) -> None:
         raise EgressError(f"Evidence has {total} tokens, over the {MAX_EVIDENCE_TOKENS} budget")
 
 
+def _kind_attr(item: CompactItem) -> str:
+    """Mark every kind but event, so event items render as they did before chunks existed."""
+    return "" if item.kind == "event" else f' kind="{item.kind}"'
+
+
 def render_compact_prompt(question: str, items: list[CompactItem]) -> str:
     """Build the user prompt, the only text that reaches OpenRouter besides the system prompt."""
-    lines = [f'<item chapter="{i.chapter_id}">{escape(i.text, quote=False)}</item>' for i in items]
+    lines = [
+        f'<item chapter="{i.chapter_id}"{_kind_attr(i)}>{escape(i.text, quote=False)}</item>'
+        for i in items
+    ]
     evidence = "\n".join(lines)
     return (
         f"<question>{escape(question, quote=False)}</question>\n"
