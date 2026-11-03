@@ -56,7 +56,9 @@ Sub-goals:
   - `py -m compileall -q src` and `uv run pytest tests/unit` pass
   Rounds:
   - R-1 2026-11-03: time each node in state, retry a dropped connection after 0.25 s, route cloud calls by latency -> PASS, 0 blockers, 79b0c96, 0 agy tokens; NIT: an empty timings update is the implicit per-turn reset
+  - R-2 2026-11-03: warm live re-run of the 25 gold questions at a1dcb1b -> PASS, p95 12.95 s, 0 leaks, recall 0.91; $0.059, 0 agy tokens
   Changes:
+  - 2026-11-03: R-2 on a fresh copy of `data/eval/g15-s4.db`, reranker and router warmed before timing; curl to openrouter.ai 8/10 just before. All 25 questions routed to factual_qa (q07 was timeline in G-20 R-1). Per question 3.98-13.11 s, p95 12.95 s; per node: route 1.3-3.7 s, retrieve <= 0.4 s, synthesize 1.8-11.0 s (q13 11.0 s, q09 9.6 s). Successful cloud calls 4.2 s mean, 10.4 s max (6.7 s and 13.9 s before latency routing). 16 of 43 cloud attempts still dropped at once, each now costing ~0.25 s; no question failed. Leaks 0 of 10; recall 0.91 on events, 0.98 with chunks, citation hit 0.93, 0 refused. L5: q01 regenerated, then one sentence redacted for "cự hán", a descriptive alias (giant man) first seen after chapter 10, a likely false positive
   - 2026-11-03: D3's answer-length cap dropped: in G-20 R-1, cloud latency did not track output tokens (467 tokens took 12.4 s, 1,066 took 3.3 s)
   - 2026-11-03: owner approved the sub-goal and the decisions above; profile before the change (warm, no cloud): route 2-6 s (median ~4 s), retrieve ~0.4 s (17.5 s cold), cloud answer 6.7 s mean, 13.9 s max
 Changes:
