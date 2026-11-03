@@ -36,6 +36,7 @@ Done when:
 - A live check runs 3 `factual_qa` and 2 `compare` questions on pntt1, chapters 1-100
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
+- R-1 2026-11-03: deliver the factual_qa rerank gate, compare's per-entity chunks and gate, and the compare fallback in route -> PASS, 0 blockers, f833ea3, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
