@@ -8,23 +8,6 @@ Round line: `R-<n> <date>: <what this round had to achieve> -> PASS|FAIL, <n> bl
 
 ## Active
 
-### G-16: S2-T3 hybrid retrieval and reranker (active)
-Plan: docs/IMPLEMENTATION_PLAN.md, S2-T3. Depends on G-9, G-12 and G-15.
-Owner decisions: the lead writes the code, with no agy. D1: `bge-reranker-v2-m3` fp16 on the GPU, in process through `sentence-transformers` on a CUDA 12.8 PyTorch build, loaded on first use. D2: BGE-M3 query encoding on the CPU through Ollama (`num_gpu: 0`), the same weights as S4. D3: only `factual_qa` gets hybrid chunks, in a new `EvidencePack.chunks` list carrying the rerank score; deep_dive and compare stay as they are; the gate threshold, synthesize and verify stay in S2-T4. D4: the hybrid query lives in `qdrant.py` (dense 40 + sparse 40, RRF, bound filter in every leg), `retriever.py` composes it, `retrieve.py` calls it. D5: an encoder or reranker failure is logged in `errors` and gives no chunks, so the gate refuses. The 15-question recall eval is out of scope. Two rounds: setup and parts, then wiring and live check.
-Done when:
-- Hybrid search returns the top 30, reranked to the top 8, all with `chapter_id <= chapter_max` and none from another novel
-- A unit test shows the bound filter is in every prefetch leg
-- The live check reports encode, fuse and rerank time, and VRAM with Qwen loaded
-- `py -m compileall -q src` and `uv run pytest tests/unit` pass
-Rounds:
-- R-1 2026-11-03: deliver the reranker, CPU query encoding and hybrid query -> PASS, 0 blockers, 77af56d, 0 agy tokens
-- R-2 2026-11-03: wire the hybrid retriever into factual_qa and run the live check -> PASS, 0 blockers, 89eba0a, 0 agy tokens
-Sub-goals:
-- none yet
-Changes:
-- 2026-11-03: owner approved the goal and the decisions above
-- 2026-11-03: live check on `xn_chunks` (pntt1, chapters 1-100, 704 points), with `qwen38-udiq4-hui-10k` resident at 13,297 MiB. Five questions, four at `chapter_max` 100 and one at 10: each fused 30 and returned 8, max chapter 75/100/71/98 and 6 for the N=10 question, and another novel returned 0. Warm steps: encode 26-66 ms on the CPU (Ollama `size_vram` 0), fuse 6-9 ms, rerank 110-116 ms, total 147-176 ms. The first query took 14.0 s, almost all reranker load. VRAM with Qwen and the reranker: 15,699 of 16,303 MiB (torch 1,092 MiB allocated, 1,346 MiB reserved), above the blueprint's ~13 GB estimate, with ~0.6 GB headroom
-
 ### G-11: clear the non-blocking Sprint 1 recheck items (active)
 Plan: docs/S1_T9_EVAL.md, "Sprint 1 recheck". Follows G-10, whose recall line stays open there. Cut from `cld/s1-t9-feature-a3a0ec`.
 Owner decisions: the lead writes the code, with no agy, because it is two small changes that must be run to be proven. `total_chapters` becomes 2468, the chapters on disk. `pntt1.yaml` gains `raw_dir: data/novel/pham_nhan_tu_tien_1`, and `xn run` falls back to `data/novels/<id>/raw` only without it (this changes the G-6 decision on the raw path; the folder stays where it is). The checkpoint serializer gets an explicit allowlist covering every `xn.schemas.state` model stored in a checkpoint, which includes `EvidenceItem` if it logs too. `novels` rows in existing databases keep their old value: there is no `data/xn.db`, and S0 only writes a missing row. Blueprint history (old benchmark plans) stays as written. The extraction prompt, the gold set, the extractor model and the other recheck items are out of scope. One round.
@@ -45,6 +28,24 @@ Changes:
 ## Parked
 
 ## Archive
+
+### G-16: S2-T3 hybrid retrieval and reranker (done)
+Plan: docs/IMPLEMENTATION_PLAN.md, S2-T3. Depends on G-9, G-12 and G-15.
+Owner decisions: the lead writes the code, with no agy. D1: `bge-reranker-v2-m3` fp16 on the GPU, in process through `sentence-transformers` on a CUDA 12.8 PyTorch build, loaded on first use. D2: BGE-M3 query encoding on the CPU through Ollama (`num_gpu: 0`), the same weights as S4. D3: only `factual_qa` gets hybrid chunks, in a new `EvidencePack.chunks` list carrying the rerank score; deep_dive and compare stay as they are; the gate threshold, synthesize and verify stay in S2-T4. D4: the hybrid query lives in `qdrant.py` (dense 40 + sparse 40, RRF, bound filter in every leg), `retriever.py` composes it, `retrieve.py` calls it. D5: an encoder or reranker failure is logged in `errors` and gives no chunks, so the gate refuses. The 15-question recall eval is out of scope. Two rounds: setup and parts, then wiring and live check.
+Done when:
+- Hybrid search returns the top 30, reranked to the top 8, all with `chapter_id <= chapter_max` and none from another novel
+- A unit test shows the bound filter is in every prefetch leg
+- The live check reports encode, fuse and rerank time, and VRAM with Qwen loaded
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-03: deliver the reranker, CPU query encoding and hybrid query -> PASS, 0 blockers, 77af56d, 0 agy tokens
+- R-2 2026-11-03: wire the hybrid retriever into factual_qa and run the live check -> PASS, 0 blockers, 89eba0a, 0 agy tokens
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-03: owner approved the goal and the decisions above
+- 2026-11-03: live check on `xn_chunks` (pntt1, chapters 1-100, 704 points), with `qwen38-udiq4-hui-10k` resident at 13,297 MiB. Five questions, four at `chapter_max` 100 and one at 10: each fused 30 and returned 8, max chapter 75/100/71/98 and 6 for the N=10 question, and another novel returned 0. Warm steps: encode 26-66 ms on the CPU (Ollama `size_vram` 0), fuse 6-9 ms, rerank 110-116 ms, total 147-176 ms. The first query took 14.0 s, almost all reranker load. VRAM with Qwen and the reranker: 15,699 of 16,303 MiB (torch 1,092 MiB allocated, 1,346 MiB reserved), above the blueprint's ~13 GB estimate, with ~0.6 GB headroom
+- 2026-11-03: verifier pass at 89eba0a -> PASS, every "Done when" line met; owner approved marking the goal done, recorded with PR #23
 
 ### G-1: S1-T1 project setup and config split (done)
 Plan: docs/IMPLEMENTATION_PLAN.md, S1-T1.
