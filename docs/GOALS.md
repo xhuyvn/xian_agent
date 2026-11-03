@@ -8,6 +8,20 @@ Round line: `R-<n> <date>: <what this round had to achieve> -> PASS|FAIL, <n> bl
 
 ## Active
 
+### G-16: S2-T3 hybrid retrieval and reranker (active)
+Plan: docs/IMPLEMENTATION_PLAN.md, S2-T3. Depends on G-9, G-12 and G-15.
+Owner decisions: the lead writes the code, with no agy. D1: `bge-reranker-v2-m3` fp16 on the GPU, in process through `sentence-transformers` on a CUDA 12.8 PyTorch build, loaded on first use. D2: BGE-M3 query encoding on the CPU through Ollama (`num_gpu: 0`), the same weights as S4. D3: only `factual_qa` gets hybrid chunks, in a new `EvidencePack.chunks` list carrying the rerank score; deep_dive and compare stay as they are; the gate threshold, synthesize and verify stay in S2-T4. D4: the hybrid query lives in `qdrant.py` (dense 40 + sparse 40, RRF, bound filter in every leg), `retriever.py` composes it, `retrieve.py` calls it. D5: an encoder or reranker failure is logged in `errors` and gives no chunks, so the gate refuses. The 15-question recall eval is out of scope. Two rounds: setup and parts, then wiring and live check.
+Done when:
+- Hybrid search returns the top 30, reranked to the top 8, all with `chapter_id <= chapter_max` and none from another novel
+- A unit test shows the bound filter is in every prefetch leg
+- The live check reports encode, fuse and rerank time, and VRAM with Qwen loaded
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-03: owner approved the goal and the decisions above
+
 ### G-11: clear the non-blocking Sprint 1 recheck items (active)
 Plan: docs/S1_T9_EVAL.md, "Sprint 1 recheck". Follows G-10, whose recall line stays open there. Cut from `cld/s1-t9-feature-a3a0ec`.
 Owner decisions: the lead writes the code, with no agy, because it is two small changes that must be run to be proven. `total_chapters` becomes 2468, the chapters on disk. `pntt1.yaml` gains `raw_dir: data/novel/pham_nhan_tu_tien_1`, and `xn run` falls back to `data/novels/<id>/raw` only without it (this changes the G-6 decision on the raw path; the folder stays where it is). The checkpoint serializer gets an explicit allowlist covering every `xn.schemas.state` model stored in a checkpoint, which includes `EvidenceItem` if it logs too. `novels` rows in existing databases keep their old value: there is no `data/xn.db`, and S0 only writes a missing row. Blueprint history (old benchmark plans) stays as written. The extraction prompt, the gold set, the extractor model and the other recheck items are out of scope. One round.
