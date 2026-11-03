@@ -55,7 +55,9 @@ Sub-goals:
   - Each answer's run record shows time per node
   - `py -m compileall -q src` and `uv run pytest tests/unit` pass
   Rounds:
+  - R-1 2026-11-03: time each node in state, retry a dropped connection after 0.25 s, route cloud calls by latency -> PASS, 0 blockers, 79b0c96, 0 agy tokens; NIT: an empty timings update is the implicit per-turn reset
   Changes:
+  - 2026-11-03: D3's answer-length cap dropped: in G-20 R-1, cloud latency did not track output tokens (467 tokens took 12.4 s, 1,066 took 3.3 s)
   - 2026-11-03: owner approved the sub-goal and the decisions above; profile before the change (warm, no cloud): route 2-6 s (median ~4 s), retrieve ~0.4 s (17.5 s cold), cloud answer 6.7 s mean, 13.9 s max
 Changes:
 - 2026-11-03: owner approved the goal and the decisions above
