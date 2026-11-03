@@ -1,5 +1,6 @@
 """Unit tests for the Qdrant store, using the in-memory client (payload indexes have no effect there)."""
 
+from types import SimpleNamespace
 import warnings
 
 import pytest
@@ -126,3 +127,58 @@ def test_query_applies_tenant_and_chapter_bound(store):
         novel_id="a", chapter_max=2, using=DENSE_VECTOR, query=[1.0, 0.0, 0.0, 0.0], limit=10
     )
     assert sorted((h.payload["novel_id"], h.payload["chapter_id"]) for h in hits) == [("a", 1), ("a", 2)]
+
+
+def sparse(term=7):
+    return models.SparseVector(indices=[term], values=[1.0])
+
+
+def test_hybrid_applies_tenant_and_chapter_bound(store):
+    store.upsert_chunks(novel_id="a", points=[chunk(chapter_id=c, term=7) for c in (1, 2, 3)])
+    store.upsert_chunks(novel_id="b", points=[chunk(chapter_id=1, term=7)])
+    hits = store.hybrid_chunks(
+        novel_id="a", chapter_max=2, dense=[1.0, 0.0, 0.0, 0.0], sparse=sparse(), prefetch_limit=40, limit=30
+    )
+    assert sorted((h.payload["novel_id"], h.payload["chapter_id"]) for h in hits) == [("a", 1), ("a", 2)]
+
+
+def test_hybrid_fuses_dense_only_and_sparse_only_hits(store):
+    store.upsert_chunks(
+        novel_id="a",
+        points=[
+            chunk(chapter_id=1, dense=(1.0, 0.0, 0.0, 0.0), term=1),
+            chunk(chapter_id=2, dense=(0.0, 1.0, 0.0, 0.0), term=7),
+        ],
+    )
+    hits = store.hybrid_chunks(
+        novel_id="a", chapter_max=5, dense=[1.0, 0.0, 0.0, 0.0], sparse=sparse(7), prefetch_limit=1, limit=30
+    )
+    assert sorted(h.payload["chapter_id"] for h in hits) == [1, 2]
+
+
+def test_hybrid_puts_the_bound_filter_in_every_leg():
+    class Recorder:
+        def query_points(self, **kwargs):
+            self.kwargs = kwargs
+            return SimpleNamespace(points=[])
+
+    client = Recorder()
+    store = QdrantStore(client, chunks_collection="c", arcs_collection="a", dense_size=SIZE)
+    store.hybrid_chunks(
+        novel_id="a", chapter_max=9, dense=[1.0] * SIZE, sparse=sparse(), prefetch_limit=40, limit=30
+    )
+    expected = QdrantStore._bound_filter(novel_id="a", chapter_max=9)
+    legs = client.kwargs["prefetch"]
+    assert [leg.using for leg in legs] == [DENSE_VECTOR, SPARSE_VECTOR]
+    assert all(leg.filter == expected and leg.limit == 40 for leg in legs)
+    assert client.kwargs["query_filter"] == expected
+    assert client.kwargs["query"] == models.FusionQuery(fusion=models.Fusion.RRF)
+    assert client.kwargs["limit"] == 30
+
+
+@pytest.mark.parametrize("novel_id,chapter_max", [(None, 1), ("", 1), ("a", None), ("a", True)])
+def test_hybrid_rejects_missing_bounds(store, novel_id, chapter_max):
+    with pytest.raises(ValueError):
+        store.hybrid_chunks(
+            novel_id=novel_id, chapter_max=chapter_max, dense=[1.0] * SIZE, sparse=sparse(), prefetch_limit=1, limit=1
+        )

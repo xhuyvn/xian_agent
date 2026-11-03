@@ -16,6 +16,14 @@ models:
     name: "bge-m3:latest"
     base_url: "http://localhost:11434"
     batch_size: 32
+    # Query time keeps the GPU for Qwen and the reranker, so queries encode on the CPU.
+    query_options:
+      num_gpu: 0
+  reranker:
+    name: "BAAI/bge-reranker-v2-m3"
+    device: "cuda"
+    max_length: 512
+    batch_size: 16
   macro_synthesizer:
     name: "deepseek/deepseek-v4.1-flash-1017"
     temperature: 0.3
@@ -33,3 +41,8 @@ qdrant:
     chunks: "xn_chunks"
     arcs: "xn_arcs"
   dense_size: 1024
+
+retrieval:
+  prefetch_k: 40
+  fused_k: 30
+  top_k: 8

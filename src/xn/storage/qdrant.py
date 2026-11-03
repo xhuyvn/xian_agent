@@ -188,6 +188,31 @@ class QdrantStore:
             with_payload=True,
         ).points
 
+    @story_read
+    def hybrid_chunks(
+        self,
+        *,
+        novel_id: str,
+        chapter_max: int,
+        dense: list[float],
+        sparse: models.SparseVector,
+        prefetch_limit: int,
+        limit: int,
+    ) -> list[models.ScoredPoint]:
+        """Dense and sparse prefetch fused by RRF; each leg and the fusion carry the bound filter."""
+        bound = self._bound_filter(novel_id=novel_id, chapter_max=chapter_max)
+        return self._client.query_points(
+            collection_name=self._chunks,
+            prefetch=[
+                models.Prefetch(query=dense, using=DENSE_VECTOR, filter=bound, limit=prefetch_limit),
+                models.Prefetch(query=sparse, using=SPARSE_VECTOR, filter=bound, limit=prefetch_limit),
+            ],
+            query=models.FusionQuery(fusion=models.Fusion.RRF),
+            query_filter=bound,
+            limit=limit,
+            with_payload=True,
+        ).points
+
     @staticmethod
     def _bound_filter(*, novel_id: str, chapter_max: int) -> models.Filter:
         """The tenant and spoiler filter. Every chunk read goes through this."""
