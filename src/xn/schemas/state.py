@@ -94,4 +94,7 @@ class QueryState(TypedDict, total=False):
     answer: Optional[Answer]
     grounding_ratio: Optional[float]
     refusal: Optional[str]
+    forbidden: list[str]
+    spoiler_retries: int
+    regenerate: bool
     errors: Annotated[list[str], operator.add]

@@ -33,6 +33,11 @@ def _continue_unless_refused(next_node: str) -> Any:
     return choose
 
 
+def _regenerate_on_leak(state: QueryState) -> str:
+    """Send a leaking answer back to synthesize once; verify redacts a second leak."""
+    return "synthesize" if state.get("regenerate") else END
+
+
 def open_checkpointer(path: Path) -> SqliteSaver:
     """Open the SqliteSaver at path, creating its directory and tables."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -68,7 +73,7 @@ def build_graph(deps: GraphDeps, checkpointer: SqliteSaver) -> Any:
     graph.add_edge("retrieve", "gate")
     graph.add_conditional_edges("gate", _continue_unless_refused("synthesize"), ["synthesize", END])
     graph.add_edge("synthesize", "verify")
-    graph.add_edge("verify", END)
+    graph.add_conditional_edges("verify", _regenerate_on_leak, ["synthesize", END])
     return graph.compile(checkpointer=checkpointer)
 
 
@@ -83,7 +88,10 @@ def thread_novel(checkpointer: SqliteSaver, thread_id: str) -> Optional[str]:
 def ask(
     graph: Any, *, thread_id: str, novel_id: str, query: str, until: Optional[int] = None
 ) -> QueryState:
-    """Run one turn; chapter_max is left out so a follow-up inherits it from the thread."""
+    """Run one turn; chapter_max is left out so a follow-up inherits it from the thread.
+
+    The L5 retry fields are reset, so a turn never inherits the last turn's forbidden terms.
+    """
     return graph.invoke(
         {
             "novel_id": novel_id,
@@ -91,6 +99,9 @@ def ask(
             "query": query,
             "until": until,
             "mode": "compact",
+            "forbidden": [],
+            "spoiler_retries": 0,
+            "regenerate": False,
         },
         {"configurable": {"thread_id": thread_id}},
     )

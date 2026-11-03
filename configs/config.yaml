@@ -3,7 +3,7 @@ daily_spend_cap_usd: 1.0
 long_context_model: null
 prompts:
   s1_extract: v2
-  synthesize_compact: v2
+  synthesize_compact: v3
 
 models:
   local_extractor:

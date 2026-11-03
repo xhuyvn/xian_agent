@@ -47,18 +47,24 @@ CONFIG: dict[str, Any] = {
 class FakeCloud:
     """Model factory that records calls and answers with a fixed Answer."""
 
-    def __init__(self, markdown: str = "Hàn Lập đột phá [chương 10].", citations: Any = (10,)) -> None:
-        self.markdown = markdown
+    def __init__(
+        self, markdown: str | list[str] = "Hàn Lập đột phá [chương 10].", citations: Any = (10,)
+    ) -> None:
+        # A list gives one answer per call, the last one repeating.
+        self.answers = [markdown] if isinstance(markdown, str) else list(markdown)
         self.citations = list(citations)
         self.names: list[str] = []
         self.prompts: list[str] = []
+        self.systems: list[str] = []
 
     def __call__(self, name: str) -> FunctionModel:
         self.names.append(name)
 
         def respond(messages: list[Any], info: AgentInfo) -> ModelResponse:
             self.prompts.append(str(messages[-1].parts[-1].content))
-            args = {"markdown": self.markdown, "citations": self.citations}
+            self.systems.append(str(messages[0].parts[0].content))
+            markdown = self.answers[min(len(self.names), len(self.answers)) - 1]
+            args = {"markdown": markdown, "citations": self.citations}
             return ModelResponse(
                 parts=[ToolCallPart(info.output_tools[0].name, args)],
                 usage=RequestUsage(input_tokens=10, output_tokens=5),
@@ -165,9 +171,12 @@ def verify_answer(
     chunks = [
         ChunkEvidence(chapter_id=c, kind="text", chunk_no=0, text="đoạn", score=0.9) for c in chunk_chapters
     ]
-    deps = GraphDeps(repo=None, config={})  # type: ignore[arg-type]
+    conn = connect(":memory:")
+    init_schema(conn)
+    deps = GraphDeps(repo=Repository(conn), config={})
     return verify(
         {
+            "novel_id": "nov",
             "chapter_max": chapter_max,
             "evidence": EvidencePack(items=items, chunks=chunks),
             "answer": Answer(markdown=markdown, citations=citations),
@@ -462,6 +471,71 @@ def test_tenant_isolation_through_the_graph(run_query: Any, db_conn: Any) -> Non
     cloud = FakeCloud()
     run_query(cloud=cloud, until=50)
     assert "của truyện khác" not in cloud.prompts[0]
+
+
+LEAK = "Thầy của hắn thật ra là Mặc Cư Nhân [chương 10]."
+CLEAN = "Hàn Lập đột phá [chương 10]."
+
+
+@pytest.fixture
+def future_alias(db_conn: sqlite3.Connection) -> None:
+    """Add an alias first seen at chapter 80, above the bound of 50 used below."""
+    db_conn.execute(
+        "INSERT INTO entity_aliases (novel_id, alias_norm, entity_id, first_chapter, source) "
+        "VALUES ('nov', 'mặc cư nhân', 2, 80, 'exact')"
+    )
+    db_conn.commit()
+
+
+@pytest.fixture
+def v3_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setitem(CONFIG, "prompts", {"synthesize_compact": "v3"})
+
+
+@pytest.mark.usefixtures("future_alias", "v3_prompt")
+def test_leak_regenerates_once_with_the_terms_forbidden(run_query: Any) -> None:
+    cloud = FakeCloud([f"{CLEAN} {LEAK}", CLEAN])
+    state = run_query(cloud=cloud, until=50)
+    assert len(cloud.names) == 2
+    assert "mặc cư nhân" not in cloud.systems[0]
+    assert "CẤM NHẮC TỚI" in cloud.systems[1] and "- mặc cư nhân" in cloud.systems[1]
+    assert state["answer"].markdown == CLEAN
+    assert state["forbidden"] == ["mặc cư nhân"]
+
+
+@pytest.mark.usefixtures("future_alias", "v3_prompt")
+def test_second_leak_redacts_only_that_sentence(run_query: Any) -> None:
+    cloud = FakeCloud(f"{CLEAN} {LEAK}", citations=(10,))
+    state = run_query(cloud=cloud, until=50)
+    assert len(cloud.names) == 2
+    assert state["answer"].markdown == f"{CLEAN} [đã ẩn để tránh tiết lộ]"
+    assert state["answer"].citations == [10]
+
+
+@pytest.mark.usefixtures("future_alias", "v3_prompt")
+def test_clean_answer_makes_one_call_and_is_unchanged(run_query: Any) -> None:
+    cloud = FakeCloud(CLEAN)
+    state = run_query(cloud=cloud, until=50)
+    assert len(cloud.names) == 1
+    assert state["answer"].markdown == CLEAN
+
+
+@pytest.mark.usefixtures("future_alias", "v3_prompt")
+def test_alias_is_no_leak_once_the_bound_reaches_it(run_query: Any) -> None:
+    cloud = FakeCloud(f"{CLEAN} Hắn là Mặc Cư Nhân [chương 10].")
+    state = run_query(cloud=cloud, until=90)
+    assert len(cloud.names) == 1
+    assert "Mặc Cư Nhân" in state["answer"].markdown
+
+
+@pytest.mark.usefixtures("future_alias", "v3_prompt")
+def test_follow_up_turn_starts_without_the_last_turns_forbidden_terms(run_query: Any) -> None:
+    run_query(cloud=FakeCloud([LEAK, CLEAN]), until=50)
+    cloud = FakeCloud(CLEAN)
+    state = run_query("Còn gì nữa?", cloud=cloud)
+    assert len(cloud.names) == 1
+    assert "CẤM NHẮC TỚI" not in cloud.systems[0]
+    assert state["forbidden"] == [] and state["spoiler_retries"] == 0
 
 
 def test_spend_cap_stops_the_graph(run_query: Any, db_conn: Any) -> None:
