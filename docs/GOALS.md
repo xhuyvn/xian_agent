@@ -18,6 +18,7 @@ Done when:
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
 - R-1 2026-11-03: deliver the reranker, CPU query encoding and hybrid query -> PASS, 0 blockers, 77af56d, 0 agy tokens
+- R-2 2026-11-03: wire the hybrid retriever into factual_qa and run the live check -> PASS, 0 blockers, 89eba0a, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
