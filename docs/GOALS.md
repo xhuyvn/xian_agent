@@ -37,10 +37,12 @@ Done when:
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
 - R-1 2026-11-03: deliver the factual_qa rerank gate, compare's per-entity chunks and gate, and the compare fallback in route -> PASS, 0 blockers, f833ea3, 0 agy tokens
+- R-2 2026-11-03: send chunks to the cloud model with the v2 prompt, accept their citations in verify, run the live check -> PASS on code, 0 blockers, 71b9f09, 0 agy tokens; the live check stopped before synthesize (OPENROUTER_API_KEY not set in the session), so that line stays open
 Sub-goals:
 - none yet
 Changes:
 - 2026-11-03: owner approved the goal and the decisions above
+- 2026-11-03: live check route to gate on a copy of `data/bench/e2e/xn.db` (ledger chapters 2-15) with `xn_chunks` and `qwen38-udiq4-hui-10k` resident. Three factual_qa at N=100: 8 chunks each, top rerank 0.996/0.994/0.989, gate passes. Compare Hàn Lập vs Trương Thiết at N=15: 6 chunks tagged 7/13 in turns, 20 events, gate passes. Compare Hàn Lập vs Mặc đại phu at N=15: refused, Mặc đại phu has 2 events. Warm route-to-gate 2-3 s, first query ~13 s (reranker load); VRAM 14,184 of 16,303 MiB. The router added junk mentions on two questions (out of scope). Synthesize not reached: OPENROUTER_API_KEY not set in the session; owner is setting it
 
 ## Parked
 
