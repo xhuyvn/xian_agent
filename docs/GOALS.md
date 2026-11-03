@@ -31,6 +31,7 @@ Done when:
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
 - R-1 2026-11-03: deliver the scanner, its two guarded repository reads and the PNTT realm ladder -> PASS, 0 blockers, 3232a8f, 0 agy tokens; NITs: `test_prompts.py` updated for the filled ladder; a realm text naming two rungs counts as the higher one
+- R-2 2026-11-03: wire the scan into verify, regenerate once with the leaked terms forbidden (prompt v3), redact a second leak -> PASS, 0 blockers, 51bfeb7, 0 agy tokens; NIT: three of the five new graph tests guard over-triggering and the per-turn reset rather than the retry edge
 Sub-goals:
 - none yet
 Changes:
