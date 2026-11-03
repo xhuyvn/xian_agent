@@ -27,13 +27,13 @@ def store(client):
     return s
 
 
-def chunk(chapter_id=1, chunk_no=0, dense=(1.0, 0.0, 0.0, 0.0), term=7):
+def chunk(chapter_id=1, chunk_no=0, dense=(1.0, 0.0, 0.0, 0.0), term=7, entity_ids=(1,)):
     return ChunkPoint(
         kind="text",
         chapter_id=chapter_id,
         chunk_no=chunk_no,
         arc_id=None,
-        entity_ids=[1],
+        entity_ids=list(entity_ids),
         text="x",
         dense=list(dense),
         sparse_indices=[term],
@@ -174,6 +174,40 @@ def test_hybrid_puts_the_bound_filter_in_every_leg():
     assert client.kwargs["query_filter"] == expected
     assert client.kwargs["query"] == models.FusionQuery(fusion=models.Fusion.RRF)
     assert client.kwargs["limit"] == 30
+
+
+def test_hybrid_entity_filter_is_in_every_leg_with_the_bound():
+    class Recorder:
+        def query_points(self, **kwargs):
+            self.kwargs = kwargs
+            return SimpleNamespace(points=[])
+
+    client = Recorder()
+    store = QdrantStore(client, chunks_collection="c", arcs_collection="a", dense_size=SIZE)
+    store.hybrid_chunks(
+        novel_id="a", chapter_max=9, dense=[1.0] * SIZE, sparse=sparse(), prefetch_limit=40, limit=30, entity_id=5
+    )
+    expected = QdrantStore._bound_filter(novel_id="a", chapter_max=9)
+    expected.must.append(models.FieldCondition(key="entity_ids", match=models.MatchValue(value=5)))
+    assert all(leg.filter == expected for leg in client.kwargs["prefetch"])
+    assert client.kwargs["query_filter"] == expected
+
+
+def test_hybrid_entity_filter_keeps_only_tagged_chunks(store):
+    store.upsert_chunks(
+        novel_id="a",
+        points=[
+            chunk(chapter_id=1, entity_ids=(1,)),
+            chunk(chapter_id=2, entity_ids=(1, 2)),
+            chunk(chapter_id=3, entity_ids=(2,)),
+            chunk(chapter_id=9, entity_ids=(2,)),
+        ],
+    )
+    store.upsert_chunks(novel_id="b", points=[chunk(chapter_id=1, entity_ids=(2,))])
+    hits = store.hybrid_chunks(
+        novel_id="a", chapter_max=5, dense=[1.0, 0.0, 0.0, 0.0], sparse=sparse(), prefetch_limit=40, limit=30, entity_id=2
+    )
+    assert sorted((h.payload["novel_id"], h.payload["chapter_id"]) for h in hits) == [("a", 2), ("a", 3)]
 
 
 @pytest.mark.parametrize("novel_id,chapter_max", [(None, 1), ("", 1), ("a", None), ("a", True)])

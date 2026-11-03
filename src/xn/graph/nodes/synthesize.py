@@ -1,4 +1,4 @@
-"""Synthesize node: answer from the evidence pack on an OpenRouter model."""
+"""Synthesize node: answer from the evidence pack (events and chunks) on an OpenRouter model."""
 
 from __future__ import annotations
 
@@ -28,10 +28,13 @@ def synthesize(state: QueryState, deps: GraphDeps) -> dict[str, Any]:
         deps.prompts_dir,
     )
     model_cfg = deps.config["models"][MODEL_KEYS[state["decision"].intent]]
+    evidence = state["evidence"]
     items = [
         CompactItem(kind="event", chapter_id=item.chapter_id, text=item.cloud_text())
-        for item in sorted(state["evidence"].items, key=lambda i: (i.chapter_id, i.event_id))
+        for item in sorted(evidence.items, key=lambda i: (i.chapter_id, i.event_id))
     ]
+    # Chunks follow the events in rerank order, so the best passage comes first.
+    items += [CompactItem(kind="chunk", chapter_id=c.chapter_id, text=c.text) for c in evidence.chunks]
     agent = Agent(output_type=Answer, system_prompt=prompt.text, retries=1)
     result = run_compact(
         agent,

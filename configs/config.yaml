@@ -3,6 +3,7 @@ daily_spend_cap_usd: 1.0
 long_context_model: null
 prompts:
   s1_extract: v2
+  synthesize_compact: v2
 
 models:
   local_extractor:
@@ -46,3 +47,4 @@ retrieval:
   prefetch_k: 40
   fused_k: 30
   top_k: 8
+  min_rerank_score: 0.3

@@ -39,9 +39,16 @@ class FakeReranker:
         return [int(p.split()[-1]) / 100 for p in passages]
 
 
-def hit(chapter_id: int, n: int, novel_id: str = "a") -> Any:
+def hit(chapter_id: int, n: int, novel_id: str = "a", entity_ids: tuple[int, ...] = (1,)) -> Any:
     return SimpleNamespace(
-        payload={"novel_id": novel_id, "chapter_id": chapter_id, "chunk_no": n, "kind": "text", "text": f"đoạn {n}"}
+        payload={
+            "novel_id": novel_id,
+            "chapter_id": chapter_id,
+            "chunk_no": n,
+            "kind": "text",
+            "text": f"đoạn {n}",
+            "entity_ids": list(entity_ids),
+        }
     )
 
 
@@ -78,6 +85,24 @@ def test_drops_any_hit_outside_the_bound_before_reranking() -> None:
     chunks = retriever.retrieve(novel_id="a", chapter_max=5, query="Hàn Lập")
     assert [c.chapter_id for c in chunks] == [2]
     assert reranker.calls[0][1] == ["đoạn 10"]
+
+
+def test_entity_search_filters_tags_and_overrides_top_k() -> None:
+    retriever, store, _, reranker = make(
+        [hit(1, 90, entity_ids=(2,)), hit(2, 80, entity_ids=(1, 2)), hit(3, 70), hit(4, 60, entity_ids=(2,))]
+    )
+    chunks = retriever.retrieve(novel_id="a", chapter_max=5, query="Hàn Lập", entity_id=2, top_k=3)
+    assert store.calls[0]["entity_id"] == 2
+    # The untagged chunk is dropped before reranking, as a guard against a store bug.
+    assert reranker.calls[0][1] == ["đoạn 90", "đoạn 80", "đoạn 60"]
+    assert [(c.chapter_id, c.entity_id) for c in chunks] == [(1, 2), (2, 2), (4, 2)]
+
+
+def test_search_without_entity_leaves_it_unset() -> None:
+    retriever, store, _, _ = make([hit(1, 90)])
+    chunks = retriever.retrieve(novel_id="a", chapter_max=5, query="Hàn Lập")
+    assert store.calls[0]["entity_id"] is None
+    assert chunks[0].entity_id is None
 
 
 def test_no_hits_skips_the_reranker() -> None:

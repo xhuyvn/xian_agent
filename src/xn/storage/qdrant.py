@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Optional
 from uuid import UUID, uuid5
 
 from qdrant_client import QdrantClient, models
@@ -198,9 +198,17 @@ class QdrantStore:
         sparse: models.SparseVector,
         prefetch_limit: int,
         limit: int,
+        entity_id: Optional[int] = None,
     ) -> list[models.ScoredPoint]:
-        """Dense and sparse prefetch fused by RRF; each leg and the fusion carry the bound filter."""
+        """Dense and sparse prefetch fused by RRF; each leg and the fusion carry the bound filter.
+
+        With entity_id, only chunks tagged with that entity match, in every leg as well.
+        """
         bound = self._bound_filter(novel_id=novel_id, chapter_max=chapter_max)
+        if entity_id is not None:
+            bound.must.append(
+                models.FieldCondition(key="entity_ids", match=models.MatchValue(value=entity_id))
+            )
         return self._client.query_points(
             collection_name=self._chunks,
             prefetch=[

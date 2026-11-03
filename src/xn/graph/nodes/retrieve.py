@@ -1,4 +1,7 @@
-"""Retrieve node: ledger events for the resolved entities, plus hybrid chunks for factual_qa."""
+"""Retrieve node: ledger events for the resolved entities, plus hybrid chunks.
+
+factual_qa searches every chunk; compare searches each entity's own chunks.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +10,7 @@ import logging
 from typing import Any
 
 from xn.graph.deps import GraphDeps
-from xn.llm import MAX_EVIDENCE_TOKENS, MAX_ITEM_TOKENS
+from xn.llm import MAX_CHUNKS, MAX_EVIDENCE_TOKENS, MAX_ITEM_TOKENS
 from xn.schemas.state import ChunkEvidence, EvidenceItem, EvidencePack, QueryState
 from xn.text import estimate_tokens
 
@@ -67,20 +70,47 @@ def _entity_items(entity_id: int, state: QueryState, deps: GraphDeps) -> list[Ev
     ]
 
 
+def _search(state: QueryState, deps: GraphDeps) -> list[ChunkEvidence]:
+    """Run the hybrid search the intent needs, best chunks first."""
+    retriever = deps.retriever()
+    bound = {"novel_id": state["novel_id"], "chapter_max": state["chapter_max"], "query": state["query"]}
+    if state["decision"].intent == "factual_qa":
+        chunks = retriever.retrieve(**bound)
+        logger.info("Hybrid retrieval timings: %s", retriever.last_timings)
+        return chunks
+
+    # compare: each entity gets an equal share of the chunk limit, from chunks tagged with it.
+    entity_ids = state["entity_ids"]
+    per_entity = MAX_CHUNKS // len(entity_ids) if entity_ids else 0
+    found: list[list[ChunkEvidence]] = []
+    for entity_id in entity_ids:
+        if per_entity == 0:
+            break
+        found.append(retriever.retrieve(**bound, entity_id=entity_id, top_k=per_entity))
+        logger.info("Hybrid retrieval timings for entity %d: %s", entity_id, retriever.last_timings)
+    # A chunk tagged with both entities is kept once, under the entity that found it first.
+    seen: set[tuple[int, str, int]] = set()
+    chunks = []
+    for chunk in chain.from_iterable(zip_longest(*found)):
+        if chunk is None:
+            continue
+        key = (chunk.chapter_id, chunk.kind, chunk.chunk_no)
+        if key not in seen:
+            seen.add(key)
+            chunks.append(chunk)
+    return chunks
+
+
 def _chunks(state: QueryState, deps: GraphDeps) -> tuple[list[ChunkEvidence], list[str]]:
     """Return reranked chunks within the budget; a failure gives none and an error (D5)."""
     try:
-        retriever = deps.retriever()
-        chunks = retriever.retrieve(
-            novel_id=state["novel_id"], chapter_max=state["chapter_max"], query=state["query"]
-        )
+        chunks = _search(state, deps)
     except Exception as err:
         logger.warning("Hybrid retrieval failed: %s", err)
         return [], [f"retrieve: {err}"]
-    logger.info("Hybrid retrieval timings: %s", retriever.last_timings)
     kept: list[ChunkEvidence] = []
     spent = 0
-    for chunk in chunks:
+    for chunk in chunks[:MAX_CHUNKS]:
         tokens = estimate_tokens(chunk.text)
         if spent + tokens > MAX_EVIDENCE_TOKENS:
             break
@@ -90,10 +120,10 @@ def _chunks(state: QueryState, deps: GraphDeps) -> tuple[list[ChunkEvidence], li
 
 
 def retrieve(state: QueryState, deps: GraphDeps) -> dict[str, Any]:
-    """Build the evidence pack; compare gives each entity half the budget."""
+    """Build the evidence pack; compare gives each entity half of the budget left after chunks."""
     chunks: list[ChunkEvidence] = []
     errors: list[str] = []
-    if state["decision"].intent == "factual_qa":
+    if state["decision"].intent in ("factual_qa", "compare"):
         chunks, errors = _chunks(state, deps)
     budget = MAX_EVIDENCE_TOKENS - sum(estimate_tokens(c.text) for c in chunks)
 

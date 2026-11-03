@@ -29,6 +29,28 @@ Changes:
 
 ## Archive
 
+### G-17: S2-T4 query graph, factual_qa and compare (done)
+Plan: docs/IMPLEMENTATION_PLAN.md, S2-T4. Depends on G-9 and G-16.
+Owner decisions: the lead writes the code, with no agy. D1: `factual_qa` passes the gate when the top chunk's rerank score is >= `retrieval.min_rerank_score` (0.3), with no entity required; events are still added when an entity resolves. D2: `compare` gives each entity its events at half the budget plus up to 4 chunks filtered by that entity (8 at most); its gate needs >= 2 resolved entities with >= 3 events each (OQ-07), and chunks help but are not required (a deviation from the blueprint's 0.3 rule for compare). D3: a `compare` decision with fewer than 2 mentions becomes `deep_dive` (1 mention) or `factual_qa` (none) in code. D4: chunks reach the cloud model as `chunk` items (<= 450 tokens, <= 8), with a new `synthesize_compact/v2` prompt; v1 stays. D5: `verify` allows chapters from events and chunks, all <= N. D6: `qdrant.py` and `retriever.py` gain an optional entity filter, plus the prompt file and config lines; `workflow.py` changes only if needed. Two rounds: gate, route and retrieve, then synthesize, verify, prompt and live check.
+Done when:
+- `factual_qa` refuses with "Không đủ dữ liệu đến chương N" when the top rerank score is below 0.3, and answers from chunks otherwise
+- `compare` refuses with fewer than 2 resolved entities, and every chunk it uses carries its entity, is within N and comes from the novel
+- The cloud payload carries at most 8 chunks and `llm_runs.payload_chapters` lists their chapters
+- `verify` keeps chunk citations and strips any above N
+- A live check runs 3 `factual_qa` and 2 `compare` questions on pntt1, chapters 1-100
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-03: deliver the factual_qa rerank gate, compare's per-entity chunks and gate, and the compare fallback in route -> PASS, 0 blockers, f833ea3, 0 agy tokens
+- R-2 2026-11-03: send chunks to the cloud model with the v2 prompt, accept their citations in verify, run the live check -> PASS on code, 0 blockers, 71b9f09, 0 agy tokens; the live check stopped before synthesize (OPENROUTER_API_KEY not set in the session), so that line stays open
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-03: owner approved the goal and the decisions above
+- 2026-11-03: live check route to gate on a copy of `data/bench/e2e/xn.db` (ledger chapters 2-15) with `xn_chunks` and `qwen38-udiq4-hui-10k` resident. Three factual_qa at N=100: 8 chunks each, top rerank 0.996/0.994/0.989, gate passes. Compare Hàn Lập vs Trương Thiết at N=15: 6 chunks tagged 7/13 in turns, 20 events, gate passes. Compare Hàn Lập vs Mặc đại phu at N=15: refused, Mặc đại phu has 2 events. Warm route-to-gate 2-3 s, first query ~13 s (reranker load); VRAM 14,184 of 16,303 MiB. The router added junk mentions on two questions (out of scope). Synthesize not reached: OPENROUTER_API_KEY not set in the session; owner is setting it
+- 2026-11-03: live check completed with the key set, the same 5 questions through `xn ask` on `deepseek/deepseek-v4.1-flash-1017`, compact egress. The three factual_qa answers cite chunk-only chapters (67/74/75, 23/26, 65/68/69), and `payload_chapters` lists them beside the ledger chapters; all citations are <= N. Compare Hàn Lập vs Trương Thiết answered per aspect, grounding 42%; Hàn Lập vs Mặc đại phu refused with no cloud call. Grounding 70/60/60/42%. 4 successful calls, $0.0062 in total, 4.0-5.7k input tokens; 3 attempts failed with "Connection error" and the retries recovered them
+- 2026-11-03: verifier pass on the whole branch at 5624d69 -> PASS, every "Done when" line met; this closes the live-check line left open in R-2. Compare ran at N=15 only, where the bench ledger has events; factual_qa used the full 1-100 chunk index
+- 2026-11-03: owner approved marking the goal done, recorded with PR #24
+
 ### G-16: S2-T3 hybrid retrieval and reranker (done)
 Plan: docs/IMPLEMENTATION_PLAN.md, S2-T3. Depends on G-9, G-12 and G-15.
 Owner decisions: the lead writes the code, with no agy. D1: `bge-reranker-v2-m3` fp16 on the GPU, in process through `sentence-transformers` on a CUDA 12.8 PyTorch build, loaded on first use. D2: BGE-M3 query encoding on the CPU through Ollama (`num_gpu: 0`), the same weights as S4. D3: only `factual_qa` gets hybrid chunks, in a new `EvidencePack.chunks` list carrying the rerank score; deep_dive and compare stay as they are; the gate threshold, synthesize and verify stay in S2-T4. D4: the hybrid query lives in `qdrant.py` (dense 40 + sparse 40, RRF, bound filter in every leg), `retriever.py` composes it, `retrieve.py` calls it. D5: an encoder or reranker failure is logged in `errors` and gives no chunks, so the gate refuses. The 15-question recall eval is out of scope. Two rounds: setup and parts, then wiring and live check.

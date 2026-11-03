@@ -149,18 +149,27 @@ def run_query(db_conn: sqlite3.Connection, tmp_path: Path):
 # --- verify ---
 
 
-def verify_answer(markdown: str, citations: list[int], chapters: list[int], chapter_max: int = 50) -> Any:
+def verify_answer(
+    markdown: str,
+    citations: list[int],
+    chapters: list[int],
+    chapter_max: int = 50,
+    chunk_chapters: tuple[int, ...] = (),
+) -> Any:
     items = [
         EvidenceItem(
             event_id=c, chapter_id=c, entity_id=1, entity_name="A", event_type="UPGRADE", description="d"
         )
         for c in chapters
     ]
+    chunks = [
+        ChunkEvidence(chapter_id=c, kind="text", chunk_no=0, text="đoạn", score=0.9) for c in chunk_chapters
+    ]
     deps = GraphDeps(repo=None, config={})  # type: ignore[arg-type]
     return verify(
         {
             "chapter_max": chapter_max,
-            "evidence": EvidencePack(items=items),
+            "evidence": EvidencePack(items=items, chunks=chunks),
             "answer": Answer(markdown=markdown, citations=citations),
         },
         deps,
@@ -192,6 +201,14 @@ def test_verify_handles_decomposed_unicode_and_case() -> None:
 
     text = unicodedata.normalize("NFD", "A [Chương 99].")
     assert verify_answer(text, [], [10])["answer"].markdown == "A."
+
+
+def test_verify_keeps_chunk_citations_and_strips_those_above_the_bound() -> None:
+    out = verify_answer(
+        "A [chương 12]. B [chương 30]. C [chương 60].", [12, 30, 60], [30], chunk_chapters=(12, 60)
+    )
+    assert out["answer"].markdown == "A [chương 12]. B [chương 30]. C."
+    assert out["answer"].citations == [12, 30]
 
 
 def test_verify_answer_without_citations_scores_zero() -> None:
@@ -228,8 +245,93 @@ def test_deep_dive_on_three_entities_cites_only_chapters_up_to_n(
 )
 def test_intent_picks_the_configured_model(run_query: Any, intent: str, model: str) -> None:
     cloud = FakeCloud()
-    run_query(cloud=cloud, router_model=router(intent=intent))
+    run_query(
+        cloud=cloud,
+        router_model=router(intent=intent, mentions=("Hàn Lập", "Lệ Phi Vũ")),
+        retriever=FakeRetriever(),
+    )
     assert cloud.names == [model]
+
+
+def test_factual_qa_refuses_below_the_rerank_threshold_without_a_cloud_call(run_query: Any) -> None:
+    cloud = FakeCloud()
+    state = run_query(
+        until=50, cloud=cloud, router_model=router("factual_qa"), retriever=FakeRetriever(score=0.29)
+    )
+    assert state["refusal"] == "Không đủ dữ liệu đến chương 50"
+    assert cloud.names == []
+
+
+class ChapterRetriever:
+    """Returns one chunk per chapter in the list, tagged with the entity it was asked for."""
+
+    last_timings: dict[str, float] = {}
+
+    def __init__(self, chapters: tuple[int, ...], score: float = 0.8) -> None:
+        self.chapters = chapters
+        self.score = score
+
+    def retrieve(self, *, entity_id: int | None = None, top_k: int | None = None, **_: Any) -> list[ChunkEvidence]:
+        base = 0 if entity_id is None else entity_id * 100
+        chunks = [
+            ChunkEvidence(
+                chapter_id=c, kind="text", chunk_no=base + i, text=f"đoạn văn chương {c}",
+                score=self.score, entity_id=entity_id,
+            )
+            for i, c in enumerate(self.chapters)
+        ]
+        return chunks[: top_k or 8]
+
+
+def test_factual_qa_sends_chunks_and_logs_their_chapters(run_query: Any, db_conn: Any) -> None:
+    cloud = FakeCloud("Bình nhỏ ở đây [chương 12]. Sai [chương 99].", [12, 99])
+    state = run_query(
+        until=50, cloud=cloud, router_model=router("factual_qa", mentions=()),
+        retriever=ChapterRetriever((12, 33)),
+    )
+    prompt = cloud.prompts[0]
+    assert '<item chapter="12" kind="chunk">đoạn văn chương 12</item>' in prompt
+    assert '<item chapter="33" kind="chunk">' in prompt
+    assert state["answer"].citations == [12]
+    row = db_conn.execute("SELECT * FROM llm_runs WHERE stage = 'synthesize'").fetchone()
+    assert row["payload_chapters"] == "12,33"
+
+
+def test_cloud_payload_never_carries_more_than_eight_chunks(run_query: Any) -> None:
+    cloud = FakeCloud()
+    run_query(
+        until=50, cloud=cloud, router_model=router("factual_qa", mentions=()),
+        retriever=ChapterRetriever(tuple(range(1, 20))),
+    )
+    assert cloud.prompts[0].count('kind="chunk"') == 8
+
+
+def test_compare_sends_each_entitys_chunks_with_its_events(run_query: Any, db_conn: Any) -> None:
+    cloud = FakeCloud("A [chương 5]. B [chương 7].", [5, 7])
+    state = run_query(
+        until=50, cloud=cloud, router_model=router("compare", mentions=("Hàn Lập", "Lệ Phi Vũ")),
+        retriever=ChapterRetriever((5, 7, 9, 11, 13)),
+    )
+    chunks = state["evidence"].chunks
+    assert [c.entity_id for c in chunks] == [1, 2] * 4
+    assert all(c.chapter_id <= 50 for c in chunks)
+    prompt = cloud.prompts[0]
+    assert prompt.count('kind="chunk"') == 8 and "biến cố chương 40" in prompt
+    assert state["answer"].citations == [5, 7]
+    assert cloud.names == ["deep/model"]
+
+
+def test_compare_with_one_resolved_entity_refuses(run_query: Any) -> None:
+    cloud = FakeCloud()
+    state = run_query(
+        until=50,
+        cloud=cloud,
+        router_model=router("compare", mentions=("Hàn Lập", "Người Lạ")),
+        retriever=FakeRetriever(),
+    )
+    assert state["decision"].intent == "compare" and state["entity_ids"] == [1]
+    assert state["refusal"] == "Không đủ dữ liệu đến chương 50"
+    assert cloud.names == []
 
 
 def test_llm_runs_show_compact_egress_with_bounded_chapters(run_query: Any, db_conn: Any) -> None:
@@ -322,8 +424,17 @@ def test_checkpoint_round_trip_gives_no_serializer_warning(
 class FakeRetriever:
     last_timings: dict[str, float] = {}
 
-    def retrieve(self, *, novel_id: str, chapter_max: int, query: str) -> list[ChunkEvidence]:
-        return [ChunkEvidence(chapter_id=chapter_max, kind="text", chunk_no=0, text="đoạn", score=0.9)]
+    def __init__(self, score: float = 0.9) -> None:
+        self.score = score
+
+    def retrieve(
+        self, *, novel_id: str, chapter_max: int, query: str, entity_id: int | None = None, top_k: int | None = None
+    ) -> list[ChunkEvidence]:
+        return [
+            ChunkEvidence(
+                chapter_id=chapter_max, kind="text", chunk_no=0, text="đoạn", score=self.score, entity_id=entity_id
+            )
+        ]
 
 
 def test_checkpoint_round_trip_keeps_chunks_without_serializer_warning(

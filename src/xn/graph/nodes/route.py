@@ -56,10 +56,19 @@ def _decide(state: QueryState, deps: GraphDeps) -> RouterDecision:
     return result.output
 
 
+def _fit_compare(decision: RouterDecision) -> RouterDecision:
+    """Turn a compare with fewer than two mentions into deep_dive or factual_qa (G-17 D3)."""
+    if decision.intent != "compare" or len(decision.mentions) >= 2:
+        return decision
+    intent = "deep_dive" if decision.mentions else "factual_qa"
+    logger.info("Compare with %d mentions, using %s", len(decision.mentions), intent)
+    return decision.model_copy(update={"intent": intent})
+
+
 def route(state: QueryState, deps: GraphDeps) -> dict[str, Any]:
     """Classify the question; on any failure fall back to factual_qa with no mentions."""
     try:
-        return {**TURN_RESET, "decision": _decide(state, deps)}
+        return {**TURN_RESET, "decision": _fit_compare(_decide(state, deps))}
     except Exception as err:
         logger.warning("Router failed, using factual_qa: %s", err)
         return {
