@@ -16,11 +16,11 @@ from xn.graph.nodes.gate import gate
 from xn.graph.nodes.resolve import resolve_entities
 from xn.graph.nodes.retrieve import EVENTS_PER_ENTITY, retrieve
 from xn.graph.nodes.route import route
-from xn.llm import MAX_EVIDENCE_TOKENS
-from xn.schemas.state import EvidenceItem, EvidencePack, RouterDecision
+from xn.llm import MAX_EVIDENCE_TOKENS, MAX_ITEM_TOKENS
+from xn.schemas.state import ChunkEvidence, EvidenceItem, EvidencePack, RouterDecision
 from xn.storage.database import connect, init_schema
 from xn.storage.repository import Repository
-from xn.text import estimate_tokens
+from xn.text import CHARS_PER_TOKEN, estimate_tokens
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG: dict[str, Any] = {
@@ -496,3 +496,91 @@ def test_gate_thresholds(repo: Repository, intent: str, events: int, passes: boo
 
 def test_gate_refuses_without_a_resolved_entity(repo: Repository) -> None:
     assert run_gate(repo, "deep_dive", [], 9)["refusal"] == "Không đủ dữ liệu đến chương 42"
+
+
+# --- retrieve: hybrid chunks ---
+
+
+class FakeRetriever:
+    def __init__(self, chunks: list[ChunkEvidence] | None = None, error: Exception | None = None) -> None:
+        self.chunks = chunks or []
+        self.error = error
+        self.calls: list[dict[str, Any]] = []
+        self.last_timings: dict[str, float] = {}
+
+    def retrieve(self, **kwargs: Any) -> list[ChunkEvidence]:
+        self.calls.append(kwargs)
+        if self.error:
+            raise self.error
+        return self.chunks
+
+
+def chunk_evidence(chapter_id: int = 5, text: str = "Hàn Lập luyện Trường Xuân Công.", score: float = 0.8) -> ChunkEvidence:
+    return ChunkEvidence(chapter_id=chapter_id, kind="text", chunk_no=0, text=text, score=score)
+
+
+def retrieve_with(repo: Repository, fake: FakeRetriever, intent: str, entity_ids: list[int] | None = None) -> Any:
+    return retrieve(
+        {
+            "novel_id": "nov",
+            "chapter_max": 20,
+            "query": "Hàn Lập học công pháp gì?",
+            "entity_ids": entity_ids or [],
+            "decision": decision(intent=intent),
+        },
+        deps_for(repo, retriever_factory=lambda _config: fake),
+    )
+
+
+def test_factual_qa_gets_hybrid_chunks_within_the_bound(repo: Repository) -> None:
+    fake = FakeRetriever([chunk_evidence(score=0.9), chunk_evidence(chapter_id=3, score=0.4)])
+    out = retrieve_with(repo, fake, "factual_qa")
+    assert out["evidence"].chunks == fake.chunks
+    assert fake.calls == [{"novel_id": "nov", "chapter_max": 20, "query": "Hàn Lập học công pháp gì?"}]
+    assert out["evidence"].tokens == sum(estimate_tokens(c.text) for c in fake.chunks)
+    assert "errors" not in out
+
+
+@pytest.mark.parametrize("intent", ["deep_dive", "compare", "timeline"])
+def test_other_intents_do_not_call_the_retriever(repo: Repository, intent: str) -> None:
+    fake = FakeRetriever([chunk_evidence()])
+    out = retrieve_with(repo, fake, intent, [1])
+    assert fake.calls == []
+    assert out["evidence"].chunks == []
+
+
+def test_retriever_failure_gives_no_chunks_and_an_error(repo: Repository) -> None:
+    out = retrieve_with(repo, FakeRetriever(error=RuntimeError("reranker down")), "factual_qa")
+    assert out["evidence"].chunks == []
+    assert out["errors"] == ["retrieve: reranker down"]
+
+
+def test_chunks_take_their_share_of_the_evidence_budget(repo: Repository, db_conn: Any) -> None:
+    description = "d" * int(CHARS_PER_TOKEN * MAX_ITEM_TOKENS * 0.8)
+    db_conn.executemany(
+        "INSERT INTO entity_events (novel_id, id, chapter_id, entity_id, event_type, ordinal, description) "
+        "VALUES ('nov', ?, ?, 1, 'UPGRADE', ?, ?)",
+        [(i, 1 + i % 20, i, description) for i in range(1, EVENTS_PER_ENTITY + 1)],
+    )
+    db_conn.commit()
+    big = "c" * int(CHARS_PER_TOKEN * (MAX_EVIDENCE_TOKENS - 5_000) / 2)
+    fake = FakeRetriever([chunk_evidence(text=big), chunk_evidence(text=big)])
+    pack = retrieve_with(repo, fake, "factual_qa", [1])["evidence"]
+    chunk_tokens = sum(estimate_tokens(c.text) for c in pack.chunks)
+    event_tokens = sum(estimate_tokens(i.cloud_text()) for i in pack.items)
+    assert len(pack.chunks) == 2
+    assert 0 < len(pack.items) < EVENTS_PER_ENTITY
+    assert event_tokens <= MAX_EVIDENCE_TOKENS - chunk_tokens
+    assert pack.tokens == chunk_tokens + event_tokens <= MAX_EVIDENCE_TOKENS
+
+
+def test_the_retriever_is_built_once(repo: Repository) -> None:
+    built: list[int] = []
+
+    def factory(_config: Any) -> FakeRetriever:
+        built.append(1)
+        return FakeRetriever()
+
+    deps = deps_for(repo, retriever_factory=factory)
+    assert deps.retriever() is deps.retriever()
+    assert built == [1]

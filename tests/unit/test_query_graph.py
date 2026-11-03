@@ -27,7 +27,7 @@ from xn.graph.deps import GraphDeps
 from xn.graph.nodes.verify import verify
 from xn.graph.workflow import ask, build_graph, open_checkpointer, thread_novel
 from xn.llm import SpendCapError
-from xn.schemas.state import Answer, EvidenceItem, EvidencePack
+from xn.schemas.state import Answer, ChunkEvidence, EvidenceItem, EvidencePack
 from xn.storage.database import connect, init_schema
 from xn.storage.repository import Repository
 
@@ -124,7 +124,9 @@ def run_query(db_conn: sqlite3.Connection, tmp_path: Path):
         router_model: Any = None,
         thread_id: str = "t-1",
         until: int | None = None,
+        retriever: Any = None,
     ) -> Any:
+        extra = {"retriever_factory": lambda _config: retriever} if retriever else {}
         deps = GraphDeps(
             repo=Repository(db_conn),
             config=CONFIG,
@@ -132,6 +134,7 @@ def run_query(db_conn: sqlite3.Connection, tmp_path: Path):
             router_model=router_model or router(),
             cloud_factory=cloud or FakeCloud(),
             sleep=lambda _: None,
+            **extra,
         )
         saver = open_checkpointer(tmp_path / "data" / "graph_checkpoints.db")
         try:
@@ -314,6 +317,26 @@ def test_checkpoint_round_trip_gives_no_serializer_warning(
     assert isinstance(state["answer"], Answer)
     assert isinstance(state["evidence"], EvidencePack)
     assert isinstance(state["evidence"].items[0], EvidenceItem)
+
+
+class FakeRetriever:
+    last_timings: dict[str, float] = {}
+
+    def retrieve(self, *, novel_id: str, chapter_max: int, query: str) -> list[ChunkEvidence]:
+        return [ChunkEvidence(chapter_id=chapter_max, kind="text", chunk_no=0, text="đoạn", score=0.9)]
+
+
+def test_checkpoint_round_trip_keeps_chunks_without_serializer_warning(
+    run_query: Any, caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(jsonplus, "_warned_unregistered_types", set())
+    monkeypatch.setattr(jsonplus, "_warned_blocked_types", set())
+    with warnings.catch_warnings(), caplog.at_level(logging.WARNING, logger=jsonplus.logger.name):
+        warnings.simplefilter("error")
+        run_query(until=50, router_model=router("factual_qa"), retriever=FakeRetriever())
+        state = run_query(until=50, router_model=router("factual_qa"), retriever=FakeRetriever())
+    assert [r.getMessage() for r in caplog.records if r.name == jsonplus.logger.name] == []
+    assert state["evidence"].chunks == FakeRetriever().retrieve(novel_id="nov", chapter_max=50, query="q")
 
 
 def test_tenant_isolation_through_the_graph(run_query: Any, db_conn: Any) -> None:

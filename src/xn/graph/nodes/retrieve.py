@@ -1,4 +1,4 @@
-"""Retrieve node: rank ledger events for the resolved entities under the evidence budget."""
+"""Retrieve node: ledger events for the resolved entities, plus hybrid chunks for factual_qa."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import Any
 
 from xn.graph.deps import GraphDeps
 from xn.llm import MAX_EVIDENCE_TOKENS, MAX_ITEM_TOKENS
-from xn.schemas.state import EvidenceItem, EvidencePack, QueryState
+from xn.schemas.state import ChunkEvidence, EvidenceItem, EvidencePack, QueryState
 from xn.text import estimate_tokens
 
 logger = logging.getLogger(__name__)
@@ -67,11 +67,39 @@ def _entity_items(entity_id: int, state: QueryState, deps: GraphDeps) -> list[Ev
     ]
 
 
+def _chunks(state: QueryState, deps: GraphDeps) -> tuple[list[ChunkEvidence], list[str]]:
+    """Return reranked chunks within the budget; a failure gives none and an error (D5)."""
+    try:
+        retriever = deps.retriever()
+        chunks = retriever.retrieve(
+            novel_id=state["novel_id"], chapter_max=state["chapter_max"], query=state["query"]
+        )
+    except Exception as err:
+        logger.warning("Hybrid retrieval failed: %s", err)
+        return [], [f"retrieve: {err}"]
+    logger.info("Hybrid retrieval timings: %s", retriever.last_timings)
+    kept: list[ChunkEvidence] = []
+    spent = 0
+    for chunk in chunks:
+        tokens = estimate_tokens(chunk.text)
+        if spent + tokens > MAX_EVIDENCE_TOKENS:
+            break
+        kept.append(chunk)
+        spent += tokens
+    return kept, []
+
+
 def retrieve(state: QueryState, deps: GraphDeps) -> dict[str, Any]:
     """Build the evidence pack; compare gives each entity half the budget."""
-    entity_budget = MAX_EVIDENCE_TOKENS
+    chunks: list[ChunkEvidence] = []
+    errors: list[str] = []
+    if state["decision"].intent == "factual_qa":
+        chunks, errors = _chunks(state, deps)
+    budget = MAX_EVIDENCE_TOKENS - sum(estimate_tokens(c.text) for c in chunks)
+
+    entity_budget = budget
     if state["decision"].intent == "compare":
-        entity_budget = MAX_EVIDENCE_TOKENS // 2
+        entity_budget = budget // 2
 
     per_entity = [
         _within_budget(_entity_items(entity_id, state, deps), entity_budget)
@@ -79,6 +107,10 @@ def retrieve(state: QueryState, deps: GraphDeps) -> dict[str, Any]:
     ]
     # Taking turns between entities means the budget trims each one's lowest ranked events.
     merged = [i for i in chain.from_iterable(zip_longest(*per_entity)) if i is not None]
-    items = _within_budget(merged, MAX_EVIDENCE_TOKENS)
+    items = _within_budget(merged, budget)
     tokens = sum(estimate_tokens(item.cloud_text()) for item in items)
-    return {"evidence": EvidencePack(items=items, tokens=tokens)}
+    tokens += sum(estimate_tokens(c.text) for c in chunks)
+    out: dict[str, Any] = {"evidence": EvidencePack(items=items, chunks=chunks, tokens=tokens)}
+    if errors:
+        out["errors"] = errors
+    return out

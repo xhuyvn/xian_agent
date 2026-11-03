@@ -48,10 +48,21 @@ class EvidenceItem(BaseModel):
         return text
 
 
+class ChunkEvidence(BaseModel):
+    """One retrieved chunk with chapter_id <= chapter_max and its reranker score in [0, 1]."""
+
+    chapter_id: int
+    kind: Literal["text", "summary"]
+    chunk_no: int
+    text: str
+    score: float
+
+
 class EvidencePack(BaseModel):
     """Evidence for one query, ranked so the most useful items come first."""
 
     items: list[EvidenceItem] = Field(default_factory=list)
+    chunks: list[ChunkEvidence] = Field(default_factory=list)
     tokens: int = 0
 
 

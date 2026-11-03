@@ -18,10 +18,10 @@ from xn.graph.nodes.retrieve import retrieve
 from xn.graph.nodes.route import route
 from xn.graph.nodes.synthesize import synthesize
 from xn.graph.nodes.verify import verify
-from xn.schemas.state import Answer, EvidencePack, QueryState, RouterDecision
+from xn.schemas.state import Answer, ChunkEvidence, EvidencePack, QueryState, RouterDecision
 
 # Models stored whole in a checkpoint; langgraph refuses to load anything else.
-CHECKPOINT_TYPES = (RouterDecision, EvidencePack, Answer)
+CHECKPOINT_TYPES = (RouterDecision, EvidencePack, ChunkEvidence, Answer)
 
 
 def _continue_unless_refused(next_node: str) -> Any:
