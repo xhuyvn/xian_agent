@@ -48,7 +48,15 @@ Done when:
 Rounds:
 - R-1 2026-11-03: run the 10 spoiler probes and 15 Q&A through the full graph at cdcf999 -> FAIL on latency, 0 leaks, recall met, p95 25.5 s; $0.035, 0 agy tokens
 Sub-goals:
-- none yet
+- G-20.1: factual_qa p95 <= 15 s (active). Owner decisions: D1: p95 is measured over the 25 gold questions in one warm process (reranker loaded before timing), like the S4 API; the CLI's per-call reranker load is reported apart. D2: a connection error that fails in under 1 s is retried after 0.25 s instead of 1/2/4 s; 429, 5xx and timeouts keep the backoff. D3: OpenRouter is asked to route the DeepSeek model by lowest latency; the answer length is capped if the tail calls are long outputs. D4: the graph logs time per node for each question. Out of scope: changing models, replacing the router, the CLI cold start; the router's ~4 s goes back to the owner if D2-D3 are not enough. Two rounds: timing, retry and routing, then a live re-run after a curl check to openrouter.ai succeeds.
+  Done when:
+  - In a warm process, factual_qa p95 <= 15 s on the 25 gold questions, counting every attempt
+  - The same run keeps 0 leaks and context recall >= 0.75
+  - Each answer's run record shows time per node
+  - `py -m compileall -q src` and `uv run pytest tests/unit` pass
+  Rounds:
+  Changes:
+  - 2026-11-03: owner approved the sub-goal and the decisions above; profile before the change (warm, no cloud): route 2-6 s (median ~4 s), retrieve ~0.4 s (17.5 s cold), cloud answer 6.7 s mean, 13.9 s max
 Changes:
 - 2026-11-03: owner approved the goal and the decisions above
 - 2026-11-03: R-1 on a copy of `data/eval/g15-s4.db` (ledger and `xn_chunks` for chapters 1-100), `qwen38-udiq4-hui-10k` resident, `deepseek/deepseek-v4.1-flash-1017`, prompt v3. Leaks: 0 of 10 probes on the final answers; the L5 scan regenerated s09 ("khu vật thuật") and q03 ("chiếc bình thần bí", a descriptive alias), and both retries came back clean; nothing was redacted. Context recall 0.84 on ledger events (the S1-T9 metric), 0.91 with chunks; q01 failed with a connection error and q13 missed its chapters. Latency: 23 factual_qa runs, p95 25.5 s. 26 of 53 cloud attempts failed in under 0.2 s with "Connection error", and curl to openrouter.ai failed TLS setup (exit 35) on 6 of 8 tries right after, so the network inflated the run. Even without backoff, s04 and s07 take about 16 s, and s01 (26.4 s) includes the ~14 s reranker cold load; runs with no failed attempt took 4.6-14.3 s. Successful cloud calls averaged 6.7 s, max 13.9 s
