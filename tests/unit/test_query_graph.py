@@ -538,6 +538,32 @@ def test_follow_up_turn_starts_without_the_last_turns_forbidden_terms(run_query:
     assert state["forbidden"] == [] and state["spoiler_retries"] == 0
 
 
+NODES = {"route", "bound", "resolve_entities", "retrieve", "gate", "synthesize", "verify"}
+
+
+def test_answer_records_time_per_node(run_query: Any) -> None:
+    state = run_query(until=50)
+    assert set(state["timings"]) == NODES
+    assert all(seconds >= 0 for seconds in state["timings"].values())
+
+
+@pytest.mark.usefixtures("future_alias", "v3_prompt")
+def test_regenerated_nodes_add_up_and_a_follow_up_starts_fresh(
+    run_query: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ticks = iter(range(1000))
+    clock = type("Clock", (), {"perf_counter": staticmethod(lambda: float(next(ticks)))})
+    # Only the graph's clock is faked; the time module itself is shared with xn.llm.
+    monkeypatch.setitem(build_graph.__globals__, "time", clock)
+    state = run_query(cloud=FakeCloud([LEAK, CLEAN]), until=50)
+    # Each node takes one fake tick; synthesize and verify ran twice.
+    assert state["timings"]["synthesize"] == 2.0 and state["timings"]["verify"] == 2.0
+    assert state["timings"]["route"] == 1.0
+
+    state = run_query("Còn gì nữa?", cloud=FakeCloud(CLEAN))
+    assert state["timings"]["synthesize"] == 1.0
+
+
 def test_spend_cap_stops_the_graph(run_query: Any, db_conn: Any) -> None:
     db_conn.execute(
         "INSERT INTO llm_runs (run_id, novel_id, cost_usd, egress_class, created_at) "

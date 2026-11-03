@@ -1,5 +1,8 @@
 fallback_model: null
 daily_spend_cap_usd: 1.0
+# OpenRouter provider routing for cloud calls (G-20.1): the fastest provider first.
+cloud_provider:
+  sort: latency
 long_context_model: null
 prompts:
   s1_extract: v2
