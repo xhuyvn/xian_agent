@@ -49,13 +49,17 @@ class EvidenceItem(BaseModel):
 
 
 class ChunkEvidence(BaseModel):
-    """One retrieved chunk with chapter_id <= chapter_max and its reranker score in [0, 1]."""
+    """One retrieved chunk with chapter_id <= chapter_max and its reranker score in [0, 1].
+
+    entity_id is set when the search was filtered to one entity (compare).
+    """
 
     chapter_id: int
     kind: Literal["text", "summary"]
     chunk_no: int
     text: str
     score: float
+    entity_id: Optional[int] = None
 
 
 class EvidencePack(BaseModel):

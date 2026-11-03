@@ -228,8 +228,34 @@ def test_deep_dive_on_three_entities_cites_only_chapters_up_to_n(
 )
 def test_intent_picks_the_configured_model(run_query: Any, intent: str, model: str) -> None:
     cloud = FakeCloud()
-    run_query(cloud=cloud, router_model=router(intent=intent))
+    run_query(
+        cloud=cloud,
+        router_model=router(intent=intent, mentions=("Hàn Lập", "Lệ Phi Vũ")),
+        retriever=FakeRetriever(),
+    )
     assert cloud.names == [model]
+
+
+def test_factual_qa_refuses_below_the_rerank_threshold_without_a_cloud_call(run_query: Any) -> None:
+    cloud = FakeCloud()
+    state = run_query(
+        until=50, cloud=cloud, router_model=router("factual_qa"), retriever=FakeRetriever(score=0.29)
+    )
+    assert state["refusal"] == "Không đủ dữ liệu đến chương 50"
+    assert cloud.names == []
+
+
+def test_compare_with_one_resolved_entity_refuses(run_query: Any) -> None:
+    cloud = FakeCloud()
+    state = run_query(
+        until=50,
+        cloud=cloud,
+        router_model=router("compare", mentions=("Hàn Lập", "Người Lạ")),
+        retriever=FakeRetriever(),
+    )
+    assert state["decision"].intent == "compare" and state["entity_ids"] == [1]
+    assert state["refusal"] == "Không đủ dữ liệu đến chương 50"
+    assert cloud.names == []
 
 
 def test_llm_runs_show_compact_egress_with_bounded_chapters(run_query: Any, db_conn: Any) -> None:
@@ -322,8 +348,17 @@ def test_checkpoint_round_trip_gives_no_serializer_warning(
 class FakeRetriever:
     last_timings: dict[str, float] = {}
 
-    def retrieve(self, *, novel_id: str, chapter_max: int, query: str) -> list[ChunkEvidence]:
-        return [ChunkEvidence(chapter_id=chapter_max, kind="text", chunk_no=0, text="đoạn", score=0.9)]
+    def __init__(self, score: float = 0.9) -> None:
+        self.score = score
+
+    def retrieve(
+        self, *, novel_id: str, chapter_max: int, query: str, entity_id: int | None = None, top_k: int | None = None
+    ) -> list[ChunkEvidence]:
+        return [
+            ChunkEvidence(
+                chapter_id=chapter_max, kind="text", chunk_no=0, text="đoạn", score=self.score, entity_id=entity_id
+            )
+        ]
 
 
 def test_checkpoint_round_trip_keeps_chunks_without_serializer_warning(

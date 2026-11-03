@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Protocol
+from typing import Any, Optional, Protocol
 
 from qdrant_client import models
 
@@ -59,8 +59,20 @@ class HybridRetriever:
             top_k=retrieval["top_k"],
         )
 
-    def retrieve(self, *, novel_id: str, chapter_max: int, query: str) -> list[ChunkEvidence]:
-        """Fuse dense and sparse hits, rerank the fused list and keep the best top_k."""
+    def retrieve(
+        self,
+        *,
+        novel_id: str,
+        chapter_max: int,
+        query: str,
+        entity_id: Optional[int] = None,
+        top_k: Optional[int] = None,
+    ) -> list[ChunkEvidence]:
+        """Fuse dense and sparse hits, rerank the fused list and keep the best top_k.
+
+        With entity_id, only chunks tagged with that entity are searched; top_k overrides the
+        configured count.
+        """
         self.last_timings = {}
         indices, values = bm25.query_vector(query)
         if not indices:
@@ -78,16 +90,22 @@ class HybridRetriever:
             sparse=models.SparseVector(indices=indices, values=values),
             prefetch_limit=self._prefetch_k,
             limit=self._fused_k,
+            entity_id=entity_id,
         )
         self.last_timings["fuse"] = time.perf_counter() - start
 
         # Qdrant already filtered; this check keeps a store bug from becoming a spoiler.
         kept = [
             h for h in hits
-            if h.payload["novel_id"] == novel_id and h.payload["chapter_id"] <= chapter_max
+            if h.payload["novel_id"] == novel_id
+            and h.payload["chapter_id"] <= chapter_max
+            and (entity_id is None or entity_id in h.payload.get("entity_ids", []))
         ]
         if len(kept) != len(hits):
-            logger.error("Dropped %d chunks outside %s <= %d", len(hits) - len(kept), novel_id, chapter_max)
+            logger.error(
+                "Dropped %d chunks outside %s <= %d (entity %s)",
+                len(hits) - len(kept), novel_id, chapter_max, entity_id,
+            )
         if not kept:
             return []
 
@@ -103,6 +121,7 @@ class HybridRetriever:
                 chunk_no=hit.payload["chunk_no"],
                 text=hit.payload["text"],
                 score=score,
+                entity_id=entity_id,
             )
-            for hit, score in ranked[: self._top_k]
+            for hit, score in ranked[: self._top_k if top_k is None else top_k]
         ]

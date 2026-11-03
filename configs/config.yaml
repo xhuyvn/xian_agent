@@ -46,3 +46,4 @@ retrieval:
   prefetch_k: 40
   fused_k: 30
   top_k: 8
+  min_rerank_score: 0.3

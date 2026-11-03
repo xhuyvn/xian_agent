@@ -144,6 +144,17 @@ def test_more_than_four_mentions_is_rejected_as_router_failure(repo: Repository)
     assert out["decision"].intent == "factual_qa" and out["decision"].mentions == []
 
 
+@pytest.mark.parametrize(
+    "mentions, intent",
+    [(["Hàn Lập", "Lệ Phi Vũ"], "compare"), (["Hàn Lập"], "deep_dive"), ([], "factual_qa")],
+)
+def test_compare_needs_two_mentions(repo: Repository, mentions: list[str], intent: str) -> None:
+    model = TestModel(custom_output_args={"intent": "compare", "mentions": mentions, "aspect": "tu vi"})
+    out = route({"novel_id": "nov", "query": "q"}, deps_for(repo, router_model=model))
+    assert out["decision"].intent == intent
+    assert out["decision"].mentions == mentions and out["decision"].aspect == "tu vi"
+
+
 # --- bound ---
 
 
@@ -457,22 +468,35 @@ def test_tenant_isolation_in_retrieve(repo: Repository, db_conn: Any) -> None:
 # --- gate ---
 
 
-def pack_of(count: int) -> EvidencePack:
+REFUSED = {"refusal": "Không đủ dữ liệu đến chương 42"}
+
+
+def pack_of(count: int, entity_id: int = 1) -> EvidencePack:
     item = EvidenceItem(
-        event_id=1, chapter_id=1, entity_id=1, entity_name="A", event_type="UPGRADE", description="d"
+        event_id=1, chapter_id=1, entity_id=entity_id, entity_name="A", event_type="UPGRADE", description="d"
     )
     return EvidencePack(items=[item] * count)
 
 
-def run_gate(repo: Repository, intent: str, entity_ids: list[int], events: int) -> dict[str, Any]:
+def run_gate(
+    repo: Repository,
+    intent: str,
+    entity_ids: list[int],
+    events: int = 0,
+    pack: EvidencePack | None = None,
+    config: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    deps = deps_for(repo)
+    if config is not None:
+        deps = GraphDeps(repo=repo, config=config, prompts_dir=deps.prompts_dir)
     return gate(
         {
             "chapter_max": 42,
             "decision": decision(intent=intent),
             "entity_ids": entity_ids,
-            "evidence": pack_of(events),
+            "evidence": pack or pack_of(events),
         },
-        deps_for(repo),
+        deps,
     )
 
 
@@ -481,17 +505,61 @@ def run_gate(repo: Repository, intent: str, entity_ids: list[int], events: int) 
     [
         ("deep_dive", 3, True),
         ("deep_dive", 2, False),
-        ("compare", 3, True),
-        ("compare", 2, False),
         ("timeline", 1, True),
         ("timeline", 0, False),
-        ("factual_qa", 1, True),
-        ("factual_qa", 0, False),
     ],
 )
 def test_gate_thresholds(repo: Repository, intent: str, events: int, passes: bool) -> None:
     out = run_gate(repo, intent, [1], events)
-    assert out == ({} if passes else {"refusal": "Không đủ dữ liệu đến chương 42"})
+    assert out == ({} if passes else REFUSED)
+
+
+def chunks_pack(*scores: float, events: int = 0) -> EvidencePack:
+    chunks = [
+        ChunkEvidence(chapter_id=1, kind="text", chunk_no=i, text="t", score=s) for i, s in enumerate(scores)
+    ]
+    return EvidencePack(items=pack_of(events).items, chunks=chunks)
+
+
+@pytest.mark.parametrize(
+    "scores, passes",
+    [((0.31, 0.9), True), ((0.3,), True), ((0.29, 0.1), False), ((), False)],
+)
+def test_factual_qa_gate_uses_the_top_rerank_score(
+    repo: Repository, scores: tuple[float, ...], passes: bool
+) -> None:
+    out = run_gate(repo, "factual_qa", [], pack=chunks_pack(*scores))
+    assert out == ({} if passes else REFUSED)
+
+
+def test_factual_qa_gate_ignores_events_without_a_good_chunk(repo: Repository) -> None:
+    assert run_gate(repo, "factual_qa", [1], pack=chunks_pack(0.2, events=9)) == REFUSED
+
+
+def test_factual_qa_gate_reads_the_threshold_from_config(repo: Repository) -> None:
+    config = {**CONFIG, "retrieval": {"min_rerank_score": 0.5}}
+    assert run_gate(repo, "factual_qa", [], pack=chunks_pack(0.4), config=config) == REFUSED
+    assert run_gate(repo, "factual_qa", [], pack=chunks_pack(0.5), config=config) == {}
+
+
+def compare_pack(first: int, second: int) -> EvidencePack:
+    return EvidencePack(items=pack_of(first, 1).items + pack_of(second, 2).items)
+
+
+@pytest.mark.parametrize(
+    "entity_ids, first, second, passes",
+    [
+        ([1, 2], 3, 3, True),
+        ([1, 2], 9, 2, False),  # each entity needs its own three events
+        ([1], 9, 0, False),  # one resolved entity is not a comparison
+        ([], 0, 0, False),
+    ],
+)
+def test_compare_gate(
+    repo: Repository, entity_ids: list[int], first: int, second: int, passes: bool
+) -> None:
+    out = run_gate(repo, "compare", entity_ids, pack=compare_pack(first, second))
+    assert out == ({} if passes else REFUSED)
 
 
 def test_gate_refuses_without_a_resolved_entity(repo: Repository) -> None:
@@ -502,9 +570,15 @@ def test_gate_refuses_without_a_resolved_entity(repo: Repository) -> None:
 
 
 class FakeRetriever:
-    def __init__(self, chunks: list[ChunkEvidence] | None = None, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        chunks: list[ChunkEvidence] | None = None,
+        error: Exception | None = None,
+        by_entity: dict[int, list[ChunkEvidence]] | None = None,
+    ) -> None:
         self.chunks = chunks or []
         self.error = error
+        self.by_entity = by_entity or {}
         self.calls: list[dict[str, Any]] = []
         self.last_timings: dict[str, float] = {}
 
@@ -512,6 +586,8 @@ class FakeRetriever:
         self.calls.append(kwargs)
         if self.error:
             raise self.error
+        if "entity_id" in kwargs:
+            return self.by_entity.get(kwargs["entity_id"], [])[: kwargs["top_k"]]
         return self.chunks
 
 
@@ -541,7 +617,7 @@ def test_factual_qa_gets_hybrid_chunks_within_the_bound(repo: Repository) -> Non
     assert "errors" not in out
 
 
-@pytest.mark.parametrize("intent", ["deep_dive", "compare", "timeline"])
+@pytest.mark.parametrize("intent", ["deep_dive", "timeline"])
 def test_other_intents_do_not_call_the_retriever(repo: Repository, intent: str) -> None:
     fake = FakeRetriever([chunk_evidence()])
     out = retrieve_with(repo, fake, intent, [1])
@@ -572,6 +648,52 @@ def test_chunks_take_their_share_of_the_evidence_budget(repo: Repository, db_con
     assert 0 < len(pack.items) < EVENTS_PER_ENTITY
     assert event_tokens <= MAX_EVIDENCE_TOKENS - chunk_tokens
     assert pack.tokens == chunk_tokens + event_tokens <= MAX_EVIDENCE_TOKENS
+
+
+def entity_chunk(entity_id: int, chapter_id: int) -> ChunkEvidence:
+    return ChunkEvidence(
+        chapter_id=chapter_id, kind="text", chunk_no=0, text=f"đoạn {chapter_id}", score=0.5, entity_id=entity_id
+    )
+
+
+def test_compare_searches_each_entity_for_its_share_of_chunks(repo: Repository) -> None:
+    fake = FakeRetriever(
+        by_entity={
+            1: [entity_chunk(1, c) for c in (2, 4, 6, 8, 10, 12)],
+            2: [entity_chunk(2, c) for c in (3, 5)],
+        }
+    )
+    pack = retrieve_with(repo, fake, "compare", [1, 2])["evidence"]
+    bound = {"novel_id": "nov", "chapter_max": 20, "query": "Hàn Lập học công pháp gì?"}
+    assert fake.calls == [{**bound, "entity_id": 1, "top_k": 4}, {**bound, "entity_id": 2, "top_k": 4}]
+    # Taking turns, so neither entity's chunks crowd out the other's.
+    assert [(c.entity_id, c.chapter_id) for c in pack.chunks] == [(1, 2), (2, 3), (1, 4), (2, 5), (1, 6), (1, 8)]
+
+
+def test_compare_keeps_a_chunk_shared_by_both_entities_once(repo: Repository) -> None:
+    fake = FakeRetriever(by_entity={1: [entity_chunk(1, 7)], 2: [entity_chunk(2, 7), entity_chunk(2, 9)]})
+    pack = retrieve_with(repo, fake, "compare", [1, 2])["evidence"]
+    assert [(c.entity_id, c.chapter_id) for c in pack.chunks] == [(1, 7), (2, 9)]
+
+
+def test_compare_with_one_resolved_entity_gets_all_chunk_slots(repo: Repository) -> None:
+    fake = FakeRetriever(by_entity={1: [entity_chunk(1, c) for c in range(1, 12)]})
+    pack = retrieve_with(repo, fake, "compare", [1])["evidence"]
+    assert fake.calls[0]["top_k"] == 8 and len(pack.chunks) == 8
+
+
+def test_compare_with_no_resolved_entity_does_not_search(repo: Repository) -> None:
+    fake = FakeRetriever()
+    out = retrieve_with(repo, fake, "compare", [])
+    assert fake.calls == [] and out["evidence"].chunks == []
+
+
+def test_compare_retriever_failure_keeps_the_events(repo: Repository, db_conn: Any) -> None:
+    add_events(db_conn, 1, [(2, "UPGRADE"), (3, "UPGRADE"), (4, "UPGRADE")])
+    add_events(db_conn, 2, [(6, "UPGRADE"), (7, "UPGRADE"), (8, "UPGRADE")])
+    out = retrieve_with(repo, FakeRetriever(error=RuntimeError("qdrant down")), "compare", [1, 2])
+    assert out["errors"] == ["retrieve: qdrant down"]
+    assert out["evidence"].chunks == [] and len(out["evidence"].items) == 6
 
 
 def test_the_retriever_is_built_once(repo: Repository) -> None:

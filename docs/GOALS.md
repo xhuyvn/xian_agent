@@ -25,6 +25,22 @@ Sub-goals:
 Changes:
 - 2026-11-01: owner approved the goal and the decisions above
 
+### G-17: S2-T4 query graph, factual_qa and compare (active)
+Plan: docs/IMPLEMENTATION_PLAN.md, S2-T4. Depends on G-9 and G-16.
+Owner decisions: the lead writes the code, with no agy. D1: `factual_qa` passes the gate when the top chunk's rerank score is >= `retrieval.min_rerank_score` (0.3), with no entity required; events are still added when an entity resolves. D2: `compare` gives each entity its events at half the budget plus up to 4 chunks filtered by that entity (8 at most); its gate needs >= 2 resolved entities with >= 3 events each (OQ-07), and chunks help but are not required (a deviation from the blueprint's 0.3 rule for compare). D3: a `compare` decision with fewer than 2 mentions becomes `deep_dive` (1 mention) or `factual_qa` (none) in code. D4: chunks reach the cloud model as `chunk` items (<= 450 tokens, <= 8), with a new `synthesize_compact/v2` prompt; v1 stays. D5: `verify` allows chapters from events and chunks, all <= N. D6: `qdrant.py` and `retriever.py` gain an optional entity filter, plus the prompt file and config lines; `workflow.py` changes only if needed. Two rounds: gate, route and retrieve, then synthesize, verify, prompt and live check.
+Done when:
+- `factual_qa` refuses with "Không đủ dữ liệu đến chương N" when the top rerank score is below 0.3, and answers from chunks otherwise
+- `compare` refuses with fewer than 2 resolved entities, and every chunk it uses carries its entity, is within N and comes from the novel
+- The cloud payload carries at most 8 chunks and `llm_runs.payload_chapters` lists their chapters
+- `verify` keeps chunk citations and strips any above N
+- A live check runs 3 `factual_qa` and 2 `compare` questions on pntt1, chapters 1-100
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-03: owner approved the goal and the decisions above
+
 ## Parked
 
 ## Archive
