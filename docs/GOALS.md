@@ -17,6 +17,7 @@ Done when:
 - The live check reports encode, fuse and rerank time, and VRAM with Qwen loaded
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
+- R-1 2026-11-03: deliver the reranker, CPU query encoding and hybrid query -> PASS, 0 blockers, 77af56d, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
