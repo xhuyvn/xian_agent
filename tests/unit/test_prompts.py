@@ -13,13 +13,14 @@ from xn.prompts import load_prompt, profile_from_config
 
 
 def test_real_v1_prompt_renders_with_xianxia_profile() -> None:
-    """Verify loading real v1 prompt with xianxia profile and empty realm ladder."""
+    """Verify loading real v1 prompt with xianxia profile and the PNTT realm ladder."""
     repo_root = Path(__file__).resolve().parents[2]
     config = load_config("pntt1", configs_dir=repo_root / "configs")
     profile = profile_from_config(config)
 
-    # In pntt1.yaml, realm_ladder is empty list
-    assert profile["realm_ladder"] == []
+    # pntt1.yaml lists the PNTT realms from Luyện Khí to Độ Kiếp, used by the L5 scan
+    assert profile["realm_ladder"][0] == "Luyện Khí"
+    assert profile["realm_ladder"][-1] == "Độ Kiếp"
     assert len(profile["categories"]) > 0
     assert len(profile["event_types"]) > 0
     assert len(profile["extraction_hints"]) > 0

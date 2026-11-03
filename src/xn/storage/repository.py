@@ -143,6 +143,26 @@ class Repository:
         return cur.fetchall()
 
     @story_read
+    def list_future_aliases(self, *, novel_id: str, chapter_max: int) -> list[str]:
+        """Return aliases first seen after chapter_max, for the L5 scan only; never sent out."""
+        cur = self._conn.execute(
+            "SELECT DISTINCT alias_norm FROM entity_aliases "
+            "WHERE novel_id = ? AND first_chapter > ? ORDER BY alias_norm",
+            (novel_id, chapter_max),
+        )
+        return [row[0] for row in cur.fetchall()]
+
+    @story_read
+    def list_realms_seen(self, *, novel_id: str, chapter_max: int) -> list[str]:
+        """Return the distinct tier_or_realm texts of events up to chapter_max."""
+        cur = self._conn.execute(
+            "SELECT DISTINCT tier_or_realm FROM entity_events WHERE novel_id = ? "
+            "AND chapter_id <= ? AND tier_or_realm IS NOT NULL ORDER BY tier_or_realm",
+            (novel_id, chapter_max),
+        )
+        return [row[0] for row in cur.fetchall()]
+
+    @story_read
     def find_entities_by_alias(
         self, *, novel_id: str, alias_norm: str, category: str, chapter_max: int
     ) -> list[sqlite3.Row]:
