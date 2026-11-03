@@ -538,6 +538,50 @@ def test_ask_full_uses_total_chapters(cli_env: dict[str, Any]) -> None:
     assert "Phạm vi: chương 1–2673" in result.output
 
 
+def progress(env: dict[str, Any], *args: str) -> Any:
+    return CliRunner().invoke(cli.app, ["progress", *args, *env["args"][:2]])
+
+
+def test_progress_bounds_a_bare_ask(cli_env: dict[str, Any]) -> None:
+    result = progress(cli_env, "pntt1", "50")
+    assert result.exit_code == 0, result.output
+    assert "chương 50/2673" in result.output
+    result = invoke(cli_env, "q", "--novel", "pntt1")
+    assert result.exit_code == 0, result.output
+    assert result.output.splitlines()[0] == "Phạm vi: chương 1–50"
+
+
+@pytest.mark.parametrize(
+    "args, scope",
+    [
+        (["q", "--until", "20"], "Phạm vi: chương 1–20"),
+        (["Hàn Lập đến chương 30 ra sao?"], "Phạm vi: chương 1–30"),
+        (["q", "--full"], "Phạm vi: chương 1–2673"),
+    ],
+)
+def test_explicit_bound_wins_over_progress(
+    cli_env: dict[str, Any], args: list[str], scope: str
+) -> None:
+    progress(cli_env, "pntt1", "50")
+    result = invoke(cli_env, *args, "--novel", "pntt1")
+    assert result.exit_code == 0, result.output
+    assert result.output.splitlines()[0] == scope
+
+
+@pytest.mark.parametrize(
+    "args, code",
+    [
+        (["pntt1", "0"], "VALIDATION_FAILED"),
+        (["pntt1", "2674"], "VALIDATION_FAILED"),
+        (["ghost", "5"], "NOVEL_NOT_FOUND"),
+    ],
+)
+def test_progress_rejects_bad_requests(cli_env: dict[str, Any], args: list[str], code: str) -> None:
+    result = progress(cli_env, *args)
+    assert result.exit_code == 1
+    assert f"Error [{code}]" in result.output
+
+
 def test_ask_refusal_prints_scope_and_suggestions(cli_env: dict[str, Any]) -> None:
     cli_env["router"] = router(mentions=["Han Lap"])
     result = invoke(cli_env, "q", "--novel", "pntt1", "--until", "50")

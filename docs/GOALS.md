@@ -8,6 +8,45 @@ Round line: `R-<n> <date>: <what this round had to achieve> -> PASS|FAIL, <n> bl
 
 ## Active
 
+### G-18: S2-T5 reading progress, `xn progress` (active)
+Plan: docs/IMPLEMENTATION_PLAN.md, S2-T5. Bound resolution, `--full` and the "Phạm vi" line already exist from G-9; only the command is missing.
+Owner decisions: the lead writes the code, with no agy. `xn progress <novel_id> <N>` writes `novels.reader_progress` through the existing `set_reader_progress`, and refuses N < 1, N > `total_chapters` and an unknown novel. One round.
+Done when:
+- After `xn progress pntt1 50`, a bare `xn ask` prints "Phạm vi: chương 1–50", and `--until` or a chapter in the question still wins
+- `xn progress` refuses N < 1, N > `total_chapters` and an unknown novel with a coded error
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-03: owner approved the goal and the decisions above
+
+### G-19: S2-T6 L5 spoiler scan, regenerate and redact (active)
+Plan: docs/IMPLEMENTATION_PLAN.md, S2-T6; blueprint §3.4 L5. Depends on G-18.
+Owner decisions: the lead writes the code, with no agy. D1: `spoiler_scan.py` matches the answer, without diacritics and on word bounds, against aliases with `first_chapter > N` (minus any alias_norm also known at <= N) and realm names above the max realm seen <= N. D2: the max realm is novel-wide, not per mentioned entity (a deviation from the blueprint, to avoid redacting early mentions of higher-realm side characters). D3: `pntt1.yaml` gets the PNTT realm ladder; the max seen is read at query time from `tier_or_realm` of events <= N, so S3 needs no rerun. D4: on a hit, synthesize runs once more with the terms listed as forbidden; a second hit redacts the sentence to "[đã ẩn để tránh tiết lộ]"; the retry is a graph edge with a counter in state. Two rounds: scanner, then graph wiring.
+Done when:
+- Unit tests show a future alias and a higher realm are caught, an alias also known at <= N is not, and an answer with no hit passes unchanged
+- A leaking answer triggers exactly one regenerate with the forbidden terms in the prompt; a second leak redacts only the leaking sentence
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-03: owner approved the goal and the decisions above
+
+### G-20: Sprint 2 acceptance check (active)
+Plan: docs/IMPLEMENTATION_PLAN.md, "Sprint 2 Acceptance Criteria". Depends on G-18 and G-19. Live run, no new product code.
+Owner decisions: run the 10 probes in `eval/pntt1/gold/spoilers.jsonl` and the 15 questions in `eval/pntt1/gold/qa.jsonl` through the real graph with cloud answers; about $0.03.
+Done when:
+- 0 leaks on the 10 spoiler probes, checked on the final answers
+- Context recall >= 0.75 on the 15 Q&A
+- factual_qa p95 latency <= 15 s
+Rounds:
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-03: owner approved the goal and the decisions above
+
 ### G-11: clear the non-blocking Sprint 1 recheck items (active)
 Plan: docs/S1_T9_EVAL.md, "Sprint 1 recheck". Follows G-10, whose recall line stays open there. Cut from `cld/s1-t9-feature-a3a0ec`.
 Owner decisions: the lead writes the code, with no agy, because it is two small changes that must be run to be proven. `total_chapters` becomes 2468, the chapters on disk. `pntt1.yaml` gains `raw_dir: data/novel/pham_nhan_tu_tien_1`, and `xn run` falls back to `data/novels/<id>/raw` only without it (this changes the G-6 decision on the raw path; the folder stays where it is). The checkpoint serializer gets an explicit allowlist covering every `xn.schemas.state` model stored in a checkpoint, which includes `EvidenceItem` if it logs too. `novels` rows in existing databases keep their old value: there is no `data/xn.db`, and S0 only writes a missing row. Blueprint history (old benchmark plans) stays as written. The extraction prompt, the gold set, the extractor model and the other recheck items are out of scope. One round.
