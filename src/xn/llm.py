@@ -29,6 +29,10 @@ _MODEL_CACHE: dict[tuple[str, str], OpenAIChatModel] = {}
 CLOUD_TIMEOUT_S = 90.0
 CLOUD_RETRIES = 3
 CLOUD_BACKOFF_S = 1.0
+# A connection refused or reset within this time is retried after CLOUD_FAST_RETRY_S,
+# since waiting longer does not help a dropped TLS handshake.
+CLOUD_FAST_FAIL_S = 1.0
+CLOUD_FAST_RETRY_S = 0.25
 CLOUD_MAX_TOKENS = 2500
 
 MAX_EVIDENCE_TOKENS = 20_000
@@ -268,6 +272,15 @@ def _is_retryable(err: Exception) -> bool:
     return isinstance(err, ModelConnectionError)
 
 
+def _is_fast_drop(err: Exception, seconds: float) -> bool:
+    """Tell whether err is a connection that dropped at once, not a timeout or an HTTP error."""
+    return (
+        isinstance(err, ModelConnectionError)
+        and not isinstance(err, ModelTimeoutError)
+        and seconds < CLOUD_FAST_FAIL_S
+    )
+
+
 def _upstream_code(err: Exception) -> str:
     """Map a final OpenRouter failure to its API error code."""
     if isinstance(err, ModelHTTPError) and err.status_code == 429:
@@ -298,7 +311,9 @@ def run_compact(
 
     The prompt is built here from items, so nothing but a checked payload leaves the machine.
     Retries 429/5xx and connection failures with exponential backoff, then tries
-    fallback_model once if it is configured.
+    fallback_model once if it is configured. A connection that drops at once is retried
+    after a short pause instead. cloud_provider in config, if set, is OpenRouter's
+    provider routing (for example {sort: latency}).
 
     Raises:
         EgressError: If the class is not compact or items break the compact rule.
@@ -315,6 +330,8 @@ def run_compact(
         "max_tokens": CLOUD_MAX_TOKENS,
         "openrouter_usage": {"include": True},
     }
+    if config.get("cloud_provider"):
+        settings["openrouter_provider"] = dict(config["cloud_provider"])
 
     attempts = [(model_name, retry) for retry in range(CLOUD_RETRIES + 1)]
     fallback = config.get("fallback_model")
@@ -322,9 +339,10 @@ def run_compact(
         attempts.append((fallback, 0))
 
     last_err: Exception | None = None
+    fast_retry = False
     for name, retry in attempts:
         if name == model_name and retry > 0:
-            sleep(CLOUD_BACKOFF_S * 2 ** (retry - 1))
+            sleep(CLOUD_FAST_RETRY_S if fast_retry else CLOUD_BACKOFF_S * 2 ** (retry - 1))
         _check_spend_cap(repo, config)
 
         start_time = time.perf_counter()
@@ -339,6 +357,7 @@ def run_compact(
             except Exception as err:
                 error = err
 
+        seconds = time.perf_counter() - start_time
         usage = result.usage if result is not None else None
         cost = _reported_cost(result.all_messages() if result is not None else messages)
         repo.add_llm_run(
@@ -350,7 +369,7 @@ def run_compact(
             prompt_version=prompt_version,
             input_tokens=usage.input_tokens if usage is not None else None,
             output_tokens=usage.output_tokens if usage is not None else None,
-            latency_ms=int((time.perf_counter() - start_time) * 1000),
+            latency_ms=int(seconds * 1000),
             retries=retry,
             ok=1 if result is not None else 0,
             cost_usd=cost,
@@ -362,6 +381,7 @@ def run_compact(
         if not _is_retryable(error):
             raise error
         last_err = error
+        fast_retry = _is_fast_drop(error, seconds)
         logger.warning("OpenRouter call to %s failed on try %d: %s", name, retry + 1, error)
 
     raise UpstreamError(_upstream_code(last_err), str(last_err)) from last_err

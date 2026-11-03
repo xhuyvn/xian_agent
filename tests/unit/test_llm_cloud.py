@@ -11,6 +11,7 @@ import pytest
 from pydantic_ai import Agent
 from pydantic_ai.exceptions import (
     ModelAPIError,
+    ModelConnectionError,
     ModelHTTPError,
     ModelTimeoutError,
 )
@@ -18,7 +19,7 @@ from pydantic_ai.messages import ModelResponse, TextPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 from pydantic_ai.usage import RequestUsage
 
-from xn.config import CloudSettings
+from xn.config import CloudSettings, load_config
 from xn.llm import (
     CompactItem,
     EgressError,
@@ -207,6 +208,44 @@ def test_timeout_is_retried_and_reported(repo: Repository) -> None:
         call(repo, fake)
     assert err.value.code == "UPSTREAM_TIMEOUT"
     assert len(fake.names) == 4
+
+
+def test_dropped_connection_is_retried_after_a_short_pause(repo: Repository) -> None:
+    drop = ModelConnectionError("main/model", "Connection error.")
+    fake = FakeCloud(drop, http_error(503), drop, 0.001)
+    sleeps: list[float] = []
+    call(repo, fake, sleep=sleeps.append)
+    # The 503 keeps its backoff step; each drop before it gets the short pause.
+    assert sleeps == [0.25, 2.0, 0.25]
+
+
+def test_slow_connection_failure_and_timeout_keep_the_backoff(
+    repo: Repository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    timeout = ModelTimeoutError("main/model", "timed out")
+    sleeps: list[float] = []
+    call(repo, FakeCloud(timeout, timeout, 0.001), sleep=sleeps.append)
+    assert sleeps == [1.0, 2.0]
+
+    # Patch the globals run_compact reads, since another test reloads xn.llm.
+    monkeypatch.setitem(run_compact.__globals__, "CLOUD_FAST_FAIL_S", 0.0)
+    drop = ModelConnectionError("main/model", "Connection error.")
+    sleeps = []
+    call(repo, FakeCloud(drop, 0.001), sleep=sleeps.append)
+    assert sleeps == [1.0]
+
+
+def test_cloud_provider_routing_is_sent_only_when_configured(repo: Repository) -> None:
+    fake = FakeCloud(0.001, 0.001)
+    call(repo, fake)
+    call(repo, fake, config={**CONFIG, "cloud_provider": {"sort": "latency"}})
+    assert "openrouter_provider" not in fake.settings[0]
+    assert fake.settings[1]["openrouter_provider"] == {"sort": "latency"}
+
+
+def test_real_config_routes_by_latency() -> None:
+    config = load_config("pntt1", configs_dir=Path(__file__).resolve().parents[2] / "configs")
+    assert config["cloud_provider"] == {"sort": "latency"}
 
 
 def test_rate_limit_outlasting_retries_stops_without_fallback(

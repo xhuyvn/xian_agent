@@ -20,12 +20,11 @@ MODEL_KEYS = {
 
 
 def synthesize(state: QueryState, deps: GraphDeps) -> dict[str, Any]:
-    """Produce an Answer through the compact egress path."""
+    """Produce an Answer through the compact egress path, avoiding any forbidden terms."""
+    # On an L5 retry the prompt lists the leaked terms; the first pass lists none.
+    profile = {**profile_from_config(deps.config), "forbidden": state.get("forbidden") or []}
     prompt = load_prompt(
-        "synthesize_compact",
-        prompt_version(deps, "synthesize_compact"),
-        profile_from_config(deps.config),
-        deps.prompts_dir,
+        "synthesize_compact", prompt_version(deps, "synthesize_compact"), profile, deps.prompts_dir
     )
     model_cfg = deps.config["models"][MODEL_KEYS[state["decision"].intent]]
     evidence = state["evidence"]

@@ -29,6 +29,68 @@ Changes:
 
 ## Archive
 
+### G-18: S2-T5 reading progress, `xn progress` (done)
+Plan: docs/IMPLEMENTATION_PLAN.md, S2-T5. Bound resolution, `--full` and the "Phạm vi" line already exist from G-9; only the command is missing.
+Owner decisions: the lead writes the code, with no agy. `xn progress <novel_id> <N>` writes `novels.reader_progress` through the existing `set_reader_progress`, and refuses N < 1, N > `total_chapters` and an unknown novel. One round.
+Done when:
+- After `xn progress pntt1 50`, a bare `xn ask` prints "Phạm vi: chương 1–50", and `--until` or a chapter in the question still wins
+- `xn progress` refuses N < 1, N > `total_chapters` and an unknown novel with a coded error
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-03: deliver `xn progress` with its checks and tests -> PASS, 0 blockers, 061a772, 0 agy tokens; NIT: `xn progress ghost 0` reports VALIDATION_FAILED before NOVEL_NOT_FOUND
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-03: owner approved the goal and the decisions above
+- 2026-11-03: owner approved marking the goal done, recorded with PR #25
+
+### G-19: S2-T6 L5 spoiler scan, regenerate and redact (done)
+Plan: docs/IMPLEMENTATION_PLAN.md, S2-T6; blueprint §3.4 L5. Depends on G-18.
+Owner decisions: the lead writes the code, with no agy. D1: `spoiler_scan.py` matches the answer, without diacritics and on word bounds, against aliases with `first_chapter > N` (minus any alias_norm also known at <= N) and realm names above the max realm seen <= N. D2: the max realm is novel-wide, not per mentioned entity (a deviation from the blueprint, to avoid redacting early mentions of higher-realm side characters). D3: `pntt1.yaml` gets the PNTT realm ladder; the max seen is read at query time from `tier_or_realm` of events <= N, so S3 needs no rerun. D4: on a hit, synthesize runs once more with the terms listed as forbidden; a second hit redacts the sentence to "[đã ẩn để tránh tiết lộ]"; the retry is a graph edge with a counter in state. Two rounds: scanner, then graph wiring.
+Done when:
+- Unit tests show a future alias and a higher realm are caught, an alias also known at <= N is not, and an answer with no hit passes unchanged
+- A leaking answer triggers exactly one regenerate with the forbidden terms in the prompt; a second leak redacts only the leaking sentence
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-03: deliver the scanner, its two guarded repository reads and the PNTT realm ladder -> PASS, 0 blockers, 3232a8f, 0 agy tokens; NITs: `test_prompts.py` updated for the filled ladder; a realm text naming two rungs counts as the higher one
+- R-2 2026-11-03: wire the scan into verify, regenerate once with the leaked terms forbidden (prompt v3), redact a second leak -> PASS, 0 blockers, 51bfeb7, 0 agy tokens; NIT: three of the five new graph tests guard over-triggering and the per-turn reset rather than the retry edge
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-03: owner approved the goal and the decisions above
+- 2026-11-03: lead choices inside D1, recorded for review: one-syllable aliases are not scanned (they match ordinary words), and a term found in the evidence pack is allowed, since the evidence is all <= N (rule 2 of the prompt already permits it). Filling `realm_ladder` adds the ladder to future S1 prompts; `prompt_version` hashes the raw template, so no extraction goes stale
+- 2026-11-03: owner approved marking the goal done, recorded with PR #25
+
+### G-20: Sprint 2 acceptance check (done)
+Plan: docs/IMPLEMENTATION_PLAN.md, "Sprint 2 Acceptance Criteria". Depends on G-18 and G-19. Live run, no new product code.
+Owner decisions: run the 10 probes in `eval/pntt1/gold/spoilers.jsonl` and the 15 questions in `eval/pntt1/gold/qa.jsonl` through the real graph with cloud answers; about $0.03.
+Done when:
+- 0 leaks on the 10 spoiler probes, checked on the final answers
+- Context recall >= 0.75 on the 15 Q&A
+- factual_qa p95 latency <= 15 s
+Rounds:
+- R-1 2026-11-03: run the 10 spoiler probes and 15 Q&A through the full graph at cdcf999 -> FAIL on latency, 0 leaks, recall met, p95 25.5 s; $0.035, 0 agy tokens
+Sub-goals:
+- G-20.1: factual_qa p95 <= 15 s (done). Owner decisions: D1: p95 is measured over the 25 gold questions in one warm process (reranker loaded before timing), like the S4 API; the CLI's per-call reranker load is reported apart. D2: a connection error that fails in under 1 s is retried after 0.25 s instead of 1/2/4 s; 429, 5xx and timeouts keep the backoff. D3: OpenRouter is asked to route the DeepSeek model by lowest latency; the answer length is capped if the tail calls are long outputs. D4: the graph logs time per node for each question. Out of scope: changing models, replacing the router, the CLI cold start; the router's ~4 s goes back to the owner if D2-D3 are not enough. Two rounds: timing, retry and routing, then a live re-run after a curl check to openrouter.ai succeeds.
+  Done when:
+  - In a warm process, factual_qa p95 <= 15 s on the 25 gold questions, counting every attempt
+  - The same run keeps 0 leaks and context recall >= 0.75
+  - Each answer's run record shows time per node
+  - `py -m compileall -q src` and `uv run pytest tests/unit` pass
+  Rounds:
+  - R-1 2026-11-03: time each node in state, retry a dropped connection after 0.25 s, route cloud calls by latency -> PASS, 0 blockers, 79b0c96, 0 agy tokens; NIT: an empty timings update is the implicit per-turn reset
+  - R-2 2026-11-03: warm live re-run of the 25 gold questions at a1dcb1b -> PASS, p95 12.95 s, 0 leaks, recall 0.91; $0.059, 0 agy tokens
+  Changes:
+  - 2026-11-03: R-2 on a fresh copy of `data/eval/g15-s4.db`, reranker and router warmed before timing; curl to openrouter.ai 8/10 just before. All 25 questions routed to factual_qa (q07 was timeline in G-20 R-1). Per question 3.98-13.11 s, p95 12.95 s; per node: route 1.3-3.7 s, retrieve <= 0.4 s, synthesize 1.8-11.0 s (q13 11.0 s, q09 9.6 s). Successful cloud calls 4.2 s mean, 10.4 s max (6.7 s and 13.9 s before latency routing). 16 of 43 cloud attempts still dropped at once, each now costing ~0.25 s; no question failed. Leaks 0 of 10; recall 0.91 on events, 0.98 with chunks, citation hit 0.93, 0 refused. L5: q01 regenerated, then one sentence redacted for "cự hán", a descriptive alias (giant man) first seen after chapter 10, a likely false positive
+  - 2026-11-03: D3's answer-length cap dropped: in G-20 R-1, cloud latency did not track output tokens (467 tokens took 12.4 s, 1,066 took 3.3 s)
+  - 2026-11-03: owner approved the sub-goal and the decisions above; profile before the change (warm, no cloud): route 2-6 s (median ~4 s), retrieve ~0.4 s (17.5 s cold), cloud answer 6.7 s mean, 13.9 s max
+  - 2026-11-03: owner approved marking the sub-goal done, recorded with PR #25
+Changes:
+- 2026-11-03: owner approved the goal and the decisions above
+- 2026-11-03: R-1 on a copy of `data/eval/g15-s4.db` (ledger and `xn_chunks` for chapters 1-100), `qwen38-udiq4-hui-10k` resident, `deepseek/deepseek-v4.1-flash-1017`, prompt v3. Leaks: 0 of 10 probes on the final answers; the L5 scan regenerated s09 ("khu vật thuật") and q03 ("chiếc bình thần bí", a descriptive alias), and both retries came back clean; nothing was redacted. Context recall 0.84 on ledger events (the S1-T9 metric), 0.91 with chunks; q01 failed with a connection error and q13 missed its chapters. Latency: 23 factual_qa runs, p95 25.5 s. 26 of 53 cloud attempts failed in under 0.2 s with "Connection error", and curl to openrouter.ai failed TLS setup (exit 35) on 6 of 8 tries right after, so the network inflated the run. Even without backoff, s04 and s07 take about 16 s, and s01 (26.4 s) includes the ~14 s reranker cold load; runs with no failed attempt took 4.6-14.3 s. Successful cloud calls averaged 6.7 s, max 13.9 s
+- 2026-11-03: G-20.1 R-2 met all three lines in one warm run: 0 leaks, recall 0.91, p95 12.95 s
+- 2026-11-03: owner approved marking the goal done, recorded with PR #25
+
 ### G-17: S2-T4 query graph, factual_qa and compare (done)
 Plan: docs/IMPLEMENTATION_PLAN.md, S2-T4. Depends on G-9 and G-16.
 Owner decisions: the lead writes the code, with no agy. D1: `factual_qa` passes the gate when the top chunk's rerank score is >= `retrieval.min_rerank_score` (0.3), with no entity required; events are still added when an entity resolves. D2: `compare` gives each entity its events at half the budget plus up to 4 chunks filtered by that entity (8 at most); its gate needs >= 2 resolved entities with >= 3 events each (OQ-07), and chunks help but are not required (a deviation from the blueprint's 0.3 rule for compare). D3: a `compare` decision with fewer than 2 mentions becomes `deep_dive` (1 mention) or `factual_qa` (none) in code. D4: chunks reach the cloud model as `chunk` items (<= 450 tokens, <= 8), with a new `synthesize_compact/v2` prompt; v1 stays. D5: `verify` allows chapters from events and chunks, all <= N. D6: `qdrant.py` and `retriever.py` gain an optional entity filter, plus the prompt file and config lines; `workflow.py` changes only if needed. Two rounds: gate, route and retrieve, then synthesize, verify, prompt and live check.

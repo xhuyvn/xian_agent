@@ -140,6 +140,35 @@ def _fail(code: str, message: object) -> typer.Exit:
     return typer.Exit(code=1)
 
 
+@app.command("progress")
+def progress(
+    novel: str = typer.Argument(..., help="Novel ID"),
+    chapter: int = typer.Argument(..., help="Last chapter read; the default spoiler bound"),
+    db: Path = typer.Option(Path("data/xn.db"), "--db", help="Path to SQLite database file"),
+) -> None:
+    """Save reading progress, the bound used when a question gives none (§3.4 L1)."""
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if chapter < 1:
+        raise _fail("VALIDATION_FAILED", f"Chapter must be at least 1: {chapter}")
+
+    conn = connect(Path(db))
+    try:
+        init_schema(conn)
+        repo = Repository(conn)
+        record = repo.get_novel(novel_id=novel)
+        if record is None:
+            raise _fail("NOVEL_NOT_FOUND", f"Novel not found: {novel}")
+        total = record["total_chapters"]
+        if chapter > total:
+            raise _fail("VALIDATION_FAILED", f"Chapter {chapter} is above total_chapters {total}")
+        repo.set_reader_progress(novel_id=novel, chapter=chapter)
+    finally:
+        conn.close()
+
+    typer.echo(f"Tiến độ đọc {novel}: chương {chapter}/{total}")
+
+
 @app.command("ask")
 def ask(
     question: str = typer.Argument(..., help="Question about the novel"),

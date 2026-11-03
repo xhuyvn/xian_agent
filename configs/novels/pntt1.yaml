@@ -15,7 +15,16 @@ arc_detection:
   min_arc_length: 30
   max_arc_length: 90
 
-realm_ladder: []
+realm_ladder:
+  - Luyện Khí
+  - Trúc Cơ
+  - Kết Đan
+  - Nguyên Anh
+  - Hóa Thần
+  - Luyện Hư
+  - Hợp Thể
+  - Đại Thừa
+  - Độ Kiếp
 seed_aliases: []
 identity_links: []
 cleaning_patterns: []

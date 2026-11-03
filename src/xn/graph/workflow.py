@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 import sqlite3
+import time
 from typing import Any, Optional
 
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
@@ -20,6 +22,8 @@ from xn.graph.nodes.synthesize import synthesize
 from xn.graph.nodes.verify import verify
 from xn.schemas.state import Answer, ChunkEvidence, EvidencePack, QueryState, RouterDecision
 
+logger = logging.getLogger(__name__)
+
 # Models stored whole in a checkpoint; langgraph refuses to load anything else.
 CHECKPOINT_TYPES = (RouterDecision, EvidencePack, ChunkEvidence, Answer)
 
@@ -31,6 +35,24 @@ def _continue_unless_refused(next_node: str) -> Any:
         return END if state.get("refusal") else next_node
 
     return choose
+
+
+def _timed(name: str, node: Any, deps: GraphDeps) -> Any:
+    """Wrap a node so its seconds are added to state timings; a retried node adds up."""
+
+    def run(state: QueryState) -> dict[str, Any]:
+        start = time.perf_counter()
+        out = node(state, deps)
+        seconds = time.perf_counter() - start
+        logger.info("Node %s took %.2f s", name, seconds)
+        return {**out, "timings": {name: seconds}}
+
+    return run
+
+
+def _regenerate_on_leak(state: QueryState) -> str:
+    """Send a leaking answer back to synthesize once; verify redacts a second leak."""
+    return "synthesize" if state.get("regenerate") else END
 
 
 def open_checkpointer(path: Path) -> SqliteSaver:
@@ -57,7 +79,7 @@ def build_graph(deps: GraphDeps, checkpointer: SqliteSaver) -> Any:
     }
     graph = StateGraph(QueryState)
     for name, node in nodes.items():
-        graph.add_node(name, lambda state, node=node: node(state, deps))
+        graph.add_node(name, _timed(name, node, deps))
 
     graph.add_edge(START, "route")
     graph.add_edge("route", "bound")
@@ -68,7 +90,7 @@ def build_graph(deps: GraphDeps, checkpointer: SqliteSaver) -> Any:
     graph.add_edge("retrieve", "gate")
     graph.add_conditional_edges("gate", _continue_unless_refused("synthesize"), ["synthesize", END])
     graph.add_edge("synthesize", "verify")
-    graph.add_edge("verify", END)
+    graph.add_conditional_edges("verify", _regenerate_on_leak, ["synthesize", END])
     return graph.compile(checkpointer=checkpointer)
 
 
@@ -83,7 +105,10 @@ def thread_novel(checkpointer: SqliteSaver, thread_id: str) -> Optional[str]:
 def ask(
     graph: Any, *, thread_id: str, novel_id: str, query: str, until: Optional[int] = None
 ) -> QueryState:
-    """Run one turn; chapter_max is left out so a follow-up inherits it from the thread."""
+    """Run one turn; chapter_max is left out so a follow-up inherits it from the thread.
+
+    The L5 retry fields and the node timings are reset, so a turn never inherits them.
+    """
     return graph.invoke(
         {
             "novel_id": novel_id,
@@ -91,6 +116,10 @@ def ask(
             "query": query,
             "until": until,
             "mode": "compact",
+            "forbidden": [],
+            "spoiler_retries": 0,
+            "regenerate": False,
+            "timings": {},
         },
         {"configurable": {"thread_id": thread_id}},
     )

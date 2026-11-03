@@ -39,6 +39,8 @@ STORY_READ_METHODS = [
     "get_arc_prefix_summaries",
     "list_extractions",
     "list_aliases",
+    "list_future_aliases",
+    "list_realms_seen",
     "find_entities_by_alias",
     "get_entity",
 ]
@@ -167,6 +169,8 @@ def test_story_reads_parameter_guards(repo: Repository) -> None:
         "get_arc_prefix_summaries": {"arc_id": 1},
         "list_extractions": {},
         "list_aliases": {},
+        "list_future_aliases": {},
+        "list_realms_seen": {},
         "find_entities_by_alias": {"alias_norm": "hl", "category": "character"},
         "get_entity": {"entity_id": 1},
     }

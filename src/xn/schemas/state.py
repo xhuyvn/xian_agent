@@ -77,6 +77,16 @@ class Answer(BaseModel):
     citations: list[int] = Field(default_factory=list)
 
 
+def add_timings(old: Optional[dict[str, float]], new: Optional[dict[str, float]]) -> dict[str, float]:
+    """Add node seconds into the turn's timings; an empty update starts a new turn."""
+    if not new:
+        return {}
+    merged = dict(old or {})
+    for node, seconds in new.items():
+        merged[node] = round(merged.get(node, 0.0) + seconds, 3)
+    return merged
+
+
 class QueryState(TypedDict, total=False):
     """State of one query; novel_id comes from the caller and is never inferred by the LLM."""
 
@@ -94,4 +104,8 @@ class QueryState(TypedDict, total=False):
     answer: Optional[Answer]
     grounding_ratio: Optional[float]
     refusal: Optional[str]
+    forbidden: list[str]
+    spoiler_retries: int
+    regenerate: bool
     errors: Annotated[list[str], operator.add]
+    timings: Annotated[dict[str, float], add_timings]
