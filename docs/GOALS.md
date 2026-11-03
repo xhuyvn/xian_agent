@@ -16,6 +16,7 @@ Done when:
 - `xn progress` refuses N < 1, N > `total_chapters` and an unknown novel with a coded error
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
+- R-1 2026-11-03: deliver `xn progress` with its checks and tests -> PASS, 0 blockers, 061a772, 0 agy tokens; NIT: `xn progress ghost 0` reports VALIDATION_FAILED before NOVEL_NOT_FOUND
 Sub-goals:
 - none yet
 Changes:
