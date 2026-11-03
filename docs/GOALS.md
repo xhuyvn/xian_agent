@@ -30,10 +30,12 @@ Done when:
 - A leaking answer triggers exactly one regenerate with the forbidden terms in the prompt; a second leak redacts only the leaking sentence
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
+- R-1 2026-11-03: deliver the scanner, its two guarded repository reads and the PNTT realm ladder -> PASS, 0 blockers, 3232a8f, 0 agy tokens; NITs: `test_prompts.py` updated for the filled ladder; a realm text naming two rungs counts as the higher one
 Sub-goals:
 - none yet
 Changes:
 - 2026-11-03: owner approved the goal and the decisions above
+- 2026-11-03: lead choices inside D1, recorded for review: one-syllable aliases are not scanned (they match ordinary words), and a term found in the evidence pack is allowed, since the evidence is all <= N (rule 2 of the prompt already permits it). Filling `realm_ladder` adds the ladder to future S1 prompts; `prompt_version` hashes the raw template, so no extraction goes stale
 
 ### G-20: Sprint 2 acceptance check (active)
 Plan: docs/IMPLEMENTATION_PLAN.md, "Sprint 2 Acceptance Criteria". Depends on G-18 and G-19. Live run, no new product code.
