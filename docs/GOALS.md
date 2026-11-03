@@ -22,6 +22,7 @@ Sub-goals:
 - none yet
 Changes:
 - 2026-11-03: owner approved the goal and the decisions above
+- 2026-11-03: live check on `xn_chunks` (pntt1, chapters 1-100, 704 points), with `qwen38-udiq4-hui-10k` resident at 13,297 MiB. Five questions, four at `chapter_max` 100 and one at 10: each fused 30 and returned 8, max chapter 75/100/71/98 and 6 for the N=10 question, and another novel returned 0. Warm steps: encode 26-66 ms on the CPU (Ollama `size_vram` 0), fuse 6-9 ms, rerank 110-116 ms, total 147-176 ms. The first query took 14.0 s, almost all reranker load. VRAM with Qwen and the reranker: 15,699 of 16,303 MiB (torch 1,092 MiB allocated, 1,346 MiB reserved), above the blueprint's ~13 GB estimate, with ~0.6 GB headroom
 
 ### G-11: clear the non-blocking Sprint 1 recheck items (active)
 Plan: docs/S1_T9_EVAL.md, "Sprint 1 recheck". Follows G-10, whose recall line stays open there. Cut from `cld/s1-t9-feature-a3a0ec`.
