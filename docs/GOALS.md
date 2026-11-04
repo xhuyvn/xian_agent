@@ -23,6 +23,7 @@ Sub-goals:
 - none yet
 Changes:
 - 2026-11-04: owner approved the goal and the decisions above
+- 2026-11-04: live run at 7c02ce4 on `data/eval/g24-prefix.db` (backup-API copy of `g21-s5.db`, which still has 0 prefix rows and jobs), `qwen38-udiq4-hui-10k` sharing the GPU with S3-T3: `xn run --stage prefix --to 600` wrote 58 rows for the 17 arcs, exactly the D1 checkpoint set, 0 failed, 0 retries, 876 s in total; per checkpoint 15.0 s mean and median, 19.4 s max; input up to 5,089 tokens; summaries 643-1,581 characters (mean 1,056). The rerun skipped all 58 in 6 s with no new `llm_runs` row. `arc_prefix_view` at chapter 157 gives arc 5 (start 128), checkpoint 150 plus the raw tail 151-157
 
 ### G-11: clear the non-blocking Sprint 1 recheck items (active)
 Plan: docs/S1_T9_EVAL.md, "Sprint 1 recheck". Follows G-10, whose recall line stays open there. Cut from `cld/s1-t9-feature-a3a0ec`.
