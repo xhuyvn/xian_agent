@@ -120,6 +120,77 @@ Open items it found, none blocking. G-11 has since fixed the first five; the las
 - **S1 speed:** v1 measured 20.4 s/chapter on chapters 1-100 and v2 measured 34.7, against the blueprint's 27.2 from 50 chapters across 1-1121 on v1. The blueprint cost table still shows v1.
 - **Nobody owns:** CI, ruff and mypy (OQ-03).
 
+## G-25: `qwen2.5:14b-instruct` against the production extractor
+
+Date: 2026-11-05. Goal: G-25.
+
+**`qwen2.5:14b-instruct` is 3.4 times faster, but its recall of 0.70 fails Sprint 1's 0.80 bar.** The production extractor stays `qwen3.8:udiq4_hui`. Nothing in config, the prompt or S1 changed. Running 2 chapters at once gave no speed-up.
+
+Both models ran prompt v2 (`6f35c798`) on the G-13 set: 50 chapters from 1-100, the 20 gold chapters plus 30 others. Gold scores cover the 20 gold chapters. `qwen2.5:14b-instruct` ran as `qwen25-14b-10k` (`ollama/Modelfile.qwen25-14b-10k`: `num_ctx 10240`, temperature 0.1), with native JSON-schema output, one chapter at a time, on an RTX 5070 Ti 16 GB with nothing else on the GPU. The production column is the G-10.1 full run in `data/eval/g101-full.db`, read only and restricted to the same 50 chapters. The owner chose not to run it again.
+
+| Metric | `qwen2.5:14b-instruct` | `qwen3.8:udiq4_hui` (G-10.1) |
+|---|---|---|
+| Schema success | 100% (50 of 50) | 100% (50 of 50) |
+| First-try success | 100% | 100% |
+| Entity recall, all 20 | 0.70 (71 of 102) | **0.98** (100 of 102) |
+| Entity precision, all 20 | **0.95** (4 false names) | 0.88 (14 false names) |
+| Recall, dev 10 / held out 10 | 0.60 / 0.79 | 0.96 / 1.00 |
+| Precision, dev 10 / held out 10 | 0.94 / 0.95 | 0.86 / 0.90 |
+| Category accuracy | 0.91 | 0.91 |
+| Event-type accuracy | 0.81 | **0.90** |
+| Flag F1, `location_change` (2 gold chapters) | 0.57 | 0.33 |
+| Flag F1, `realm_breakthrough` (1 gold chapter) | 0.00 | 1.00 |
+| Flag F1, `major_conflict` (6 gold chapters) | 0.75 | 0.92 |
+| Events kept per chapter | 5.1 (range 0-8) | 8.7 (range 4-18) |
+| Tokens per chapter, input / output | 2,977 / 656 | 2,679 / 947 |
+| s/chapter, mean | **10.3** | 35.4 |
+| s/chapter, p95 | **14.5** | 58.9 |
+| Idle / peak VRAM (MiB) | 1,822 / 11,514 | not recorded in G-10.1; 15,425 peak in G-8 |
+| S1 for all 2,468 chapters | about 7 hours | about 24 hours |
+
+### Two chapters at once
+
+The owner asked for a test of 2 chapters in parallel. `--workers 2` ran the same 50 chapters with 2 S1 processes at once, each on its own database with every second chapter. `OLLAMA_NUM_PARALLEL` is unset on this host and was not changed.
+
+| Measure | One at a time | 2 workers |
+|---|---|---|
+| Time for 50 chapters | 516 s, summed calls | 537 s, wall |
+| s/chapter, wall | 10.3 | 10.7 |
+| s per call, mean / p95 | 10.3 / 14.5 | 21.1 / 27.0 |
+| Peak VRAM (MiB) | 11,514 | 11,449 |
+| Recall / precision, all 20 | 0.70 / 0.95 | 0.71 / 0.91 |
+
+**No gain:** each call took twice as long, so throughput stayed the same. These numbers cannot show whether Ollama ran the two requests together on a GPU that one request already keeps busy, or queued one behind the other; either way S1 got no faster. A 2-chapter smoke test first looked faster (29.7 s of wall time against 42.8 s of summed call time). But those call times included the slowdown from the other request, so their sum was not a fair one-at-a-time figure. The gold scores moved by one name and a few false names, which is run-to-run variation at temperature 0.1.
+
+### How to read this
+
+- **Recall fails the bar, and the gap is in named things, not people.** 31 gold names were missed. Most are techniques, items, places and sects: "Trường Xuân Công", "La Yên bộ" (three chapters), "Ngự Phong quyết", "Thanh Linh Tán", "Lạc Nhật Phong", "Thất huyền môn". Chapters 84 and 95 lose the Kim Quang thượng nhân group, and chapters 53 and 58 lose "Hàn Lập" himself. Dev recall is lower than held-out recall (0.60 against 0.79), so this is not tuning luck in its favour.
+- **It writes fewer events.** It never went above 8 events per chapter, and one chapter got none, where production writes up to 18. That explains both the higher precision and the lower recall. Prompt v2 was tuned on `qwen3.8:udiq4_hui` in G-10.1, so a prompt tuned for this model might close some of the gap. That was not tried, because changing the prompt is outside G-25.
+- **Some events fail the evidence check.** The log shows events dropped for evidence scores below 85 in chapters 91 and 93, where the model paraphrased the quote. The console output was cut short, so the total was not counted.
+- **Flags:** it marked `major_conflict` on 30 of 50 chapters, against 19 for production, including 4 gold chapters with no conflict (17, 32, 53, 58). It missed the single gold `realm_breakthrough`, chapter 43. Flag gold rests on few positive chapters, so one chapter moves these scores a lot.
+- **Timing is not from the same session.** The production numbers come from the G-10.1 run on 2026-11-01, which ran S1 over all 100 chapters as part of an S0-S3 run. The qwen2.5 run is from 2026-11-05. Both used prompt v2, `num_ctx 10240` and the same GPU. A 3.4-times gap is far wider than that difference could explain. G-10.1 recorded no VRAM, so the production VRAM figure is G-8's peak on 50 chapters across 1-1121, from prompt v1.
+- **One run each**, from fresh databases. The gold was drafted by Claude, and the held-out chapters were seen before, as above.
+
+**Recommendation:** keep `qwen3.8:udiq4_hui`. `qwen2.5:14b-instruct` would only make sense as the extractor if a prompt tuned for it reached recall 0.80 on the same gold, which would need a new goal. Running chapters in parallel on this one GPU does not speed up S1 for either model.
+
+### Commands
+
+Run from the repository root with `PYTHONIOENCODING=utf-8`. `<data>` is the main checkout's `data` folder.
+
+```bash
+ollama create qwen25-14b-10k -f ollama/Modelfile.qwen25-14b-10k
+```
+
+```bash
+uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/bench/g25-qwen25 --chapter-max 100 --gold --model qwen25-14b-10k
+```
+
+```bash
+uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/bench/g25-qwen25 --chapter-max 100 --gold --model qwen25-14b-10k --workers 2
+```
+
+The outputs are `report.md`, `report.json`, `parallel-qwen25-14b-10k-w2.md` and `.json` in `<data>/bench/g25-qwen25/`. The production column was read from `g101-full.db` with `xn.bench.pick_gold_chapters`, `_measure_runs` and `score_gold`, without writing to it.
+
 ## Reproduce
 
 Paths outside the repo must use the `--option=value` form. With a space, pytest reads the path as a test target and takes its settings from the wrong checkout.
