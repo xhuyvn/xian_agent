@@ -13,6 +13,7 @@ from xn.pipeline.s2_resolve import S2Result, run_s2
 from xn.pipeline.s3_ledger import S3Result, compute_input_hash, run_s3
 from xn.pipeline.s4_embed import Embedder, S4Result, run_s4
 from xn.pipeline.s5_segment import S5Result, run_s5
+from xn.pipeline.s7_digest import S7Result, run_s7
 from xn.prompts import load_prompt, profile_from_config
 from xn.storage.qdrant import QdrantStore
 from xn.storage.repository import Repository
@@ -20,6 +21,7 @@ from xn.storage.repository import Repository
 logger = logging.getLogger(__name__)
 
 STAGES = ("s0", "s1", "s2", "s3", "s4", "s5")
+STAGES += ("s7",)
 
 
 class RunRequestError(ValueError):
@@ -41,7 +43,7 @@ def run_stage(
     prompts_dir: Path = Path("prompts"),
     store: QdrantStore | None = None,
     embedder: Embedder | None = None,
-) -> S0Result | S1Result | S2Result | S3Result | S4Result | S5Result:
+) -> S0Result | S1Result | S2Result | S3Result | S4Result | S5Result | S7Result:
     """Run a pipeline stage with request validation and error checking."""
     # 1. Validation before touching the database
     if stage not in STAGES:
@@ -63,6 +65,12 @@ def run_stage(
 
     if chapter_from > 1 and stage in ("s0", "s2", "s5"):
         raise RunRequestError(f"chapter_from > 1 is not supported on stage {stage}")
+
+    if stage == "s7" and stale_only:
+        raise RunRequestError("stale_only is not supported on stage s7")
+
+    if stage == "s7" and chapter_from > 1:
+        raise RunRequestError("chapter_from > 1 is not supported on stage s7")
 
     if rebuild and stage != "s2":
         raise RunRequestError(f"rebuild is only supported on stage s2, got {stage}")
@@ -189,6 +197,16 @@ def run_stage(
             config=config,
             store=store if store is not None else QdrantStore.from_config(config),
             embedder=embedder if embedder is not None else OllamaEmbedder.from_config(config),
+            chapter_to=chapter_to,
+            model=model,
+            prompts_dir=prompts_dir,
+        )
+
+    if stage == "s7":
+        return run_s7(
+            repo,
+            novel_id=novel_id,
+            config=config,
             chapter_to=chapter_to,
             model=model,
             prompts_dir=prompts_dir,

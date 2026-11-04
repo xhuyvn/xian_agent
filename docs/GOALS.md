@@ -25,6 +25,21 @@ Sub-goals:
 Changes:
 - 2026-11-01: owner approved the goal and the decisions above
 
+### G-23: S3-T3 pipeline stage S7, entity×arc digests and prefix digests (active)
+Plan: `docs/IMPLEMENTATION_PLAN.md` S3-T3, blueprint §3.2 S7 and §3.4 L3, chat plan of 2026-11-04. Cut from `cld/sprint-3-tasks-60f7ab`. Runs beside S3-T2 and S3-T4; S3-T5 waits for it.
+Owner decisions: the lead writes the code, with no agy. D1: for each (entity, arc) with >= 3 `entity_events` in the arc, the local model writes an 80-150 word digest with `upto_chapter` = the arc's end chapter and `event_count` = events used; the word count is checked in code and sent back to the model, up to 3 tries. D2: prefix digests at every multiple of 10 inside an arc before its end (S3-T4's grid), written only when the entity has >= 3 events up to that chapter and more than at its last checkpoint. D3: each digest's events are read with `chapter_max = upto_chapter`; the entity is named by `canonical_name`, its first surface form. D4: one `jobs` row per arc, `chapter_id` = the arc's end chapter, `stage = 's7'` (OQ-05), whose input hash covers every digest's events, the checkpoint rule, prompt and model; any change redoes the arc. D5: an arc's digests replace its old rows in one transaction; a failed call marks that arc failed and keeps its old rows, other arcs go on; only arcs ending <= `--to` run, and an arc needs S3 done on all its chapters. D6: over ~5k input tokens, MENTIONED events go first. D7: `runner.py`, `cli/main.py`, `repository.py` and `test_repository_guards.py` change only additively. The live run uses `data/eval/g23-s7.db`, a copy of `g21-s5.db` with S2 rebuilt and S3 run on 1-600.
+Done when:
+- `xn run --novel pntt1 --stage s7 --to 600` writes full and prefix digests for the 17 arcs, and a rerun on unchanged input skips every arc with no model call
+- unit tests with a fake model cover the >= 3 threshold, the checkpoint rule and the word-count retry, and a spoiler test shows a prefix digest's prompt and row ignore events after its `upto_chapter`
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+- the live run reports digest counts (full and prefix), failures and time
+Rounds:
+- none yet
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-04: owner approved the goal and the decisions above
+
 ## Parked
 
 ## Archive

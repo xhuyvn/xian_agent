@@ -43,6 +43,7 @@ STORY_READ_METHODS = [
     "list_realms_seen",
     "find_entities_by_alias",
     "get_entity",
+    "list_events_between",
 ]
 
 OPERATIONAL_METHODS = [
@@ -61,6 +62,7 @@ OPERATIONAL_METHODS = [
     "save_ledger",
     "clear_ledger",
     "save_arc_boundaries",
+    "save_arc_digests",
 ]
 
 EXEMPT_METHODS = [
@@ -174,6 +176,7 @@ def test_story_reads_parameter_guards(repo: Repository) -> None:
         "list_realms_seen": {},
         "find_entities_by_alias": {"alias_norm": "hl", "category": "character"},
         "get_entity": {"entity_id": 1},
+        "list_events_between": {"chapter_from": 1},
     }
 
     for method_name in STORY_READ_METHODS:
@@ -293,6 +296,15 @@ def test_operational_parameter_guards(repo: Repository) -> None:
         "save_arc_boundaries": {
             "spans": [],
             "stage": "s5",
+            "input_hash": "h",
+            "prompt_version": "v1",
+            "model": "m",
+        },
+        "save_arc_digests": {
+            "arc_id": 1,
+            "end_chapter": 30,
+            "digests": [],
+            "stage": "s7",
             "input_hash": "h",
             "prompt_version": "v1",
             "model": "m",

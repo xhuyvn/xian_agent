@@ -127,6 +127,18 @@ class Repository:
         return cur.fetchall()
 
     @story_read
+    def list_events_between(
+        self, *, novel_id: str, chapter_from: int, chapter_max: int
+    ) -> list[sqlite3.Row]:
+        """Return every entity's events in chapters chapter_from..chapter_max, in story order."""
+        cur = self._conn.execute(
+            "SELECT * FROM entity_events WHERE novel_id = ? AND chapter_id >= ? AND chapter_id <= ? "
+            "ORDER BY chapter_id, entity_id, ordinal",
+            (novel_id, chapter_from, chapter_max),
+        )
+        return cur.fetchall()
+
+    @story_read
     def list_aliases(
         self, *, novel_id: str, chapter_max: int
     ) -> list[sqlite3.Row]:
@@ -395,6 +407,44 @@ class Repository:
             self._upsert_job(
                 novel_id=novel_id,
                 chapter_id=0,
+                stage=stage,
+                status="done",
+                input_hash=input_hash,
+                prompt_version=prompt_version,
+                model=model,
+            )
+
+    def save_arc_digests(
+        self,
+        *,
+        novel_id: str,
+        arc_id: int,
+        end_chapter: int,
+        digests: list[dict[str, Any]],
+        stage: str,
+        input_hash: str,
+        prompt_version: str,
+        model: str,
+    ) -> None:
+        """Replace one arc's S7 digests and mark its job done, in one transaction.
+
+        Each digest holds entity_id, upto_chapter, digest and event_count. The job is per arc,
+        keyed by the arc's end chapter (OQ-05).
+        """
+        _validate_novel_id(novel_id)
+        with self._conn:
+            self._conn.execute(
+                "DELETE FROM entity_arc_digests WHERE novel_id = ? AND arc_id = ?", (novel_id, arc_id)
+            )
+            for d in digests:
+                self._conn.execute(
+                    "INSERT INTO entity_arc_digests "
+                    "(novel_id, entity_id, arc_id, upto_chapter, digest, event_count) VALUES (?, ?, ?, ?, ?, ?)",
+                    (novel_id, d["entity_id"], arc_id, d["upto_chapter"], d["digest"], d["event_count"]),
+                )
+            self._upsert_job(
+                novel_id=novel_id,
+                chapter_id=end_chapter,
                 stage=stage,
                 status="done",
                 input_hash=input_hash,
