@@ -1,4 +1,4 @@
-"""Pipeline runner for executing stages s0 to s6."""
+"""Pipeline runner for executing stages s0 to s6 and the arc prefix summaries."""
 
 from __future__ import annotations
 
@@ -14,13 +14,14 @@ from xn.pipeline.s3_ledger import S3Result, compute_input_hash, run_s3
 from xn.pipeline.s4_embed import Embedder, S4Result, run_s4
 from xn.pipeline.s5_segment import S5Result, run_s5
 from xn.pipeline.s6_synthesize import S6Result, run_s6
+from xn.pipeline.prefix_summaries import PrefixResult, run_prefix
 from xn.prompts import load_prompt, profile_from_config
 from xn.storage.qdrant import QdrantStore
 from xn.storage.repository import Repository
 
 logger = logging.getLogger(__name__)
 
-STAGES = ("s0", "s1", "s2", "s3", "s4", "s5", "s6")
+STAGES = ("s0", "s1", "s2", "s3", "s4", "s5", "s6", "prefix")
 
 
 class RunRequestError(ValueError):
@@ -43,7 +44,7 @@ def run_stage(
     store: QdrantStore | None = None,
     embedder: Embedder | None = None,
     cloud_factory: Callable[[str], Any] | None = None,
-) -> S0Result | S1Result | S2Result | S3Result | S4Result | S5Result | S6Result:
+) -> S0Result | S1Result | S2Result | S3Result | S4Result | S5Result | S6Result | PrefixResult:
     """Run a pipeline stage with request validation and error checking."""
     # 1. Validation before touching the database
     if stage not in STAGES:
@@ -60,10 +61,10 @@ def run_stage(
             f"chapter_from ({chapter_from}) cannot be greater than chapter_to ({chapter_to})"
         )
 
-    if stale_only and stage in ("s0", "s2", "s4", "s5"):
+    if stale_only and stage in ("s0", "s2", "s4", "s5", "prefix"):
         raise RunRequestError(f"stale_only is not supported on stage {stage}")
 
-    if chapter_from > 1 and stage in ("s0", "s2", "s5"):
+    if chapter_from > 1 and stage in ("s0", "s2", "s5", "prefix"):
         raise RunRequestError(f"chapter_from > 1 is not supported on stage {stage}")
 
     if stage == "s6" and (stale_only or chapter_from > 1):
@@ -209,6 +210,16 @@ def run_stage(
             chapter_to=chapter_to,
             prompts_dir=prompts_dir,
             **({"cloud_factory": cloud_factory} if cloud_factory is not None else {}),
+        )
+
+    if stage == "prefix":
+        return run_prefix(
+            repo,
+            novel_id=novel_id,
+            config=config,
+            chapter_to=chapter_to,
+            model=model,
+            prompts_dir=prompts_dir,
         )
 
     raise RunRequestError(f"Unhandled stage: {stage}")

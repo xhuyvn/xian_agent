@@ -8,6 +8,23 @@ Round line: `R-<n> <date>: <what this round had to achieve> -> PASS|FAIL, <n> bl
 
 ## Active
 
+### G-24: S3-T4 arc prefix summaries for L2 spoiler safety (active)
+Plan: `docs/IMPLEMENTATION_PLAN.md` S3-T4; blueprint §3.4 L2, §3.9. Chat plan of 2026-11-04. Cut from `cld/sprint-3-tasks-60f7ab`. Runs beside S3-T2 and S3-T3; S3-T5 waits for it.
+Owner decisions: the lead writes the code, with no agy. D1: a checkpoint is every chapter `c` with `c % 10 == 0` and `start < c ≤ end` of its arc; a reader at N snaps down to the greatest stored checkpoint ≤ N in N's arc. D2: each checkpoint's summary comes from the S1 micro-summaries of `start..c` only, not from the previous checkpoint. D3: stage id `prefix`; one `jobs` row per checkpoint with `chapter_id = upto_chapter`, the end chapter of the span it covers (OQ-05); the input hash covers the arc id and span, the micro-summaries up to `c`, the prompt version and the model; rows and jobs of checkpoints that no longer exist are pruned. D4: prompt `prompts/arc_prefix_summary/v1.md`, output schema kept in `prefix_summaries.py`. D5: `arc_prefix_view(repo, novel_id, chapter_max)` in `prefix_summaries.py` returns the checkpoint summary plus the raw micro-summaries after it up to N, and never the arc's end chapter; the query graph is untouched. D6: `repository.py`, its guard tests, `runner.py` and `cli/main.py` change only additively. The live run uses `data/eval/g24-prefix.db`, a backup-API copy of `g21-s5.db`. One round.
+Done when:
+- `xn run --novel pntt1 --stage prefix --to 600` writes one `arc_prefix_summaries` row per D1 checkpoint for the 17 arcs, and a rerun on unchanged input skips every checkpoint with no model call
+- A unit test with a fake model shows that no stored summary's input, and no `arc_prefix_view` result at any N in 1..end, carries a chapter after its `upto_chapter` or N
+- Unit tests cover snap-down at, below and between checkpoints and before the first one, pruning after re-segmentation, and per-checkpoint failure isolation
+- The live run on `data/eval/g24-prefix.db` reports row counts, time per checkpoint and total time; the original database is never written
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-04: deliver the prefix stage, prompt, snap-down view and unit tests -> PASS, 0 blockers, 7c02ce4, 0 agy tokens; the live run is judged apart; NITs: `_arc_spans` docstring overstates the min(), CLI import order
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-04: owner approved the goal and the decisions above
+- 2026-11-04: live run at 7c02ce4 on `data/eval/g24-prefix.db` (backup-API copy of `g21-s5.db`, which still has 0 prefix rows and jobs), `qwen38-udiq4-hui-10k` sharing the GPU with S3-T3: `xn run --stage prefix --to 600` wrote 58 rows for the 17 arcs, exactly the D1 checkpoint set, 0 failed, 0 retries, 876 s in total; per checkpoint 15.0 s mean and median, 19.4 s max; input up to 5,089 tokens; summaries 643-1,581 characters (mean 1,056). The rerun skipped all 58 in 6 s with no new `llm_runs` row. `arc_prefix_view` at chapter 157 gives arc 5 (start 128), checkpoint 150 plus the raw tail 151-157
+
 ### G-11: clear the non-blocking Sprint 1 recheck items (active)
 Plan: docs/S1_T9_EVAL.md, "Sprint 1 recheck". Follows G-10, whose recall line stays open there. Cut from `cld/s1-t9-feature-a3a0ec`.
 Owner decisions: the lead writes the code, with no agy, because it is two small changes that must be run to be proven. `total_chapters` becomes 2468, the chapters on disk. `pntt1.yaml` gains `raw_dir: data/novel/pham_nhan_tu_tien_1`, and `xn run` falls back to `data/novels/<id>/raw` only without it (this changes the G-6 decision on the raw path; the folder stays where it is). The checkpoint serializer gets an explicit allowlist covering every `xn.schemas.state` model stored in a checkpoint, which includes `EvidenceItem` if it logs too. `novels` rows in existing databases keep their old value: there is no `data/xn.db`, and S0 only writes a missing row. Blueprint history (old benchmark plans) stays as written. The extraction prompt, the gold set, the extractor model and the other recheck items are out of scope. One round.

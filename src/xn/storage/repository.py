@@ -117,6 +117,29 @@ class Repository:
         return cur.fetchall()
 
     @story_read
+    def get_arc_at(self, *, novel_id: str, chapter_max: int) -> sqlite3.Row | None:
+        """The arc that holds chapter chapter_max, as (arc_id, start_chapter); its end is not returned."""
+        cur = self._conn.execute(
+            "SELECT a.arc_id, a.start_chapter FROM chapters c JOIN arcs a "
+            "ON a.novel_id = c.novel_id AND a.arc_id = c.arc_id "
+            "WHERE c.novel_id = ? AND c.chapter_id = ? AND a.start_chapter <= ?",
+            (novel_id, chapter_max, chapter_max),
+        )
+        return cur.fetchone()
+
+    @story_read
+    def list_micro_summaries(
+        self, *, novel_id: str, chapter_from: int, chapter_max: int
+    ) -> list[sqlite3.Row]:
+        """(chapter_id, micro_summary) of S1 extractions in chapter_from..chapter_max."""
+        cur = self._conn.execute(
+            "SELECT chapter_id, json_extract(payload, '$.micro_summary') AS micro_summary FROM extractions "
+            "WHERE novel_id = ? AND chapter_id >= ? AND chapter_id <= ? ORDER BY chapter_id",
+            (novel_id, chapter_from, chapter_max),
+        )
+        return cur.fetchall()
+
+    @story_read
     def list_extractions(
         self, *, novel_id: str, chapter_max: int
     ) -> list[sqlite3.Row]:
@@ -438,6 +461,64 @@ class Repository:
                 prompt_version=prompt_version,
                 model=model,
             )
+
+    def save_arc_prefix_summary(
+        self,
+        *,
+        novel_id: str,
+        arc_id: int,
+        upto_chapter: int,
+        summary: str,
+        stage: str,
+        input_hash: str,
+        prompt_version: str,
+        model: str,
+    ) -> None:
+        """Write one arc prefix summary and its job, keyed `chapter_id = upto_chapter`, in one transaction."""
+        _validate_novel_id(novel_id)
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO arc_prefix_summaries (novel_id, arc_id, upto_chapter, summary) VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(novel_id, arc_id, upto_chapter) DO UPDATE SET summary = excluded.summary",
+                (novel_id, arc_id, upto_chapter, summary),
+            )
+            self._upsert_job(
+                novel_id=novel_id,
+                chapter_id=upto_chapter,
+                stage=stage,
+                status="done",
+                input_hash=input_hash,
+                prompt_version=prompt_version,
+                model=model,
+            )
+
+    def prune_arc_prefix_summaries(
+        self, *, novel_id: str, keep: list[tuple[int, int]], upto_max: int, stage: str
+    ) -> int:
+        """Delete prefix summaries with upto_chapter <= upto_max whose (arc_id, upto_chapter) is not in keep.
+
+        Their jobs go too, except where a kept checkpoint shares the chapter. Returns rows deleted.
+        """
+        _validate_novel_id(novel_id)
+        wanted = {(int(a), int(u)) for a, u in keep}
+        with self._conn:
+            rows = self._conn.execute(
+                "SELECT arc_id, upto_chapter FROM arc_prefix_summaries WHERE novel_id = ? AND upto_chapter <= ?",
+                (novel_id, upto_max),
+            ).fetchall()
+            stale = {(r["arc_id"], r["upto_chapter"]) for r in rows} - wanted
+            for arc_id, upto in stale:
+                self._conn.execute(
+                    "DELETE FROM arc_prefix_summaries WHERE novel_id = ? AND arc_id = ? AND upto_chapter = ?",
+                    (novel_id, arc_id, upto),
+                )
+            kept_chapters = {u for _, u in wanted}
+            for upto in {u for _, u in stale} - kept_chapters:
+                self._conn.execute(
+                    "DELETE FROM jobs WHERE novel_id = ? AND chapter_id = ? AND stage = ?",
+                    (novel_id, upto, stage),
+                )
+        return len(stale)
 
     def next_entity_id(self, *, novel_id: str) -> int:
         _validate_novel_id(novel_id)
