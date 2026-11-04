@@ -19,7 +19,7 @@ Done when:
 - boundary F1 ≥ 0.80 on chapters 1-600 (±3 chapters)
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
-- none yet
+- R-1 2026-11-04: deliver the S5 stage code and unit tests -> PASS, 0 blockers, 8975374, 0 agy tokens; the live run, F1 and the gold commit stay open for R-2
 Sub-goals:
 - none yet
 Changes:
