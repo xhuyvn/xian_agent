@@ -1,4 +1,4 @@
-"""Pipeline runner for executing stages s0 to s5."""
+"""Pipeline runner for executing stages s0 to s5 and the arc prefix summaries."""
 
 from __future__ import annotations
 
@@ -13,13 +13,14 @@ from xn.pipeline.s2_resolve import S2Result, run_s2
 from xn.pipeline.s3_ledger import S3Result, compute_input_hash, run_s3
 from xn.pipeline.s4_embed import Embedder, S4Result, run_s4
 from xn.pipeline.s5_segment import S5Result, run_s5
+from xn.pipeline.prefix_summaries import PrefixResult, run_prefix
 from xn.prompts import load_prompt, profile_from_config
 from xn.storage.qdrant import QdrantStore
 from xn.storage.repository import Repository
 
 logger = logging.getLogger(__name__)
 
-STAGES = ("s0", "s1", "s2", "s3", "s4", "s5")
+STAGES = ("s0", "s1", "s2", "s3", "s4", "s5", "prefix")
 
 
 class RunRequestError(ValueError):
@@ -41,7 +42,7 @@ def run_stage(
     prompts_dir: Path = Path("prompts"),
     store: QdrantStore | None = None,
     embedder: Embedder | None = None,
-) -> S0Result | S1Result | S2Result | S3Result | S4Result | S5Result:
+) -> S0Result | S1Result | S2Result | S3Result | S4Result | S5Result | PrefixResult:
     """Run a pipeline stage with request validation and error checking."""
     # 1. Validation before touching the database
     if stage not in STAGES:
@@ -58,10 +59,10 @@ def run_stage(
             f"chapter_from ({chapter_from}) cannot be greater than chapter_to ({chapter_to})"
         )
 
-    if stale_only and stage in ("s0", "s2", "s4", "s5"):
+    if stale_only and stage in ("s0", "s2", "s4", "s5", "prefix"):
         raise RunRequestError(f"stale_only is not supported on stage {stage}")
 
-    if chapter_from > 1 and stage in ("s0", "s2", "s5"):
+    if chapter_from > 1 and stage in ("s0", "s2", "s5", "prefix"):
         raise RunRequestError(f"chapter_from > 1 is not supported on stage {stage}")
 
     if rebuild and stage != "s2":
@@ -189,6 +190,16 @@ def run_stage(
             config=config,
             store=store if store is not None else QdrantStore.from_config(config),
             embedder=embedder if embedder is not None else OllamaEmbedder.from_config(config),
+            chapter_to=chapter_to,
+            model=model,
+            prompts_dir=prompts_dir,
+        )
+
+    if stage == "prefix":
+        return run_prefix(
+            repo,
+            novel_id=novel_id,
+            config=config,
             chapter_to=chapter_to,
             model=model,
             prompts_dir=prompts_dir,
