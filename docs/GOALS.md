@@ -18,6 +18,7 @@ Done when:
 - The live run on `data/eval/g24-prefix.db` reports row counts, time per checkpoint and total time; the original database is never written
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
+- R-1 2026-11-04: deliver the prefix stage, prompt, snap-down view and unit tests -> PASS, 0 blockers, 7c02ce4, 0 agy tokens; the live run is judged apart; NITs: `_arc_spans` docstring overstates the min(), CLI import order
 Sub-goals:
 - none yet
 Changes:
