@@ -60,6 +60,7 @@ OPERATIONAL_METHODS = [
     "clear_resolution",
     "save_ledger",
     "clear_ledger",
+    "save_arc_boundaries",
 ]
 
 EXEMPT_METHODS = [
@@ -289,6 +290,13 @@ def test_operational_parameter_guards(repo: Repository) -> None:
             "input_hash": "h",
         },
         "clear_ledger": {"stage": "s3"},
+        "save_arc_boundaries": {
+            "spans": [],
+            "stage": "s5",
+            "input_hash": "h",
+            "prompt_version": "v1",
+            "model": "m",
+        },
     }
 
     for method_name in OPERATIONAL_METHODS:
