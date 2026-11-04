@@ -36,6 +36,7 @@ Done when:
 - `qwen25-14b-10k` also runs the same chapters with 2 S1 processes at once (`--workers 2`), and the report compares its wall s/chapter and gold scores with the one-at-a-time run
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
+- R-1 2026-11-05: deliver the gold chapter set, gold scoring, the qwen2.5 candidate and parallel workers -> PASS, 0 blockers, e1c1373, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
