@@ -10,7 +10,7 @@ Round line: `R-<n> <date>: <what this round had to achieve> -> PASS|FAIL, <n> bl
 
 ### G-21: S3-T1 pipeline stage S5, arc segmentation (active)
 Plan: `docs/IMPLEMENTATION_PLAN.md` S3-T1, chat plan of 2026-11-04. Cut from `cld/sprint-3-tasks-60f7ab` as `cld/s3-t1-s5-segment`. First of Sprint 3; S3-T2, S3-T3 and S3-T4 wait for it, S3-T5 waits for those.
-Owner decisions: the lead writes the code, with no agy. OQ-04: DP maximizes the sum of smoothed scores at the chosen boundaries minus a fixed penalty per boundary, with every arc 30-90 chapters long; the penalty is tuned on chapters 1-600 against boundary F1 (±3); the prototype's `score_threshold 0.60` and 5-year time-skip rule are dropped. OQ-05: S5 writes `chapters.arc_id` and placeholder `arcs` rows (start and end chapter, null payload) that S6 fills; novel-wide stages record `jobs` with `chapter_id = 0`, per-arc stages key by the arc's end chapter. The gold arc boundaries for 1-600 are annotated by Claude from the chapter titles and S1 micro-summaries, committed before any scoring. The live run uses `data/eval/g21-s5.db`, a copy of `g15-s4.db` (prompt v2) extended by S0-S3 to chapter 600 on the local model.
+Owner decisions: the lead writes the code, with no agy. OQ-04: DP maximizes the sum of smoothed scores at the chosen boundaries minus a fixed penalty per boundary, with every arc 30-90 chapters long; the penalty is tuned on chapters 1-600 against boundary F1 (±3); the prototype's `score_threshold 0.60` and 5-year time-skip rule are dropped. OQ-05: S5 writes `chapters.arc_id` and placeholder `arcs` rows (start and end chapter, null payload) that S6 fills; novel-wide stages record `jobs` with `chapter_id = 0`, per-arc stages key by the arc's end chapter. The gold arc boundaries for 1-600 are annotated by Claude from the chapter titles and S1 micro-summaries, committed before any scoring. The live run uses `data/eval/g21-s5.db`, a copy of `g15-s4.db` (prompt v2) with S0 to chapter 600 and S1 on chapters 1-600 from the cloud model (see Changes).
 Done when:
 - `eval/pntt1/gold/arcs.jsonl` holds the gold arc starts for 1-600 and is committed before the first scored S5 run
 - `xn run --novel pntt1 --stage s5 --to 600` writes `chapters.arc_id` and placeholder `arcs` rows, every arc 30-90 chapters long, and a rerun on unchanged input gives identical rows
@@ -24,6 +24,7 @@ Sub-goals:
 - none yet
 Changes:
 - 2026-11-04: owner approved the goal and the decisions above
+- 2026-11-04: owner approved running S1 on chapters 1-600 with `deepseek/deepseek-v4.1-flash-1017` (prompt v2) instead of the local model, to save about 3.4 h, as a one-off exception to A-04 that sends raw chapter text to OpenRouter, with a $3 spend cap for this run. The live run, the penalty tuning and the F1 therefore rest on cloud flags, which G-13 found set more often than local; production S1 stays local
 
 ### G-11: clear the non-blocking Sprint 1 recheck items (active)
 Plan: docs/S1_T9_EVAL.md, "Sprint 1 recheck". Follows G-10, whose recall line stays open there. Cut from `cld/s1-t9-feature-a3a0ec`.
