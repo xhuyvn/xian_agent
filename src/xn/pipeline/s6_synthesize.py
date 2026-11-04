@@ -25,6 +25,8 @@ logger = logging.getLogger(__name__)
 STAGE = "s6"
 MODEL_KEY = "macro_synthesizer"
 ALL_CHAPTERS = 2**31 - 1  # bound for reading every arc row, to find stale arc points
+# A StoryArc runs about 3k output tokens and the model reasons for about 1k more first.
+MAX_TOKENS = 8000
 
 
 class S6RequestError(ValueError):
@@ -106,7 +108,7 @@ def run_s6(
     model_cfg = config["models"][MODEL_KEY]
     model_name = model_cfg["name"]
     temperature = model_cfg.get("temperature", 0.3)
-    agent = Agent(output_type=StoryArcSynthesis, system_prompt=prompt.text, retries=1)
+    agent = Agent(output_type=StoryArcSynthesis, system_prompt=prompt.text, retries=2)
     extra = {"sleep": sleep} if sleep is not None else {}
 
     store.ensure_collections()
@@ -149,6 +151,7 @@ def run_s6(
                 config=config,
                 temperature=temperature,
                 model_factory=cloud_factory,
+                max_tokens=MAX_TOKENS,
                 **extra,
             )
             story = StoryArc(

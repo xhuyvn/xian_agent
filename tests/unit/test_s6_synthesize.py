@@ -102,6 +102,7 @@ class FakeCloud:
         self.cost = cost
         self.prompts = []
         self.names = []
+        self.max_tokens = []
 
     def __call__(self, name):
         self.names.append(name)
@@ -109,6 +110,7 @@ class FakeCloud:
         def respond(messages, info: AgentInfo):
             prompt = str(messages[-1].parts[-1].content)
             self.prompts.append(prompt)
+            self.max_tokens.append(info.model_settings["max_tokens"])
             if any(f"từ chương {s} " in prompt for s in self.fail_on):
                 raise ValueError("bad output")
             return ModelResponse(
@@ -174,6 +176,7 @@ def test_each_arc_sends_only_its_own_micro_summaries(repo, store):
     assert 'chapter="60" kind="micro_summary"' in second
     assert 'chapter="30"' not in second and 'chapter="61"' not in second
     assert cloud.names == [MODEL] * 3
+    assert cloud.max_tokens == [8000] * 3
 
 
 def test_llm_runs_record_compact_egress_with_the_arc_chapters(repo, conn, store):
