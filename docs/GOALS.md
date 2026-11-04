@@ -37,6 +37,7 @@ Done when:
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
 - R-1 2026-11-05: deliver the gold chapter set, gold scoring, the qwen2.5 candidate and parallel workers -> PASS, 0 blockers, e1c1373, 0 agy tokens
+- R-2 2026-11-05: run qwen25-14b-10k one at a time and with 2 workers, and report against the G-10.1 baseline -> PASS, 0 blockers, 6223bd6, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
