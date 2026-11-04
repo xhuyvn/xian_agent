@@ -16,7 +16,7 @@ Done when:
 - `xn run --novel pntt1 --stage s5 --to 600` writes `chapters.arc_id` and placeholder `arcs` rows, every arc 30-90 chapters long, and a rerun on unchanged input gives identical rows
 - the local LLM boundary review sees micro-summaries ±10 chapters and moves no boundary more than 10 chapters
 - S5 sets `arc_id` on the chapter's `xn_chunks` points in place, with no re-embedding of chunks
-- boundary F1 ≥ 0.80 on chapters 1-600 (±3 chapters)
+- boundary F1 ≥ 0.50 on chapters 1-600 (±3 chapters)
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
 - R-1 2026-11-04: deliver the S5 stage code and unit tests -> PASS, 0 blockers, 8975374, 0 agy tokens; the live run, F1 and the gold commit stay open for R-2
@@ -27,6 +27,7 @@ Changes:
 - 2026-11-04: owner approved the goal and the decisions above
 - 2026-11-04: owner approved running S1 on chapters 1-600 with `deepseek/deepseek-v4.1-flash-1017` (prompt v2) instead of the local model, to save about 3.4 h, as a one-off exception to A-04 that sends raw chapter text to OpenRouter, with a $3 spend cap for this run. The live run, the penalty tuning and the F1 therefore rest on cloud flags, which G-13 found set more often than local; production S1 stays local
 - 2026-11-04: owner approved changing the S5 score after flags + DP reached only F1 0.20 (0.47 with a perfect ±5 review) on the cloud flags: the main signal becomes the change between BGE-M3 embeddings of the micro-summaries before and after each chapter, with the smoothed flags as a minor, tuned term; the LLM review window widens to ±10 chapters with shifts up to 10. The F1 target stays 0.80, at most 2 rounds; if it is still short, report back. The `xn_chunks` line now says "no re-embedding of chunks", since S5 itself now embeds the summaries
+- 2026-11-04: owner lowered the F1 target from 0.80 to 0.50 after R-2 reached 0.52 (best tuned DP-only 0.58). S5 finds a shift about every 30 chapters while the gold arcs, annotated by Claude from the same summaries S5 embeds, run longer; the gold is a weak independent reference. Blueprint Sprint 3 acceptance criterion 1 still says 0.80 and is not met by this goal
 
 ### G-11: clear the non-blocking Sprint 1 recheck items (active)
 Plan: docs/S1_T9_EVAL.md, "Sprint 1 recheck". Follows G-10, whose recall line stays open there. Cut from `cld/s1-t9-feature-a3a0ec`.
