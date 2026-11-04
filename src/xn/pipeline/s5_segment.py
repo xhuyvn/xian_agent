@@ -1,4 +1,4 @@
-r"""Stage S5: arc segmentation by smoothed scores, constrained DP and a local LLM boundary review."""
+r"""Stage S5: arc segmentation by a summary-embedding change score, constrained DP and a local LLM review."""
 
 from __future__ import annotations
 
@@ -6,12 +6,14 @@ from dataclasses import dataclass
 import hashlib
 import json
 import logging
+import math
 from pathlib import Path
 from typing import Any, Callable
 
 from pydantic_ai import Agent
 
 from xn.llm import extractor_output, extractor_settings, local_model, run_logged
+from xn.pipeline.s4_embed import Embedder
 from xn.prompts import load_prompt, profile_from_config
 from xn.schemas.arc import BoundaryReview
 from xn.schemas.extraction import ChapterExtraction
@@ -39,6 +41,8 @@ class S5Settings:
 
     weights: dict[str, float]
     smoothing_window: int
+    change_scales: tuple[int, ...]  # window sizes, in chapters, compared on each side of a chapter
+    flag_weight: float  # weight of the smoothed flag score next to the change score
     min_len: int
     max_len: int
     boundary_penalty: float
@@ -51,11 +55,13 @@ class S5Settings:
         return cls(
             weights={**DEFAULT_WEIGHTS, **(cfg.get("weights") or {})},
             smoothing_window=int(cfg.get("smoothing_window", 5)),
+            change_scales=tuple(int(k) for k in cfg.get("change_scales", (5, 10))),
+            flag_weight=float(cfg.get("flag_weight", 0.1)),
             min_len=int(cfg.get("min_arc_length", 30)),
             max_len=int(cfg.get("max_arc_length", 90)),
             boundary_penalty=float(cfg.get("boundary_penalty", 0.30)),
-            review_window=int(cfg.get("review_window", 5)),
-            max_shift=int(cfg.get("max_shift", 5)),
+            review_window=int(cfg.get("review_window", 10)),
+            max_shift=int(cfg.get("max_shift", 10)),
         )
 
 
@@ -88,6 +94,38 @@ def smooth(scores: list[float], window: int) -> list[float]:
         part = scores[max(0, i - half): i + half + 1]
         out.append(sum(part) / len(part))
     return out
+
+
+def _unit_mean(vectors: list[list[float]]) -> list[float]:
+    mean = [sum(xs) / len(vectors) for xs in zip(*vectors)]
+    norm = math.sqrt(sum(x * x for x in mean)) or 1.0
+    return [x / norm for x in mean]
+
+
+def change_scores(vectors: list[list[float]], scales: tuple[int, ...]) -> list[float]:
+    r"""How much the story moves at each chapter, scaled to 0..1.
+
+    For each scale k, the cosine distance between the mean summary embedding of the k chapters
+    before and the k chapters from this one on, summed over scales. Chapter 1 scores 0.
+    """
+    n = len(vectors)
+    raw = [0.0] * n
+    for k in scales:
+        for i in range(1, n):
+            before = _unit_mean(vectors[max(0, i - k): i])
+            after = _unit_mean(vectors[i: i + k])
+            raw[i] += (1 - sum(a * b for a, b in zip(before, after))) / 2
+    lo, hi = min(raw, default=0.0), max(raw, default=0.0)
+    return [(s - lo) / (hi - lo) if hi > lo else 0.0 for s in raw]
+
+
+def boundary_scores(
+    extractions: list[ChapterExtraction], vectors: list[list[float]], settings: S5Settings
+) -> list[float]:
+    r"""The DP score per chapter: the change score plus the weighted, smoothed flag score."""
+    flags = smooth([chapter_score(e, settings.weights) for e in extractions], settings.smoothing_window)
+    change = change_scores(vectors, settings.change_scales)
+    return [c + settings.flag_weight * f for c, f in zip(change, flags)]
 
 
 def segment(scores: list[float], *, min_len: int, max_len: int, penalty: float) -> list[int]:
@@ -208,13 +246,15 @@ def build_reviewer(
     return review
 
 
-def _input_hash(extractions: list[ChapterExtraction], settings: S5Settings, prompt_version: str, model: str) -> str:
+def _input_hash(
+    extractions: list[ChapterExtraction], settings: S5Settings, prompt_version: str, model: str, embed_model: str
+) -> str:
     rows = [
         [e.chapter_id, e.location_change, e.realm_breakthrough, e.major_conflict, e.time_skip_years, e.micro_summary]
         for e in extractions
     ]
     blob = json.dumps(
-        {"rows": rows, "settings": settings.__dict__, "prompt": prompt_version, "model": model},
+        {"rows": rows, "settings": settings.__dict__, "prompt": prompt_version, "model": model, "embed": embed_model},
         ensure_ascii=False, sort_keys=True,
     )
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
@@ -226,12 +266,15 @@ def run_s5(
     novel_id: str,
     config: dict[str, Any],
     store: QdrantStore,
+    embedder: Embedder,
     chapter_to: int | None = None,
     model: Any = None,
     reviewer: Reviewer | None = None,
     prompts_dir: Path = Path("prompts"),
 ) -> S5Result:
     r"""Segment chapters 1..chapter_to into arcs and write them to SQLite and `xn_chunks`.
+
+    The micro-summaries are embedded on each run that is not skipped; chunk points are never re-embedded.
 
     Needs S1 done on every chapter in range. An unchanged input skips the run, so a rerun
     gives identical rows without calling the model again.
@@ -254,7 +297,7 @@ def run_s5(
         profile_from_config(config), prompts_dir,
     )
     serving_name = config["models"]["local_extractor"]["serving_name"]
-    input_hash = _input_hash(extractions, settings, prompt.prompt_version, serving_name)
+    input_hash = _input_hash(extractions, settings, prompt.prompt_version, serving_name, embedder.model)
 
     job = repo.get_job(novel_id=novel_id, chapter_id=JOB_CHAPTER, stage=STAGE)
     if job is not None and job["status"] == "done" and job["input_hash"] == input_hash:
@@ -267,7 +310,8 @@ def run_s5(
     }
     repo.upsert_job(status="running", **job_fields)
     try:
-        scores = smooth([chapter_score(e, settings.weights) for e in extractions], settings.smoothing_window)
+        vectors = embedder.embed([e.micro_summary for e in extractions])
+        scores = boundary_scores(extractions, vectors, settings)
         starts = segment(
             scores, min_len=settings.min_len, max_len=settings.max_len, penalty=settings.boundary_penalty
         )

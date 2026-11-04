@@ -12,9 +12,13 @@ arc_detection:
     major_conflict: 0.20
     time_skip: 0.10
   smoothing_window: 5
-  boundary_penalty: 0.30
-  review_window: 5
-  max_shift: 5
+  # S5 score: summary-embedding change over 10 chapters each side, plus 0.05 x smoothed flags.
+  # Tuned on chapters 1-600 against eval/pntt1/gold/arcs.jsonl (G-21).
+  change_scales: [10]
+  flag_weight: 0.05
+  boundary_penalty: 0.40
+  review_window: 10
+  max_shift: 10
   min_arc_length: 30
   max_arc_length: 90
 

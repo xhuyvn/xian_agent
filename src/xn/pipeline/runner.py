@@ -188,6 +188,7 @@ def run_stage(
             novel_id=novel_id,
             config=config,
             store=store if store is not None else QdrantStore.from_config(config),
+            embedder=embedder if embedder is not None else OllamaEmbedder.from_config(config),
             chapter_to=chapter_to,
             model=model,
             prompts_dir=prompts_dir,

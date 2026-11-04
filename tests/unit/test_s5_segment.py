@@ -12,6 +12,7 @@ from xn.pipeline.s5_segment import (
     S5RequestError,
     S5Settings,
     boundary_f1,
+    change_scores,
     chapter_score,
     review_boundaries,
     run_s5,
@@ -114,6 +115,23 @@ def point_arcs(client):
     return {p.payload["chapter_id"]: p.payload.get("arc_id") for p in points}
 
 
+class FakeEmbedder:
+    """One direction per gold-like arc, so the change score peaks where the arc changes."""
+
+    model = "fake-embed"
+
+    def __init__(self):
+        self.calls = 0
+
+    def embed(self, texts):
+        self.calls += 1
+        out = []
+        for cid in range(1, len(texts) + 1):
+            arc = sum(cid >= p for p in PEAKS)
+            out.append([1.0 if d == arc else 0.0 for d in range(4)])
+        return out
+
+
 class FakeReviewer:
     def __init__(self, answer=None, fail=False):
         self.calls = []
@@ -180,25 +198,34 @@ def test_segment_is_deterministic():
     )
 
 
+def test_change_scores_peak_where_the_summaries_change():
+    vectors = FakeEmbedder().embed([SUMMARY] * N)
+    scores = change_scores(vectors, (5, 10))
+    assert scores[0] == 0.0 and max(scores) == 1.0
+    assert {i + 1 for i, s in enumerate(scores) if s == 1.0} == set(PEAKS)
+    assert change_scores([[1.0, 0.0]] * 5, (5,)) == [0.0] * 5
+
+
 # --- boundary review ---
 
 
-def test_review_sees_five_chapters_each_side_and_shifts_at_most_five():
+def test_review_sees_ten_chapters_each_side_and_shifts_at_most_ten():
     summaries = {c: SUMMARY for c in range(1, N + 1)}
     reviewer = FakeReviewer(answer=lambda b: b + 40)
     starts, shifted, failed = review_boundaries(
-        [1, 31, 66], n=N, summaries=summaries, reviewer=reviewer, settings=settings()
+        [1, 31, 91], n=180, summaries={c: SUMMARY for c in range(1, 181)}, reviewer=reviewer,
+        settings=settings(),
     )
-    assert reviewer.calls[0] == (31, list(range(26, 37)))
-    assert starts == [1, 36, 71] and shifted == 2 and failed == 0
-    assert all(30 <= e - s + 1 <= 90 for s, e in spans_from_starts(starts, N))
+    assert reviewer.calls[0] == (31, list(range(21, 42)))
+    assert starts == [1, 41, 101] and shifted == 2 and failed == 0
+    assert all(30 <= e - s + 1 <= 90 for s, e in spans_from_starts(starts, 180))
 
 
 def test_review_clamps_to_keep_arc_lengths():
     summaries = {c: SUMMARY for c in range(1, N + 1)}
-    # moving 31 back to 26 would leave a first arc of 25 chapters
+    # moving 31 back to 21 would leave a first arc of 20 chapters
     starts, _, _ = review_boundaries(
-        [1, 31, 66], n=N, summaries=summaries, reviewer=FakeReviewer(answer=lambda b: b - 5),
+        [1, 31, 66], n=N, summaries=summaries, reviewer=FakeReviewer(answer=lambda b: b - 10),
         settings=settings(),
     )
     assert starts[1] == 31
@@ -229,7 +256,7 @@ def test_boundary_f1_matches_one_to_one_within_tolerance():
 def test_run_s5_writes_arc_ids_placeholders_job_and_points(repo, conn, store, client):
     for cid in (1, 31, 65, 66, 100):
         add_point(store, cid)
-    result = run_s5(repo, novel_id=NOVEL, config=CONFIG, store=store, reviewer=FakeReviewer())
+    result = run_s5(repo, novel_id=NOVEL, config=CONFIG, store=store, embedder=FakeEmbedder(), reviewer=FakeReviewer())
     assert result.arcs == 3 and not result.skipped
 
     arcs = conn.execute("SELECT arc_id, start_chapter, end_chapter, payload FROM arcs ORDER BY arc_id").fetchall()
@@ -242,21 +269,21 @@ def test_run_s5_writes_arc_ids_placeholders_job_and_points(repo, conn, store, cl
 
 
 def test_rerun_on_unchanged_input_skips_and_keeps_rows(repo, conn, store):
-    run_s5(repo, novel_id=NOVEL, config=CONFIG, store=store, reviewer=FakeReviewer())
+    run_s5(repo, novel_id=NOVEL, config=CONFIG, store=store, embedder=FakeEmbedder(), reviewer=FakeReviewer())
     before = conn.execute("SELECT * FROM arcs ORDER BY arc_id").fetchall()
     reviewer = FakeReviewer(answer=lambda b: b + 3)
-    result = run_s5(repo, novel_id=NOVEL, config=CONFIG, store=store, reviewer=reviewer)
+    result = run_s5(repo, novel_id=NOVEL, config=CONFIG, store=store, embedder=FakeEmbedder(), reviewer=reviewer)
     assert result.skipped and reviewer.calls == []
     assert conn.execute("SELECT * FROM arcs ORDER BY arc_id").fetchall() == before
 
 
 def test_changed_input_keeps_payload_of_unchanged_spans(repo, conn, store):
-    run_s5(repo, novel_id=NOVEL, config=CONFIG, store=store, reviewer=FakeReviewer())
+    run_s5(repo, novel_id=NOVEL, config=CONFIG, store=store, embedder=FakeEmbedder(), reviewer=FakeReviewer())
     conn.execute("UPDATE arcs SET payload = '{}' WHERE novel_id = ?", (NOVEL,))
     conn.commit()
     add_chapter(repo, 10, summary="Hàn Lập rời động phủ đi tìm linh dược. " * 8)
     reviewer = FakeReviewer(answer=lambda b: b + 2 if b == 66 else None)
-    run_s5(repo, novel_id=NOVEL, config=CONFIG, store=store, reviewer=reviewer)
+    run_s5(repo, novel_id=NOVEL, config=CONFIG, store=store, embedder=FakeEmbedder(), reviewer=reviewer)
     rows = conn.execute("SELECT arc_id, start_chapter, end_chapter, payload FROM arcs ORDER BY arc_id").fetchall()
     assert [tuple(r) for r in rows] == [(1, 1, 30, "{}"), (2, 31, 67, None), (3, 68, 100, None)]
 
@@ -265,13 +292,13 @@ def test_run_s5_refuses_missing_extractions(repo, conn, store):
     conn.execute("DELETE FROM extractions WHERE chapter_id = 50")
     conn.commit()
     with pytest.raises(S5RequestError, match="first: 50"):
-        run_s5(repo, novel_id=NOVEL, config=CONFIG, store=store, reviewer=FakeReviewer())
+        run_s5(repo, novel_id=NOVEL, config=CONFIG, store=store, embedder=FakeEmbedder(), reviewer=FakeReviewer())
     assert conn.execute("SELECT COUNT(*) FROM arcs").fetchone()[0] == 0
 
 
 def test_shorter_run_clears_arc_id_past_the_range(repo, conn, store, client):
     add_point(store, 100, arc_id=7)
-    run_s5(repo, novel_id=NOVEL, config=CONFIG, store=store, chapter_to=60, reviewer=FakeReviewer())
+    run_s5(repo, novel_id=NOVEL, config=CONFIG, store=store, embedder=FakeEmbedder(), chapter_to=60, reviewer=FakeReviewer())
     assert point_arcs(client)[100] is None
     assert conn.execute("SELECT arc_id FROM chapters WHERE chapter_id = 100").fetchone()[0] is None
 
@@ -283,7 +310,7 @@ def test_qdrant_failure_marks_job_failed_and_leaves_sqlite(repo, conn, client):
 
     broken = BrokenStore.from_config(CONFIG, client)
     with pytest.raises(RuntimeError):
-        run_s5(repo, novel_id=NOVEL, config=CONFIG, store=broken, reviewer=FakeReviewer())
+        run_s5(repo, novel_id=NOVEL, config=CONFIG, store=broken, embedder=FakeEmbedder(), reviewer=FakeReviewer())
     assert repo.get_job(novel_id=NOVEL, chapter_id=JOB_CHAPTER, stage=STAGE)["status"] == "failed"
     assert conn.execute("SELECT COUNT(*) FROM arcs").fetchone()[0] == 0
 
