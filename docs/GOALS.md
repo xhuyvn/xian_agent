@@ -19,6 +19,7 @@ Done when:
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
 - R-1 2026-11-04: deliver the prefix stage, prompt, snap-down view and unit tests -> PASS, 0 blockers, 7c02ce4, 0 agy tokens; the live run is judged apart; NITs: `_arc_spans` docstring overstates the min(), CLI import order
+- 2026-11-04: verifier delta pass after merging `cld/sprint-3-tasks-60f7ab` at cb95034 (S6, PR #27) into the branch at bba237a -> PASS, 0 blockers, 592 tests; conflicts in the runner, CLI, repository and guard test kept both sides; NIT: `prefix_summaries` imports sit after `s6_synthesize`
 Sub-goals:
 - none yet
 Changes:
