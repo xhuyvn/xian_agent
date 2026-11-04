@@ -8,6 +8,23 @@ Round line: `R-<n> <date>: <what this round had to achieve> -> PASS|FAIL, <n> bl
 
 ## Active
 
+### G-21: S3-T1 pipeline stage S5, arc segmentation (active)
+Plan: `docs/IMPLEMENTATION_PLAN.md` S3-T1, chat plan of 2026-11-04. Cut from `cld/sprint-3-tasks-60f7ab` as `cld/s3-t1-s5-segment`. First of Sprint 3; S3-T2, S3-T3 and S3-T4 wait for it, S3-T5 waits for those.
+Owner decisions: the lead writes the code, with no agy. OQ-04: DP maximizes the sum of smoothed scores at the chosen boundaries minus a fixed penalty per boundary, with every arc 30-90 chapters long; the penalty is tuned on chapters 1-600 against boundary F1 (±3); the prototype's `score_threshold 0.60` and 5-year time-skip rule are dropped. OQ-05: S5 writes `chapters.arc_id` and placeholder `arcs` rows (start and end chapter, null payload) that S6 fills; novel-wide stages record `jobs` with `chapter_id = 0`, per-arc stages key by the arc's end chapter. The gold arc boundaries for 1-600 are annotated by Claude from the chapter titles and S1 micro-summaries, committed before any scoring. The live run uses `data/eval/g21-s5.db`, a copy of `g15-s4.db` (prompt v2) extended by S0-S3 to chapter 600 on the local model.
+Done when:
+- `eval/pntt1/gold/arcs.jsonl` holds the gold arc starts for 1-600 and is committed before the first scored S5 run
+- `xn run --novel pntt1 --stage s5 --to 600` writes `chapters.arc_id` and placeholder `arcs` rows, every arc 30-90 chapters long, and a rerun on unchanged input gives identical rows
+- the local LLM boundary review sees micro-summaries ±5 chapters and moves no boundary more than 5 chapters
+- S5 sets `arc_id` on the chapter's `xn_chunks` points in place, with no embed call
+- boundary F1 ≥ 0.80 on chapters 1-600 (±3 chapters)
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- none yet
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-04: owner approved the goal and the decisions above
+
 ### G-11: clear the non-blocking Sprint 1 recheck items (active)
 Plan: docs/S1_T9_EVAL.md, "Sprint 1 recheck". Follows G-10, whose recall line stays open there. Cut from `cld/s1-t9-feature-a3a0ec`.
 Owner decisions: the lead writes the code, with no agy, because it is two small changes that must be run to be proven. `total_chapters` becomes 2468, the chapters on disk. `pntt1.yaml` gains `raw_dir: data/novel/pham_nhan_tu_tien_1`, and `xn run` falls back to `data/novels/<id>/raw` only without it (this changes the G-6 decision on the raw path; the folder stays where it is). The checkpoint serializer gets an explicit allowlist covering every `xn.schemas.state` model stored in a checkpoint, which includes `EvidenceItem` if it logs too. `novels` rows in existing databases keep their old value: there is no `data/xn.db`, and S0 only writes a missing row. Blueprint history (old benchmark plans) stays as written. The extraction prompt, the gold set, the extractor model and the other recheck items are out of scope. One round.
