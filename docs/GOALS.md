@@ -25,6 +25,23 @@ Sub-goals:
 Changes:
 - 2026-11-01: owner approved the goal and the decisions above
 
+### G-25: benchmark `qwen2.5:14b-instruct` against `qwen3.8:udiq4_hui` on S1 extraction (active)
+Plan: chat plan of 2026-11-05. Follows G-7, G-8, G-10.1 and G-13. Cut from `cld/sprint-3-tasks-60f7ab`.
+Owner decisions: the lead writes the code, with no agy. Chapters are the G-13 set: the 20 gold chapters and 30 others from 1-100. Prompt v2, one chapter at a time, temperature 0.1. `qwen2.5:14b-instruct` runs as a new Ollama model `qwen25-14b-10k` from `ollama/Modelfile.qwen25-14b-10k` at `num_ctx 10240`; it has no thinking mode. Production `qwen38-udiq4-hui-10k` runs again, fresh, so both are timed under the same conditions. Databases go to `data/bench/g25-qwen25/`, never `data/eval/*.db`. No winner rule: the report recommends and the owner decides. Nothing is downloaded. Two rounds: harness, then run and report.
+Done when:
+- `xn.bench` has a `qwen25-14b-10k` candidate, can run the gold chapter set and scores it against the gold, with unit tests on a fake model
+- Both models run the same 50 chapters through the real S0 and S1 code, with the GPU checked free first
+- `docs/S1_QWEN25_BENCHMARK.md` gives both side by side: schema success, first-try rate, entity recall and precision (all 20, dev and held out apart), category and event-type accuracy, flag F1, s/chapter mean and p95, idle and peak VRAM, the exact commands and caveats
+- `eval/`, the prompt, production config and production S1 are unchanged
+- `qwen25-14b-10k` also runs the same chapters with 2 S1 processes at once (`--workers 2`), and the report compares its wall s/chapter and gold scores with the one-at-a-time run
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-05: owner approved the goal and the decisions above
+- 2026-11-05: owner added a test of `qwen25-14b-10k` processing 2 chapters in parallel, for speed, as a "Done when" line. Ollama's `OLLAMA_NUM_PARALLEL` is unset and stays so unless the owner says otherwise
+
 ## Parked
 
 ## Archive
