@@ -34,7 +34,7 @@ Done when:
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 - the live run reports digest counts (full and prefix), failures and time
 Rounds:
-- none yet
+- R-1 2026-11-04: deliver the S7 stage code, prompt, runner and CLI registration and fake-model tests -> PASS, 0 blockers, 34ec789, 0 agy tokens; NITs: `STAGES += ("s7",)` on its own line (for D7); past MENTIONED, the budget cuts the latest events; a failure building the model leaves the arc's job `running`
 Sub-goals:
 - none yet
 Changes:
