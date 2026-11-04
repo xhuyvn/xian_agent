@@ -3,5 +3,12 @@
   "annotated_from": "chapter text only, committed before any scoring",
   "chapter_max": 100,
   "scope": "Sprint 1: 20 chapters evenly spaced across 1-100",
-  "entity_rule": "entities lists named things with a concrete action or event in the chapter, as the S1 prompt asks; optional lists names that may fairly be extracted but need not be"
+  "entity_rule": "entities lists named things with a concrete action or event in the chapter, as the S1 prompt asks; optional lists names that may fairly be extracted but need not be",
+  "arcs": {
+    "file": "arcs.jsonl",
+    "chapter_max": 600,
+    "annotator": "claude",
+    "annotated_from": "chapter titles and S1 micro-summaries, committed before any scored S5 run",
+    "rule": "start_chapter is the first chapter of a new macro setting or goal; chapter 1 always starts an arc"
+  }
 }

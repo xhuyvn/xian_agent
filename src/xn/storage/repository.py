@@ -352,6 +352,56 @@ class Repository:
                 model=model,
             )
 
+    def save_arc_boundaries(
+        self,
+        *,
+        novel_id: str,
+        spans: list[tuple[int, int]],
+        stage: str,
+        input_hash: str,
+        prompt_version: str,
+        model: str,
+    ) -> None:
+        """Write S5 arcs as `chapters.arc_id` and placeholder `arcs` rows in one transaction.
+
+        Arc ids run 1..len(spans) in order. A row whose span is unchanged keeps its S6 payload;
+        every other row is replaced by a placeholder with a null payload. The job is novel-wide,
+        so it is keyed `chapter_id = 0` (OQ-05).
+        """
+        _validate_novel_id(novel_id)
+        with self._conn:
+            self._conn.execute("UPDATE chapters SET arc_id = NULL WHERE novel_id = ?", (novel_id,))
+            kept = {
+                (row["arc_id"], row["start_chapter"], row["end_chapter"])
+                for row in self._conn.execute(
+                    "SELECT arc_id, start_chapter, end_chapter FROM arcs WHERE novel_id = ?", (novel_id,)
+                )
+            }
+            wanted = {(i, start, end) for i, (start, end) in enumerate(spans, start=1)}
+            for arc_id, _, _ in kept - wanted:
+                self._conn.execute(
+                    "DELETE FROM arcs WHERE novel_id = ? AND arc_id = ?", (novel_id, arc_id)
+                )
+            for arc_id, start, end in sorted(wanted - kept):
+                self._conn.execute(
+                    "INSERT INTO arcs (novel_id, arc_id, start_chapter, end_chapter) VALUES (?, ?, ?, ?)",
+                    (novel_id, arc_id, start, end),
+                )
+            for arc_id, start, end in wanted:
+                self._conn.execute(
+                    "UPDATE chapters SET arc_id = ? WHERE novel_id = ? AND chapter_id BETWEEN ? AND ?",
+                    (arc_id, novel_id, start, end),
+                )
+            self._upsert_job(
+                novel_id=novel_id,
+                chapter_id=0,
+                stage=stage,
+                status="done",
+                input_hash=input_hash,
+                prompt_version=prompt_version,
+                model=model,
+            )
+
     def next_entity_id(self, *, novel_id: str) -> int:
         _validate_novel_id(novel_id)
         cur = self._conn.execute(
