@@ -8,23 +8,6 @@ Round line: `R-<n> <date>: <what this round had to achieve> -> PASS|FAIL, <n> bl
 
 ## Active
 
-### G-22: S3-T2 pipeline stage S6, macro StoryArc synthesis (active)
-Plan: `docs/IMPLEMENTATION_PLAN.md` S3-T2, chat plan of 2026-11-04. Cut from `cld/sprint-3-tasks-60f7ab`; S3-T3 and S3-T4 run in parallel sessions, S3-T5 waits for all three.
-Owner decisions: the lead writes the code, with no agy. Each arc's S1 micro-summaries go to `models.macro_synthesizer` through `run_compact` (compact egress, spoiler bound = the arc's end chapter, spend cap checked). The model writes the story fields only; `arc_id`, start and end chapter come from the `arcs` row. The `xn_arcs` point embeds title plus summary with BGE-M3, id uuid5 of `novel:arc:<arc_id>`; points of arc ids that no longer exist are deleted. Jobs are keyed by the arc's end chapter (OQ-05), with an input hash over span, micro-summaries, prompt, model and embedding model. One failed arc does not stop the others. The legacy `src/schemas/arc.py` stays. The live run uses `data/eval/g22-s6.db`, a copy of `g21-s5.db`, with `daily_spend_cap_usd` raised to 1.50 for that run only (the copy already holds $1.24 of today's S1 spend); `configs/config.yaml` keeps 1.00.
-Done when:
-- `StoryArc` is in `xn.schemas.arc` next to `BoundaryReview`, and `prompts/s6_arc_synthesize/v1.md` exists
-- `xn run --novel pntt1 --stage s6 --to 600` fills `payload`, `prompt_version` and `model` on all 17 arcs and upserts 17 points into `xn_arcs`, with the spend reported from `llm_runs`
-- a rerun on unchanged input makes 0 cloud calls and changes no rows; an arc whose input changed is synthesized again
-- unit tests with a fake model and in-memory Qdrant cover skip and rerun, the egress and spoiler bound, a refused spend cap, one failed arc and the repository guard
-- `py -m compileall -q src` and `uv run pytest tests/unit` pass
-Rounds:
-- R-1 2026-11-04: deliver the S6 stage code and unit tests -> PASS, 0 blockers, 745eb9d, 0 agy tokens; NIT fixed after: `written` was printed twice by `xn run`; the live run stays open for R-2
-- R-2 2026-11-04: live run of S6 on 1-600 in `data/eval/g22-s6.db` -> 1st run 11 of 17 (2 connection drops, 2 hits on the 2500-token output cap since the model reasons first, 2 output-validation failures at the 20-name `key_entities` limit), $0.105; fixed in 998ca84 (S6 caps output at 8000 tokens via a new optional `run_compact` `max_tokens`, 2 output retries, lists up to 15/30 with 8/15 asked in the prompt); 2nd run wrote 17 of 17 and 17 `xn_arcs` points, $0.133; a 3rd run skipped 17 with 0 cloud calls and identical rows. S6 spend $0.238 over 64 attempts (28 ok, the rest instant connection drops); the copy's cloud spend today is $1.479 against the one-off $1.50 cap. Summaries run 436-626 words against the 250-400 asked; 4 of 383 names are descriptions not found verbatim in the arc's summaries -> PASS, 0 blockers, cd93473, 0 agy tokens
-Sub-goals:
-- none yet
-Changes:
-- 2026-11-04: owner approved the goal and the decisions above, with the one-off $1.50 cap for the live run
-
 ### G-11: clear the non-blocking Sprint 1 recheck items (active)
 Plan: docs/S1_T9_EVAL.md, "Sprint 1 recheck". Follows G-10, whose recall line stays open there. Cut from `cld/s1-t9-feature-a3a0ec`.
 Owner decisions: the lead writes the code, with no agy, because it is two small changes that must be run to be proven. `total_chapters` becomes 2468, the chapters on disk. `pntt1.yaml` gains `raw_dir: data/novel/pham_nhan_tu_tien_1`, and `xn run` falls back to `data/novels/<id>/raw` only without it (this changes the G-6 decision on the raw path; the folder stays where it is). The checkpoint serializer gets an explicit allowlist covering every `xn.schemas.state` model stored in a checkpoint, which includes `EvidenceItem` if it logs too. `novels` rows in existing databases keep their old value: there is no `data/xn.db`, and S0 only writes a missing row. Blueprint history (old benchmark plans) stays as written. The extraction prompt, the gold set, the extractor model and the other recheck items are out of scope. One round.
@@ -45,6 +28,24 @@ Changes:
 ## Parked
 
 ## Archive
+
+### G-22: S3-T2 pipeline stage S6, macro StoryArc synthesis (done)
+Plan: `docs/IMPLEMENTATION_PLAN.md` S3-T2, chat plan of 2026-11-04. Cut from `cld/sprint-3-tasks-60f7ab`; S3-T3 and S3-T4 run in parallel sessions, S3-T5 waits for all three.
+Owner decisions: the lead writes the code, with no agy. Each arc's S1 micro-summaries go to `models.macro_synthesizer` through `run_compact` (compact egress, spoiler bound = the arc's end chapter, spend cap checked). The model writes the story fields only; `arc_id`, start and end chapter come from the `arcs` row. The `xn_arcs` point embeds title plus summary with BGE-M3, id uuid5 of `novel:arc:<arc_id>`; points of arc ids that no longer exist are deleted. Jobs are keyed by the arc's end chapter (OQ-05), with an input hash over span, micro-summaries, prompt, model and embedding model. One failed arc does not stop the others. The legacy `src/schemas/arc.py` stays. The live run uses `data/eval/g22-s6.db`, a copy of `g21-s5.db`, with `daily_spend_cap_usd` raised to 1.50 for that run only (the copy already holds $1.24 of today's S1 spend); `configs/config.yaml` keeps 1.00.
+Done when:
+- `StoryArc` is in `xn.schemas.arc` next to `BoundaryReview`, and `prompts/s6_arc_synthesize/v1.md` exists
+- `xn run --novel pntt1 --stage s6 --to 600` fills `payload`, `prompt_version` and `model` on all 17 arcs and upserts 17 points into `xn_arcs`, with the spend reported from `llm_runs`
+- a rerun on unchanged input makes 0 cloud calls and changes no rows; an arc whose input changed is synthesized again
+- unit tests with a fake model and in-memory Qdrant cover skip and rerun, the egress and spoiler bound, a refused spend cap, one failed arc and the repository guard
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-04: deliver the S6 stage code and unit tests -> PASS, 0 blockers, 745eb9d, 0 agy tokens; NIT fixed after: `written` was printed twice by `xn run`; the live run stays open for R-2
+- R-2 2026-11-04: live run of S6 on 1-600 in `data/eval/g22-s6.db` -> 1st run 11 of 17 (2 connection drops, 2 hits on the 2500-token output cap since the model reasons first, 2 output-validation failures at the 20-name `key_entities` limit), $0.105; fixed in 998ca84 (S6 caps output at 8000 tokens via a new optional `run_compact` `max_tokens`, 2 output retries, lists up to 15/30 with 8/15 asked in the prompt); 2nd run wrote 17 of 17 and 17 `xn_arcs` points, $0.133; a 3rd run skipped 17 with 0 cloud calls and identical rows. S6 spend $0.238 over 64 attempts (28 ok, the rest instant connection drops); the copy's cloud spend today is $1.479 against the one-off $1.50 cap. Summaries run 436-626 words against the 250-400 asked; 4 of 383 names are descriptions not found verbatim in the arc's summaries -> PASS, 0 blockers, cd93473, 0 agy tokens
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-04: owner approved the goal and the decisions above, with the one-off $1.50 cap for the live run
+- 2026-11-04: owner approved marking the goal done, recorded with PR #27
 
 ### G-21: S3-T1 pipeline stage S5, arc segmentation (done)
 Plan: `docs/IMPLEMENTATION_PLAN.md` S3-T1, chat plan of 2026-11-04. Cut from `cld/sprint-3-tasks-60f7ab` as `cld/s3-t1-s5-segment`. First of Sprint 3; S3-T2, S3-T3 and S3-T4 wait for it, S3-T5 waits for those.
