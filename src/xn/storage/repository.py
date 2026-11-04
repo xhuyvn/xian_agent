@@ -425,6 +425,43 @@ class Repository:
                 model=model,
             )
 
+    def save_arc_payload(
+        self,
+        *,
+        novel_id: str,
+        arc_id: int,
+        start_chapter: int,
+        end_chapter: int,
+        payload: str,
+        stage: str,
+        input_hash: str,
+        prompt_version: str,
+        model: str,
+    ) -> None:
+        """Write one S6 `StoryArc` payload and its job, keyed by the arc's end chapter (OQ-05).
+
+        Raises ValueError, writing nothing, if the row no longer has this span, so a payload
+        never lands on an arc that S5 changed in the meantime.
+        """
+        _validate_novel_id(novel_id)
+        with self._conn:
+            cur = self._conn.execute(
+                "UPDATE arcs SET payload = ?, prompt_version = ?, model = ? "
+                "WHERE novel_id = ? AND arc_id = ? AND start_chapter = ? AND end_chapter = ?",
+                (payload, prompt_version, model, novel_id, arc_id, start_chapter, end_chapter),
+            )
+            if cur.rowcount != 1:
+                raise ValueError(f"arc {arc_id} ({start_chapter}-{end_chapter}) is not in arcs")
+            self._upsert_job(
+                novel_id=novel_id,
+                chapter_id=end_chapter,
+                stage=stage,
+                status="done",
+                input_hash=input_hash,
+                prompt_version=prompt_version,
+                model=model,
+            )
+
     def save_arc_prefix_summary(
         self,
         *,

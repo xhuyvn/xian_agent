@@ -306,6 +306,7 @@ def run_compact(
     egress_class: str = "compact",
     model_factory: Callable[[str], Any] = cloud_model,
     sleep: Callable[[float], None] = time.sleep,
+    max_tokens: int = CLOUD_MAX_TOKENS,
 ) -> Any:
     """Send compact evidence to OpenRouter and write one llm_runs row per attempt.
 
@@ -313,7 +314,7 @@ def run_compact(
     Retries 429/5xx and connection failures with exponential backoff, then tries
     fallback_model once if it is configured. A connection that drops at once is retried
     after a short pause instead. cloud_provider in config, if set, is OpenRouter's
-    provider routing (for example {sort: latency}).
+    provider routing (for example {sort: latency}). max_tokens caps the output, reasoning included.
 
     Raises:
         EgressError: If the class is not compact or items break the compact rule.
@@ -327,7 +328,7 @@ def run_compact(
     payload_chapters = ",".join(str(c) for c in sorted({i.chapter_id for i in items}))
     settings = {
         "temperature": temperature,
-        "max_tokens": CLOUD_MAX_TOKENS,
+        "max_tokens": max_tokens,
         "openrouter_usage": {"include": True},
     }
     if config.get("cloud_provider"):

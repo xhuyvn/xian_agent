@@ -63,6 +63,7 @@ OPERATIONAL_METHODS = [
     "save_ledger",
     "clear_ledger",
     "save_arc_boundaries",
+    "save_arc_payload",
     "save_arc_prefix_summary",
     "prune_arc_prefix_summaries",
 ]
@@ -299,6 +300,16 @@ def test_operational_parameter_guards(repo: Repository) -> None:
         "save_arc_boundaries": {
             "spans": [],
             "stage": "s5",
+            "input_hash": "h",
+            "prompt_version": "v1",
+            "model": "m",
+        },
+        "save_arc_payload": {
+            "arc_id": 1,
+            "start_chapter": 1,
+            "end_chapter": 30,
+            "payload": "{}",
+            "stage": "s6",
             "input_hash": "h",
             "prompt_version": "v1",
             "model": "m",
