@@ -146,6 +146,23 @@ class QdrantStore:
             wait=True,
         )
 
+    def set_arc_id(self, *, novel_id: str, chapter_from: int, chapter_to: int, arc_id: int | None) -> None:
+        """Set `arc_id` on the chunk points of a chapter span in place, with no re-embedding."""
+        _validate_novel_id(novel_id)
+        self._client.set_payload(
+            collection_name=self._chunks,
+            payload={"arc_id": arc_id},
+            points=models.Filter(
+                must=[
+                    models.FieldCondition(key="novel_id", match=models.MatchValue(value=novel_id)),
+                    models.FieldCondition(
+                        key="chapter_id", range=models.Range(gte=chapter_from, lte=chapter_to)
+                    ),
+                ]
+            ),
+            wait=True,
+        )
+
     @staticmethod
     def _to_point(novel_id: str, point: ChunkPoint) -> models.PointStruct:
         return models.PointStruct(
