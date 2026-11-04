@@ -1,10 +1,10 @@
-"""Pipeline runner for executing stages s0 to s5."""
+"""Pipeline runner for executing stages s0 to s6."""
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from xn.embed import OllamaEmbedder
 from xn.pipeline.s0_parse import S0Result, run_s0
@@ -13,13 +13,14 @@ from xn.pipeline.s2_resolve import S2Result, run_s2
 from xn.pipeline.s3_ledger import S3Result, compute_input_hash, run_s3
 from xn.pipeline.s4_embed import Embedder, S4Result, run_s4
 from xn.pipeline.s5_segment import S5Result, run_s5
+from xn.pipeline.s6_synthesize import S6Result, run_s6
 from xn.prompts import load_prompt, profile_from_config
 from xn.storage.qdrant import QdrantStore
 from xn.storage.repository import Repository
 
 logger = logging.getLogger(__name__)
 
-STAGES = ("s0", "s1", "s2", "s3", "s4", "s5")
+STAGES = ("s0", "s1", "s2", "s3", "s4", "s5", "s6")
 
 
 class RunRequestError(ValueError):
@@ -41,7 +42,8 @@ def run_stage(
     prompts_dir: Path = Path("prompts"),
     store: QdrantStore | None = None,
     embedder: Embedder | None = None,
-) -> S0Result | S1Result | S2Result | S3Result | S4Result | S5Result:
+    cloud_factory: Callable[[str], Any] | None = None,
+) -> S0Result | S1Result | S2Result | S3Result | S4Result | S5Result | S6Result:
     """Run a pipeline stage with request validation and error checking."""
     # 1. Validation before touching the database
     if stage not in STAGES:
@@ -63,6 +65,9 @@ def run_stage(
 
     if chapter_from > 1 and stage in ("s0", "s2", "s5"):
         raise RunRequestError(f"chapter_from > 1 is not supported on stage {stage}")
+
+    if stage == "s6" and (stale_only or chapter_from > 1):
+        raise RunRequestError("stage s6 runs every arc up to --to; stale_only and chapter_from > 1 are not supported")
 
     if rebuild and stage != "s2":
         raise RunRequestError(f"rebuild is only supported on stage s2, got {stage}")
@@ -192,6 +197,18 @@ def run_stage(
             chapter_to=chapter_to,
             model=model,
             prompts_dir=prompts_dir,
+        )
+
+    if stage == "s6":
+        return run_s6(
+            repo,
+            novel_id=novel_id,
+            config=config,
+            store=store if store is not None else QdrantStore.from_config(config),
+            embedder=embedder if embedder is not None else OllamaEmbedder.from_config(config),
+            chapter_to=chapter_to,
+            prompts_dir=prompts_dir,
+            **({"cloud_factory": cloud_factory} if cloud_factory is not None else {}),
         )
 
     raise RunRequestError(f"Unhandled stage: {stage}")
