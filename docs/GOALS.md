@@ -18,6 +18,7 @@ Done when:
 - unit tests with a fake model and in-memory Qdrant cover skip and rerun, the egress and spoiler bound, a refused spend cap, one failed arc and the repository guard
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
+- R-1 2026-11-04: deliver the S6 stage code and unit tests -> PASS, 0 blockers, 745eb9d, 0 agy tokens; NIT fixed after: `written` was printed twice by `xn run`; the live run stays open for R-2
 Sub-goals:
 - none yet
 Changes:

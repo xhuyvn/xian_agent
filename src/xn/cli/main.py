@@ -37,7 +37,7 @@ def callback() -> None:
 def format_result(stage: str, result: Any) -> str:
     """Format stage execution result on one line."""
     parts = [f"{stage}:"]
-    for attr in ("processed", "written", "skipped", "failed", "points", "arcs", "shifted", "review_failed", "written", "cost_usd"):
+    for attr in ("processed", "written", "skipped", "failed", "points", "arcs", "shifted", "review_failed", "cost_usd"):
         val = getattr(result, attr, None)
         if val is not None:
             parts.append(f"{attr}={val}")
