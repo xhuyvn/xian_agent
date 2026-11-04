@@ -20,6 +20,7 @@ Done when:
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
 - R-1 2026-11-04: deliver the S5 stage code and unit tests -> PASS, 0 blockers, 8975374, 0 agy tokens; the live run, F1 and the gold commit stay open for R-2
+- R-2 2026-11-04: switch S5 to the summary-embedding change score, widen the review to ±10, tune and run live on 1-600 -> FAIL, 1 blocker (boundary F1 0.52 against 0.80; best DP-only F1 in tuning 0.58), 1cb3796, 0 agy tokens; every other line met, reported to the owner
 Sub-goals:
 - none yet
 Changes:
