@@ -58,6 +58,7 @@ Done when:
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
 - R-1 2026-11-05: sort the 26 false names by type and score filter rules offline on dev -> PASS, 0 blockers, 9f65355, 0 agy tokens
+- R-2 2026-11-05: prompt v3, bench --prompt and --gold-split, two v3 attempts on dev (precision unchanged by the prompt; v3 kept at attempt 1) -> PASS, 0 blockers, 7b4a205, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:

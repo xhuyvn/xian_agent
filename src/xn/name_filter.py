@@ -218,7 +218,9 @@ def main(
     scores = {}
     for path in db:
         payloads, texts = read_db(path, novel_id=novel, chapter_ids=ids)
-        scores[path.stem] = score_rules(chapters, payloads, texts)
+        stems = [other.stem for other in db]
+        label = path.stem if stems.count(path.stem) == 1 else f"{path.parent.name}/{path.stem}"
+        scores[label] = score_rules(chapters, payloads, texts)
     if out is not None:
         out.write_text(json.dumps(scores, ensure_ascii=False, indent=2), encoding="utf-8")
     typer.echo(render_study(scores, split))
