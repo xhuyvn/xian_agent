@@ -124,7 +124,7 @@ Open items it found, none blocking. G-11 has since fixed the first five; the las
 
 Date: 2026-11-05. Goal: G-25.
 
-**`qwen2.5:14b-instruct` is 3.4 times faster, but its recall of 0.70 fails Sprint 1's 0.80 bar.** The production extractor stays `qwen3.8:udiq4_hui`. Nothing in config, the prompt or S1 changed. Running 2 chapters at once gave no speed-up, and a 16k context changed nothing but VRAM.
+**`qwen2.5:14b-instruct` is 3.4 times faster, but its recall of 0.70 fails Sprint 1's 0.80 bar.** The production extractor stays `qwen3.8:udiq4_hui`. Nothing in config, the prompt or S1 changed. Running 2 chapters at once gave no speed-up, and a 16k context changed nothing but VRAM. A later run of `qwen3.5:9b_UD_Q6` did pass the recall bar, at 0.93, and is 2.1 times faster than production, but its precision is 0.79; see "`qwen3.5:9b_UD_Q6`" below.
 
 Both models ran prompt v2 (`6f35c798`) on the G-13 set: 50 chapters from 1-100, the 20 gold chapters plus 30 others. Gold scores cover the 20 gold chapters. `qwen2.5:14b-instruct` ran as `qwen25-14b-10k` (`ollama/Modelfile.qwen25-14b-10k`: `num_ctx 10240`, temperature 0.1), with native JSON-schema output, one chapter at a time, on an RTX 5070 Ti 16 GB with nothing else on the GPU. The production column is the G-10.1 full run in `data/eval/g101-full.db`, read only and restricted to the same 50 chapters. The owner chose not to run it again.
 
@@ -184,6 +184,38 @@ The owner asked for a run at 16k tokens. `qwen25-14b-16k` (`ollama/Modelfile.qwe
 
 **16k buys nothing here.** Chapters in the set average about 3,000 input and 660 output tokens, and the largest call used 3,583 input and 1,033 output, so 10k was never full, and the model saw the same prompt at both sizes. Recall, precision and category accuracy moved by a few names, about as much as the 2-worker run at 10k moved from the one-at-a-time run, which is run-to-run variation at temperature 0.1. Event-type accuracy (0.81 to 0.74) and held-out recall (0.79 to 0.67) moved more than that, but still by a handful of events and names, on one run each. The flag results are identical. Peak VRAM was 2,846 MiB higher (idle was 545 MiB higher), presumably the larger KV cache, and time did not change measurably. The 16k run is one run, on 2026-11-05 in the evening, hours after the 10k runs.
 
+### `qwen3.5:9b_UD_Q6`
+
+The owner asked for speed and quality of `qwen3.5:9b_UD_Q6` (8.95B, Q6_K, already pulled). It ran as `qwen35-9b-udq6-10k` (`ollama/Modelfile.qwen35-9b-udq6-10k`: `num_ctx 10240`, temperature 0.1) with thinking off, as `qwen3.5:Q8` did in G-7. It used the same 50 chapters and prompt v2, one at a time, on a fresh database, with the GPU checked free first.
+
+| Metric | `qwen3.5:9b_UD_Q6` | `qwen2.5:14b-instruct` (10k) | `qwen3.8:udiq4_hui` (G-10.1) |
+|---|---|---|---|
+| Schema success / first try | 100% / 100% | 100% / 100% | 100% / 100% |
+| Entity recall, all 20 | 0.93 (95 of 102) | 0.70 (71 of 102) | **0.98** (100 of 102) |
+| Entity precision, all 20 | 0.79 (26 false names) | **0.95** (4) | 0.88 (14) |
+| Recall, dev / held out | 0.94 / 0.92 | 0.60 / 0.79 | 0.96 / 1.00 |
+| Precision, dev / held out | 0.75 / 0.83 | 0.94 / 0.95 | 0.86 / 0.90 |
+| Category accuracy | 0.82 | 0.91 | 0.91 |
+| Event-type accuracy | 0.88 | 0.81 | 0.90 |
+| Flag F1, `location_change` (2 gold chapters) | 0.25 | 0.57 | 0.33 |
+| Flag F1, `realm_breakthrough` (1 gold chapter) | 0.00 | 0.00 | 1.00 |
+| Flag F1, `major_conflict` (6 gold chapters) | **1.00** | 0.75 | 0.92 |
+| Events kept per chapter | 12.5 (range 4-25) | 5.1 (range 0-8) | 8.7 (range 4-18) |
+| Events dropped for low evidence | 9 | not counted | not counted |
+| Tokens per chapter, input / output | 2,728 / 1,342 | 2,977 / 656 | 2,679 / 947 |
+| s/chapter, mean / p95 | 16.5 / 31.4 | **10.3** / 14.5 | 35.4 / 58.9 |
+| Idle / peak VRAM (MiB) | 2,270 / 11,651 | 1,822 / 11,514 | 15,425 peak, from G-8 |
+| S1 for all 2,468 chapters | about 11 hours | about 7 hours | about 24 hours |
+
+- **Recall passes the 0.80 bar, and the misses are few.** 7 gold names were missed: "Dưỡng tinh đan" (43), "Mã phó môn chủ" (69), "La Yên bộ" and "Ngự Phong quyết" (84), and "Hàn Lập", "phi kiếm" and "Khu vật thuật" (90). Dev and held out score alike, 0.94 and 0.92. Prompt v2 was tuned on the production model, not this one.
+- **Precision is the weak side.** Its 26 false names are mostly kinship terms and descriptions, not entities: "đại ca", "cha mẹ", "nhị ca", "thiếu nữ", "năm loại thảo dược", "bảy cái đầu quỷ", "chú chim nhỏ màu vàng". It writes the most events of the three, 12.5 per chapter, which is consistent with both the high recall and the extra names. These names would reach S2 as false entities. Precision is 0.79 against the 0.90 S4 target, and production's 0.88.
+- **Speed sits between the other two.** Its output is the longest, 1,342 tokens per chapter, which keeps it slower than qwen2.5 despite being the smallest model. The p95 is 31.4 s. The largest call used 3,312 input and 2,760 output tokens, so 10k was never full.
+- **Flags:** `major_conflict` matched all 6 gold chapters with no extras. It missed the single gold `realm_breakthrough` (chapter 43), and marked `location_change` on 15 of 50 chapters, including 4 gold chapters without one. Flag gold rests on few positive chapters.
+- **Category accuracy is lower**, at 0.82 against 0.91 for the others, so more events are filed under the wrong category.
+- **One run**, on 2026-11-05 in the evening. The vision projector of this model was not used. G-7's warning about `qwen3.5:Q8` writing event descriptions as names shows here too, in a milder form: 5 names were not in the chapter text, against 222 for `qwen3.5:Q8` on a different chapter set.
+
+**Recommendation:** production stays `qwen3.8:udiq4_hui`. `qwen3.5:9b_UD_Q6` is the first model that passes the recall bar at a clearly lower cost, about 11 hours for the book against 24. Whether to switch depends on whether a prompt change can cut its kinship and description names without losing recall, which would need its own goal and the owner's yes.
+
 ### How to read this
 
 - **Recall fails the bar, and the gap is in named things, not people.** 31 gold names were missed. Most are techniques, items, places and sects: "Trường Xuân Công", "La Yên bộ" (three chapters), "Ngự Phong quyết", "Thanh Linh Tán", "Lạc Nhật Phong", "Thất huyền môn". Chapters 84 and 95 lose the Kim Quang thượng nhân group, and chapters 53 and 58 lose "Hàn Lập" himself. Dev recall was 0.60 and held-out 0.79; prompt v2 was tuned on the other model, so that split says little here.
@@ -219,7 +251,15 @@ ollama create qwen25-14b-16k -f ollama/Modelfile.qwen25-14b-16k
 uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/bench/g25-qwen25-16k --chapter-max 100 --gold --model qwen25-14b-16k
 ```
 
-The outputs are `report.md`, `report.json`, `parallel-qwen25-14b-10k-w2.md` and `.json` in `<data>/bench/g25-qwen25/`, and `report.md` and `report.json` in `<data>/bench/g25-qwen25-16k/`, with the console log in `<data>/bench/g25-qwen25-16k.log`. The production column was read from `g101-full.db` with `xn.bench.pick_gold_chapters`, `_measure_runs` and `score_gold`, without writing to it.
+```bash
+ollama create qwen35-9b-udq6-10k -f ollama/Modelfile.qwen35-9b-udq6-10k
+```
+
+```bash
+uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/bench/g25-qwen35-9b --chapter-max 100 --gold --model qwen35-9b-udq6-10k
+```
+
+The outputs are `report.md`, `report.json`, `parallel-qwen25-14b-10k-w2.md` and `.json` in `<data>/bench/g25-qwen25/`, and `report.md` and `report.json` in `<data>/bench/g25-qwen25-16k/`, with the console log in `<data>/bench/g25-qwen25-16k.log`; the same for `qwen3.5:9b_UD_Q6` in `<data>/bench/g25-qwen35-9b/`, with its log in `<data>/bench/g25-qwen35-9b.log`. The production column was read from `g101-full.db` with `xn.bench.pick_gold_chapters`, `_measure_runs` and `score_gold`, without writing to it.
 
 ## Reproduce
 
