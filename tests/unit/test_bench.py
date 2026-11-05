@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from typing import Any
 import pytest
+import typer
 
 from pydantic_ai import NativeOutput
 from pydantic_ai.messages import ModelResponse, TextPart
@@ -27,7 +29,11 @@ from xn.bench import (
     render_report,
     run_benchmark,
     select_candidates,
+    split_chapter_ids,
+    with_prompt,
 )
+import xn.bench as bench
+from xn.prompts import load_prompt, profile_from_config
 from xn.gold import GoldChapter, GoldEntity, GoldSet
 from xn.llm import extractor_output, extractor_settings
 from xn.schemas.extraction import MicroSummary
@@ -179,8 +185,9 @@ def run_fake(
     readings = iter(vram or [])
     unloaded: list[str] = []
     candidates = tuple(Candidate(name, name) for name in models)
+    config = extra.pop("config", None) or make_config()
     out = run_benchmark(
-        config=make_config(), raw_dir=raw_dir, out_dir=tmp_path / "out", chapter_max=3, count=3,
+        config=config, raw_dir=raw_dir, out_dir=tmp_path / "out", chapter_max=3, count=3,
         candidates=candidates, models=models, prompts_dir=Path("prompts"),
         read_vram=lambda: next(readings, 9000), unload=unloaded.append, **extra,
     )
@@ -391,3 +398,86 @@ def test_qwen25_16k_candidate_runs_at_16384() -> None:
     modelfile = Path("ollama/Modelfile.qwen25-14b-16k").read_text(encoding="utf-8")
     assert "FROM qwen2.5:14b-instruct" in modelfile
     assert "PARAMETER num_ctx 16384" in modelfile
+
+
+def test_qwen35_candidate_runs_at_its_10k_serving_name_without_thinking() -> None:
+    (picked,) = select_candidates(["qwen35-9b-udq6-10k"])
+    assert picked.base_name == "qwen3.5:9b_UD_Q6"
+    assert picked.think is False and picked.output_mode == "native"
+    modelfile = Path("ollama/Modelfile.qwen35-9b-udq6-10k").read_text(encoding="utf-8")
+    assert "FROM qwen3.5:9b_UD_Q6" in modelfile
+    assert "PARAMETER num_ctx 10240" in modelfile and "PARAMETER temperature 0.1" in modelfile
+
+
+def test_with_prompt_sets_the_version_on_a_copy() -> None:
+    config = make_config()
+    config["prompts"] = {"s1_resummary": "v1"}
+    changed = with_prompt(config, "v3")
+    assert changed["prompts"] == {"s1_resummary": "v1", "s1_extract": "v3"}
+    assert config["prompts"] == {"s1_resummary": "v1"}
+    with pytest.raises(FileNotFoundError):
+        with_prompt(config, "v999")
+
+
+def test_v3_keeps_v2_and_adds_the_not_an_entity_rules() -> None:
+    v2 = Path("prompts/s1_extract/v2.md").read_text(encoding="utf-8")
+    v3 = Path("prompts/s1_extract/v3.md").read_text(encoding="utf-8")
+    assert "QUY TẮC PHỦ KÍN THỰC THỂ" in v3 and "KHÔNG PHẢI THỰC THỂ" in v3
+    assert "version: v3" in v3
+    body = v2.split("---", 2)[2]
+    kept = body.split("Trước khi trả lời")[0]
+    assert kept in v3
+
+
+def test_run_benchmark_runs_the_prompt_version_of_its_config(tmp_path: Path) -> None:
+    config = with_prompt(make_config(), "v3")
+    run_fake(tmp_path, {"m": fake_model(["Hàn Lập"])}, config=config, chapters=[1, 3])
+    v3 = load_prompt("s1_extract", "v3", profile_from_config(config), Path("prompts")).prompt_version
+    conn = sqlite3.connect(tmp_path / "out" / "m.db")
+    versions = {row[0] for row in conn.execute("SELECT prompt_version FROM jobs WHERE stage = 's1'")}
+    conn.close()
+    assert versions == {v3}
+    saved = json.loads((tmp_path / "out" / "report.json").read_text(encoding="utf-8"))
+    assert saved["prompt"] == "v3"
+
+
+def test_split_chapter_ids_follows_gold_split() -> None:
+    gold = make_gold([1, 2, 3, 4])
+    assert split_chapter_ids(gold, "all") == {1, 2, 3, 4}
+    assert split_chapter_ids(gold, "dev") == {1, 3}
+    assert split_chapter_ids(gold, "held_out") == {2, 4}
+    with pytest.raises(ValueError):
+        split_chapter_ids(gold, "test")
+
+
+def test_run_benchmark_on_the_dev_split_scores_dev_only(tmp_path: Path) -> None:
+    run_fake(
+        tmp_path, {"m": fake_model(["Hàn Lập", "Trương Thiết"])},
+        chapters=[1, 3], gold=make_gold([1, 2, 3]), gold_split_name="dev",
+    )
+    saved = json.loads((tmp_path / "out" / "report.json").read_text(encoding="utf-8"))
+    assert saved["gold"]["m"]["dev"]["gold_entities"] == 4
+    assert saved["gold"]["m"]["held_out"] is None
+    with pytest.raises(ValueError, match=r"\[3\]"):
+        run_fake(tmp_path, {"m": fake_model(["Hàn Lập"])}, chapters=[1, 2], gold=make_gold([1, 2, 3]), gold_split_name="dev")
+
+
+def test_main_passes_prompt_and_dev_split_to_the_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(bench, "run_benchmark", lambda **kw: seen.update(kw))
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "report.md").write_text("report", encoding="utf-8")
+    bench.main(
+        raw_dir=tmp_path, out_dir=out, chapter_max=100, count=50, novel="pntt1",
+        model=["qwen35-9b-udq6-10k"], gold_set=True, extra_chapters=30, workers=1,
+        prompt="v3", gold_split_name="dev",
+    )
+    assert seen["config"]["prompts"]["s1_extract"] == "v3"
+    assert seen["chapters"] == [1, 11, 22, 32, 43, 53, 64, 74, 84, 95]
+    assert seen["gold_split_name"] == "dev"
+    with pytest.raises(typer.BadParameter):
+        bench.main(
+            raw_dir=tmp_path, out_dir=out, chapter_max=100, count=50, novel="pntt1", model=None,
+            gold_set=False, extra_chapters=30, workers=1, prompt=None, gold_split_name="dev",
+        )

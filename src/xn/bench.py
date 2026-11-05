@@ -47,7 +47,9 @@ CANDIDATES = (
     Candidate("qwen38-udiq4-hui-10k", "qwen3.8:udiq4_hui", think=False),
     Candidate("qwen25-14b-10k", "qwen2.5:14b-instruct"),
     Candidate("qwen25-14b-16k", "qwen2.5:14b-instruct"),
+    Candidate("qwen35-9b-udq6-10k", "qwen3.5:9b_UD_Q6", think=False),
 )
+GOLD_SPLITS = ("all", "dev", "held_out")
 
 
 @dataclass(frozen=True)
@@ -77,6 +79,30 @@ def select_candidates(names: list[str] | None) -> tuple[Candidate, ...]:
     if unknown:
         raise ValueError(f"Unknown models: {unknown}. Known: {sorted(known)}")
     return tuple(known[name] for name in names)
+
+
+def with_prompt(config: dict[str, Any], version: str, prompts_dir: Path = Path("prompts")) -> dict[str, Any]:
+    """Return a copy of config whose S1 extraction prompt is this version; config is not changed.
+
+    Raises:
+        FileNotFoundError: prompts_dir has no s1_extract prompt of this version.
+    """
+    path = Path(prompts_dir) / "s1_extract" / f"{version}.md"
+    if not path.is_file():
+        raise FileNotFoundError(f"Prompt template not found: {path}")
+    cfg = copy.deepcopy(config)
+    cfg["prompts"] = {**(cfg.get("prompts") or {}), "s1_extract": version}
+    return cfg
+
+
+def split_chapter_ids(gold: GoldSet, split: str) -> set[int]:
+    """Return the chapter ids of one gold split: all, dev or held_out."""
+    if split not in GOLD_SPLITS:
+        raise ValueError(f"Unknown gold split {split!r}. Known: {list(GOLD_SPLITS)}")
+    if split == "all":
+        return {c.chapter_id for c in gold.chapters}
+    dev, held_out = gold_split(gold.chapters)
+    return {c.chapter_id for c in (dev if split == "dev" else held_out)}
 
 
 def pick_chapters(chapter_max: int, count: int) -> list[int]:
@@ -373,11 +399,13 @@ def run_benchmark(
     unload: Callable[[str], None] = stop_model,
     chapters: list[int] | None = None,
     gold: GoldSet | None = None,
+    gold_split_name: str = "all",
 ) -> tuple[list[ModelResult], str | None, str]:
     """Run every candidate on the same chapters, each in its own database, and write the report.
 
     chapters overrides the evenly spaced pick of count chapters. With gold, each model is also
-    scored against the gold chapters, which must all be among the chapters run.
+    scored against the gold chapters that ran; every chapter of gold_split_name (all, dev or
+    held_out) must be among them.
     Reruns resume: S1 skips chapters already done, so no candidate repeats finished work.
 
     Raises:
@@ -386,7 +414,7 @@ def run_benchmark(
     novel_id = config["novel_id"]
     chapters = sorted(chapters) if chapters else pick_chapters(chapter_max, count)
     if gold is not None:
-        absent = sorted({c.chapter_id for c in gold.chapters} - set(chapters))
+        absent = sorted(split_chapter_ids(gold, gold_split_name) - set(chapters))
         if absent:
             raise ValueError(f"Gold chapters not in the run: {absent}")
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -443,7 +471,8 @@ def run_benchmark(
     (out_dir / "report.json").write_text(
         json.dumps(
             {
-                "chapters": chapters, "results": [asdict(r) for r in results], "winner": winner,
+                "chapters": chapters, "prompt": (config.get("prompts") or {}).get("s1_extract", "v1"),
+                "results": [asdict(r) for r in results], "winner": winner,
                 "reason": reason, **({"gold": scored} if gold is not None else {}),
             },
             ensure_ascii=False, indent=2,
@@ -632,17 +661,33 @@ def main(
     ),
     extra_chapters: int = typer.Option(30, "--extra-chapters", help="Non-gold chapters to add with --gold"),
     workers: int = typer.Option(1, "--workers", help="With one --model: S1 processes to run at once"),
+    prompt: str | None = typer.Option(
+        None, "--prompt", help="S1 extraction prompt version, e.g. v3, set on a copy of the config (default: config's)",
+    ),
+    gold_split_name: str = typer.Option(
+        "all", "--gold-split",
+        help="With --gold: all runs the gold chapters plus --extra-chapters others; dev or held_out runs only that split",
+    ),
 ) -> None:
     """Benchmark the extractor candidates and print the report."""
     config = load_config(novel, configs_dir=Path("configs"))
     try:
         candidates = select_candidates(model)
-    except ValueError as err:
+        if prompt is not None:
+            config = with_prompt(config, prompt)
+    except (ValueError, FileNotFoundError) as err:
         raise typer.BadParameter(str(err))
+    if gold_split_name not in GOLD_SPLITS:
+        raise typer.BadParameter(f"--gold-split must be one of {list(GOLD_SPLITS)}, got {gold_split_name}")
+    if gold_split_name != "all" and not gold_set:
+        raise typer.BadParameter("--gold-split needs --gold")
     gold = load_gold(Path("eval") / novel) if gold_set else None
-    chapters = (
-        pick_gold_chapters({c.chapter_id for c in gold.chapters}, chapter_max, extra_chapters) if gold else None
-    )
+    chapters = None
+    if gold is not None:
+        split_ids = split_chapter_ids(gold, gold_split_name)
+        chapters = (
+            pick_gold_chapters(split_ids, chapter_max, extra_chapters) if gold_split_name == "all" else sorted(split_ids)
+        )
     if workers > 1:
         if len(candidates) != 1:
             raise typer.BadParameter("--workers needs exactly one --model")
@@ -655,7 +700,7 @@ def main(
         return
     run_benchmark(
         config=config, raw_dir=raw_dir, out_dir=out_dir, chapter_max=chapter_max, count=count,
-        candidates=candidates, chapters=chapters, gold=gold,
+        candidates=candidates, chapters=chapters, gold=gold, gold_split_name=gold_split_name,
     )
     typer.echo((out_dir / "report.md").read_text(encoding="utf-8"))
 

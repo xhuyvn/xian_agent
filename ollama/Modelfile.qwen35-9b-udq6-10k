@@ -1,0 +1,4 @@
+FROM qwen3.5:9b_UD_Q6
+PARAMETER num_ctx 10240
+PARAMETER repeat_penalty 1.03
+PARAMETER temperature 0.1
