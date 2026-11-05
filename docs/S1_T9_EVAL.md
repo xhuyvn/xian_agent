@@ -223,7 +223,9 @@ The outputs are `report.md`, `report.json`, `parallel-qwen25-14b-10k-w2.md` and 
 
 ## G-26: cutting the false names of `qwen3.5:9b_UD_Q6`
 
-Date: 2026-11-05. Goal: G-26. Work in progress; this section grows one round at a time.
+Date: 2026-11-05. Goal: G-26.
+
+**`qwen3.5:9b_UD_Q6` on prompt v3 with an offline name filter reaches recall 0.95 and precision 0.88 on the 20 gold chapters (held out 0.94 / 0.89), at 16.3 s/chapter.** The filter does the work: prompt v3 alone did not cut false names. Production config, prompt v2 and S1 are unchanged.
 
 In G-25, `qwen3.5:9b_UD_Q6` (served as `qwen35-9b-udq6-10k`: `num_ctx 10240`, thinking off, temperature 0.1) ran prompt v2 on the G-13 set at 16.5 s/chapter, with recall 0.93 (95 of 102) and precision 0.79 (26 false names) on the 20 gold chapters. Production (`qwen3.8:udiq4_hui`, G-10.1) has 0.98 and 0.88 at 35.4 s/chapter. G-26 tries to cut the false names without losing much recall: an offline name filter, then a prompt v3. Rules and prompt are tuned on the 10 dev gold chapters only (`xn.gold.gold_split`, the first of each pair); the 10 held-out chapters are scored once, in the last round.
 
@@ -308,6 +310,66 @@ uv run py -m xn.name_filter --split dev --db <data>/bench/g26-v3-a1/qwen35-9b-ud
 ```
 
 Attempt 2 used the same commands with `--out <data>/bench/g26-v3-a2`. Console logs are in `<data>/bench/g26-v3-a1.log` and `g26-v3-a2.log`.
+
+### R-3: the chosen setup on all 50 chapters
+
+`qwen35-9b-udq6-10k` ran prompt v3 (`882932be`) on the G-13 set (50 chapters from 1-100: the 20 gold chapters plus 30 others), one chapter at a time, in a new database, with the GPU checked free first. The filter was scored offline afterwards. This is the first time any G-26 setup was scored on the 10 held-out chapters. The qwen3.5 v2 columns are the G-25 run and the production columns are the G-10.1 run (`g101-full.db`), both read only, with the same filter applied.
+
+| All 20 gold chapters | qwen3.5 9B, v3 + caps-proper+words (**G-26 setup**) | qwen3.5 9B, v3, no filter | qwen3.5 9B, v2, no filter (G-25) | qwen3.5 9B, v2 + caps-proper+words | production, v2, no filter (G-10.1) | production, v2 + caps-proper+words |
+|---|---|---|---|---|---|---|
+| Entity recall | **0.95** (97 of 102) | 0.96 (98) | 0.93 (95) | 0.91 (93) | 0.98 (100) | 0.96 (98) |
+| Entity precision | **0.88** (13 false names) | 0.75 (32) | 0.79 (26) | 0.92 (8) | 0.88 (14) | 0.96 (4) |
+| Recall, dev / held out | 0.96 / **0.94** | 0.96 / 0.96 | 0.94 / 0.92 | 0.94 / 0.88 | 0.96 / 1.00 | 0.96 / 0.96 |
+| Precision, dev / held out | 0.87 / **0.89** | 0.73 / 0.78 | 0.75 / 0.83 | 0.89 / 0.96 | 0.86 / 0.90 | 0.94 / 0.98 |
+| Category / event-type accuracy | 0.82 / 0.87 | 0.83 / 0.88 | 0.82 / 0.88 | 0.83 / 0.88 | 0.91 / 0.90 | 0.92 / 0.90 |
+| Flag F1, `location_change` / `realm_breakthrough` / `major_conflict` | 0.44 / 0.00 / 1.00 | same | 0.25 / 0.00 / 1.00 | same | 0.33 / 1.00 / 0.92 | same |
+| s/chapter, mean / p95 (50 chapters) | **16.3** / 31.6 | same run | 16.5 / 31.4 | same run | 35.4 / 58.9 | same run |
+
+The precision of the G-26 setup is 97 / 110 = 0.882, just over the 0.88 target. The other run figures: schema success and first-try success 100%, 11.6 events per chapter (range 4-25), 3,069 input and 1,261 output tokens per chapter, idle / peak VRAM 2,656 / 12,175 MiB, 7 events dropped by S1's evidence check.
+
+Every filter rule on the v3 run, all 20 chapters (dev / held out in brackets):
+
+| Rule | Recall | Precision |
+|---|---|---|
+| none | 0.96 (0.96 / 0.96) | 0.75 (0.73 / 0.78) |
+| caps | 0.89 (0.94 / 0.85) | 0.95 (0.94 / 0.96) |
+| caps-proper | 0.95 (0.96 / 0.94) | 0.86 (0.84 / 0.88) |
+| caps-character | 0.95 (0.96 / 0.94) | 0.80 (0.81 / 0.79) |
+| words | 0.96 (0.96 / 0.96) | 0.82 (0.83 / 0.81) |
+| caps+words | 0.89 (0.94 / 0.85) | 0.96 (0.94 / 0.98) |
+| **caps-proper+words** | **0.95 (0.96 / 0.94)** | **0.88 (0.87 / 0.89)** |
+| caps-character+words | 0.95 (0.96 / 0.94) | 0.82 (0.84 / 0.80) |
+
+How to read this:
+
+- **The targets are met, by the filter rather than the prompt.** Recall 0.95 >= 0.90, precision 0.88 >= 0.88 (0.882), 16.3 s/chapter <= 20. Prompt v3 alone gave 0.96 recall and 0.75 precision, no better than v2's 0.79. The filter took the false names from 32 to 13. Recall rose from 0.93 to 0.96 between the v2 and v3 runs, but one run each at temperature 0.1 cannot separate the prompt's effect from run-to-run variation; R-2's two dev attempts differed by 4 gold names with no clear cause.
+- **v2 with the same filter also meets the targets** on these 20 chapters: recall 0.91, precision 0.92. Recall is the deciding difference: 0.95 for v3 against 0.91 for v2, at the same speed.
+- **The held-out chapters confirm the dev choice.** Plain caps kept dev recall at 0.94 but fell to 0.85 on held out, losing lower-case gold names ("vô danh khẩu quyết", "bình nhỏ", "huyết tiến âm hồn chú", "phi kiếm", "Tiểu toán bàn" among them). caps-proper+words held at 0.94.
+- **What the filter cost:** one gold name, "Tiểu toán bàn" (chapter 17), which this chapter never capitalizes mid-sentence. The model itself missed four others: "Mã phó môn chủ" (chapter 69; S1's evidence check dropped its event), "cự hán", "La Yên bộ" and "Ngự Phong quyết".
+- **What it leaves:** 13 false names, mostly lower-case items and generic arts that the capital test does not touch, since items and techniques are exempt ("thuốc trị ngoại thương", "khẩu quyết", "luyện thi thuật", "dược vật", "chim nhỏ màu vàng"), plus proper-looking group and title names ("Ngũ sát Tam ưng Nhị báo", "Thất kiệt Song hùng", "Bang chủ Dã Lang").
+- **It still trails production on quality**: category accuracy 0.82 against 0.91, and it missed the one gold `realm_breakthrough` (chapter 43). With the same filter, production reaches 0.96 / 0.96. qwen3.5 is 2.2 times faster.
+- The model sometimes repeats the same event many times (in chapter 22 of the dev attempt 1 run, "Hàn Lập" `MENTIONED` alternates between two quotes about a dozen times), and one chapter hit the 25-event cap. Duplicates do not change the name scores, but they cost output tokens.
+
+Caveats:
+
+- **These 20 gold chapters have judged every extraction run since G-10.1**, and prompt v2 was tuned on them for the production model. The "held-out" chapters were held out from G-26's tuning only; G-10.1 had already seen them. The brief that started G-26 also quoted three held-out false names, two of which are in the word list (see R-1). The gold was drafted by Claude.
+- **One run per setup** at temperature 0.1. Run-to-run variation on the dev chapters (R-2) was about 4 gold names, so differences of 1-3 names between columns are not meaningful, and the 0.882 precision clears 0.88 by one false name.
+- **The filter is offline only.** Production S1 does not run it, and the precision above assumes something like `xn.name_filter` would run after S1. Putting it into S1 is a later owner decision. It also clears filtered holder and `same_as` names, which S2 would otherwise turn into entities.
+- **Timing**: the owner set `OLLAMA_NUM_PARALLEL=4` during this goal. S1 sent one request at a time, the model stayed 100% on the GPU at context 10240, and the slowest call took 36.6 s, in line with G-25's p95 of 31.4 s, so the setting is not expected to affect these numbers. The production timing is from G-10.1 on 2026-11-01, as in G-25.
+
+**Recommendation:** if a faster extractor is wanted, qwen3.5 9B on prompt v3 with the caps-proper+words filter in S1 meets this goal's bar at 2.2 times production speed, but production with the same filter is better on every quality measure here. Whether to change the extractor, and whether to add the filter to S1, are owner decisions.
+
+Commands, from the repository root with `PYTHONIOENCODING=utf-8`:
+
+```bash
+uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/bench/g26-v3-full --chapter-max 100 --gold --model qwen35-9b-udq6-10k --prompt v3
+```
+
+```bash
+uv run py -m xn.name_filter --split all --db <data>/bench/g26-v3-full/qwen35-9b-udq6-10k.db --db <data>/bench/g25-qwen35-9b/qwen35-9b-udq6-10k.db --db <data>/eval/g101-full.db
+```
+
+The same `xn.name_filter` command with `--split dev` and `--split held_out` gives the split columns. The console log is `<data>/bench/g26-v3-full.log`.
 
 ## Reproduce
 
