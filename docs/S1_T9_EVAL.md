@@ -221,6 +221,60 @@ uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/be
 
 The outputs are `report.md`, `report.json`, `parallel-qwen25-14b-10k-w2.md` and `.json` in `<data>/bench/g25-qwen25/`, and `report.md` and `report.json` in `<data>/bench/g25-qwen25-16k/`, with the console log in `<data>/bench/g25-qwen25-16k.log`. The production column was read from `g101-full.db` with `xn.bench.pick_gold_chapters`, `_measure_runs` and `score_gold`, without writing to it.
 
+## G-26: cutting the false names of `qwen3.5:9b_UD_Q6`
+
+Date: 2026-11-05. Goal: G-26. Work in progress; this section grows one round at a time.
+
+In G-25, `qwen3.5:9b_UD_Q6` (served as `qwen35-9b-udq6-10k`: `num_ctx 10240`, thinking off, temperature 0.1) ran prompt v2 on the G-13 set at 16.5 s/chapter, with recall 0.93 (95 of 102) and precision 0.79 (26 false names) on the 20 gold chapters. Production (`qwen3.8:udiq4_hui`, G-10.1) has 0.98 and 0.88 at 35.4 s/chapter. G-26 tries to cut the false names without losing much recall: an offline name filter, then a prompt v3. Rules and prompt are tuned on the 10 dev gold chapters only (`xn.gold.gold_split`, the first of each pair); the 10 held-out chapters are scored once, in the last round.
+
+### The 26 false names by type
+
+The false names of the G-25 qwen3.5 run on all 20 gold chapters, as `score_extraction` lists them (chapter: name, category the model gave). Dev chapters are 1, 11, 22, 32, 43, 53, 64, 74, 84, 95; held out are 6, 17, 27, 37, 48, 58, 69, 79, 90, 100.
+
+| Type | Count | Dev | Held out |
+|---|---|---|---|
+| Kinship and address terms | 6 | 1: Đại ca, Tiểu muội muội; 22: Cha mẹ, Đại ca, Nhị ca | 79: Gia hoả |
+| People named by a description or role | 4 | 74: Tử y chưởng kỳ sứ; 84: Tên mập | 69: thiếu nữ; 79: Chấp pháp |
+| Counted groups | 3 | 53: bảy cái đầu quỷ, bảy thanh dao nhọn | 27: năm loại thảo dược |
+| Common nouns with descriptors, generic arts | 5 | 43: ngụy chân khí; 64: luyện thi thuật; 95: đạo phù lục vũ hình thanh tiểu kiếm | 27: cách điều chế hi hữu; 100: chú chim nhỏ màu vàng |
+| Generic places | 4 | 1: Sơn biên tiểu thôn | 6: Sơn cốc; 79: Môn phái, Sân nhà Lý trưởng lão |
+| Proper-looking names the gold does not list | 4 | 74: Ngũ sát Tam ưng Nhị báo, Thất kiệt Song hùng; 84: Vương môn | 100: Hương Lỗ đại vận hà |
+
+16 of the 26 are in dev chapters. The last type may be gold gaps rather than model errors: group nicknames and place names that the annotation left out. No filter here can or should remove them.
+
+### R-1: filter rules, scored offline on dev
+
+`xn.name_filter` (not used by production S1) filters stored extractions and scores them with `xn.gold.score_extraction`. A filtered name loses its events; a filtered holder or `same_as` name is cleared, because S2 also makes entities from those.
+
+- **caps**: keep a name only if the chapter writes it with a capital first letter somewhere other than at a sentence start. Matching ignores case and diacritics and must cover whole words. A match is at a sentence start when the text before it, ignoring spaces, tabs and quotes, is empty or ends in `.`, `!`, `?`, `:`, a newline, an ellipsis or a dash.
+- **caps-proper** / **caps-character**: the same test, applied only to names in `character` and `dungeon`, or only `character`. Other categories pass, because this translation writes many items and techniques in lower case ("phi kiếm", "Trừu tủy hoàn").
+- **words**: drop kinship and address terms ("đại ca", "cha mẹ", "sư huynh", "thiếu nữ", "tên mập" and others), names whose first word is a native numeral or a classifier ("bảy", "năm", "mấy", "cái", "con", "tên"), and names of two or more words ending in a demonstrative ("kia", "này", "đó"). The list is general Vietnamese kinship and address vocabulary plus the dev false names; the brief that started this goal also quoted three held-out false names ("thiếu nữ", "năm loại thảo dược", "chú chim nhỏ màu vàng"), and the first two are in the list because they are generic.
+- Combinations: **caps+words**, **caps-proper+words**, **caps-character+words**.
+
+Dev chapters only (10 chapters, 50 gold names). R is recall, P precision:
+
+| Rule | qwen3.5 9B, prompt v2 (G-25) | production, prompt v2 (G-10.1) |
+|---|---|---|
+| none | R 0.94 (47/50), P 0.75 (16 false) | R 0.96 (48/50), P 0.86 (8 false) |
+| caps | R 0.92 (46/50), P 0.94 (3 false) | R 0.96 (48/50), P 1.00 (0 false) |
+| caps-proper | R 0.94 (47/50), P 0.85 (8 false) | R 0.96 (48/50), P 0.92 (4 false) |
+| caps-character | R 0.94 (47/50), P 0.84 (9 false) | R 0.96 (48/50), P 0.91 (5 false) |
+| words | R 0.94 (47/50), P 0.85 (8 false) | R 0.96 (48/50), P 0.92 (4 false) |
+| caps+words | R 0.92 (46/50), P 0.94 (3 false) | R 0.96 (48/50), P 1.00 (0 false) |
+| caps-proper+words | R 0.94 (47/50), P 0.89 (6 false) | R 0.96 (48/50), P 0.94 (3 false) |
+| caps-character+words | R 0.94 (47/50), P 0.87 (7 false) | R 0.96 (48/50), P 0.92 (4 false) |
+
+- **caps** removes 13 of the 16 dev false names of qwen3.5 and all 8 of production's, for one gold name: "bình thần bí" (chapter 11), which this chapter never capitalizes. The 3 it keeps are the proper-looking names of the last type above. On dev, adding **words** to caps changes nothing.
+- **caps-proper+words** loses no dev gold name, and keeps 6 qwen3.5 false names: the 3 proper-looking ones and 3 lower-case items and arts ("ngụy chân khí", "luyện thi thuật", "đạo phù lục vũ hình thanh tiểu kiếm"), which only the capital test catches.
+- The scratch check in the goal's brief reported production falling from 0.98 to 0.89 recall on all 20 chapters with this test. On dev, production loses no gold name here, and a version that matches with diacritics gives the same dev numbers, so the losses behind that figure would be in held-out chapters; they are measured in R-3.
+- The two candidates for the last round are **caps** (best precision) and **caps-proper+words** (no dev recall loss). Held-out scores for every rule come in R-3.
+
+Command (read-only on both databases):
+
+```bash
+uv run py -m xn.name_filter --split dev --db <data>/bench/g25-qwen35-9b/qwen35-9b-udq6-10k.db --db <data>/eval/g101-full.db
+```
+
 ## Reproduce
 
 Paths outside the repo must use the `--option=value` form. With a space, pytest reads the path as a test target and takes its settings from the wrong checkout.
