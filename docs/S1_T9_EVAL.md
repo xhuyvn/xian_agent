@@ -177,12 +177,12 @@ The owner asked for a run at 16k tokens. `qwen25-14b-16k` (`ollama/Modelfile.qwe
 | Event-type accuracy | 0.81 | 0.74 |
 | Flag F1, `location_change` / `realm_breakthrough` / `major_conflict` | 0.57 / 0.00 / 0.75 | 0.57 / 0.00 / 0.75 |
 | Events kept per chapter | 5.1 (range 0-8) | 5.4 (range 0-10) |
-| Events dropped for low evidence | not counted, log cut | 25, 8 of them in chapter 79 |
+| Events dropped for low evidence | not counted: only the last 40 console lines were kept | 25, 8 of them in chapter 79 |
 | Tokens per chapter, input / output | 2,977 / 656 | 2,977 / 664 |
 | s/chapter, mean / p95 | 10.3 / 14.5 | 10.4 / 14.7 |
 | Idle / peak VRAM (MiB) | 1,822 / 11,514 | 2,367 / 14,360 |
 
-**16k buys nothing here.** The largest chapter in the set needs about 3,000 input and 700 output tokens, so 10k was never full, and the model saw the same prompt at both sizes. Recall, precision and the type scores moved by a few names in each direction, which is the size of run-to-run variation at temperature 0.1: the 2-worker run at 10k moved by as much. The flag results are identical. The bigger KV cache costs about 2.8 GB more VRAM and no measurable time. The 16k run is one run, on 2026-11-05 in the evening, hours after the 10k runs.
+**16k buys nothing here.** Chapters in the set average about 3,000 input and 660 output tokens, and the largest call used 3,583 input and 1,033 output, so 10k was never full, and the model saw the same prompt at both sizes. Recall, precision and category accuracy moved by a few names, about as much as the 2-worker run at 10k moved from the one-at-a-time run, which is run-to-run variation at temperature 0.1. Event-type accuracy (0.81 to 0.74) and held-out recall (0.79 to 0.67) moved more than that, but still by a handful of events and names, on one run each. The flag results are identical. Peak VRAM was 2,846 MiB higher (idle was 545 MiB higher), presumably the larger KV cache, and time did not change measurably. The 16k run is one run, on 2026-11-05 in the evening, hours after the 10k runs.
 
 ### How to read this
 
