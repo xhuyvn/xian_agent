@@ -47,6 +47,22 @@ Changes:
 - 2026-11-05: owner: "why you run test with qwen38-udiq4-hui-10k, it already had result test before. run only qwen25-14b-10k and add to benchmark S1_T9_EVAL.md". The fresh baseline run was stopped after about 8 minutes and its database deleted; the G-10.1 run is the baseline and the results go into `docs/S1_T9_EVAL.md` instead of a new report
 - 2026-11-05: owner: "try to run with model qwen2.5:14b-instruct with 16k token." Added `qwen25-14b-16k` (`ollama/Modelfile.qwen25-14b-16k`, `num_ctx 16384`), run one at a time on the same 50 chapters and added to the G-25 section; the 10k results stay
 
+### G-26: cut the false names of `qwen3.5:9b_UD_Q6` on S1 extraction (active)
+Plan: chat plan of 2026-11-05. Follows G-25. Cut from `cld/bench-qwen25-14b-872abd`.
+Owner decisions: the lead writes the code, with no agy. Prompt `v3` is a new file. `v2`, production config, production S1 and `eval/` stay unchanged. Tuning uses only the 10 dev gold chapters (`xn.gold.gold_split`, the first of each pair). The 10 held-out chapters are scored once, in the last round. Any name filter is measured in this goal only, and putting it into production S1 is a later owner decision. No downloads. The model is `qwen35-9b-udq6-10k`, num_ctx 10240, thinking off, temperature 0.1, on the G-13 50-chapter set. At most 3 prompt attempts; if the targets are not reached, stop and report what each attempt reached. Databases go to new folders under `data/bench/` in the main checkout. The two-pass/scratchpad, dynamic glossary and GLiNER ideas are parked. Three rounds: offline filter study, prompt v3, full run.
+Done when:
+- The 26 false names of the G-25 qwen3.5 run are sorted by type, and filter rules (capitalization outside sentence starts, category, a list of kinship and address words) are scored offline on the G-25 qwen3.5 database and on `g101-full.db`, tuned on dev chapters only
+- `prompts/s1_extract/v3.md` exists, and `xn.bench` can run a chosen prompt version (for example `--prompt v3`, applied to a config copy), with a unit test
+- On the 20 gold chapters, qwen3.5 9B with the best setup (prompt v3, with or without a filter) reaches recall >= 0.90 and precision >= 0.88, with held out reported apart, at <= 20 s/chapter mean
+- The results are in a "G-26" section of `docs/S1_T9_EVAL.md`, next to qwen3.5 on v2 and production, with exact commands and caveats, including that these 20 gold chapters have been used to judge every run since G-10.1
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- none yet
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-05: owner approved the goal and the decisions above ("Go")
+
 ## Parked
 
 ## Archive
