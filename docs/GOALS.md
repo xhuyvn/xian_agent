@@ -47,7 +47,11 @@ Changes:
 - 2026-11-05: owner: "why you run test with qwen38-udiq4-hui-10k, it already had result test before. run only qwen25-14b-10k and add to benchmark S1_T9_EVAL.md". The fresh baseline run was stopped after about 8 minutes and its database deleted; the G-10.1 run is the baseline and the results go into `docs/S1_T9_EVAL.md` instead of a new report
 - 2026-11-05: owner: "try to run with model qwen2.5:14b-instruct with 16k token." Added `qwen25-14b-16k` (`ollama/Modelfile.qwen25-14b-16k`, `num_ctx 16384`), run one at a time on the same 50 chapters and added to the G-25 section; the 10k results stay
 
-### G-26: cut the false names of `qwen3.5:9b_UD_Q6` on S1 extraction (active)
+## Parked
+
+## Archive
+
+### G-26: cut the false names of `qwen3.5:9b_UD_Q6` on S1 extraction (done)
 Plan: chat plan of 2026-11-05. Follows G-25. Cut from `cld/bench-qwen25-14b-872abd`.
 Owner decisions: the lead writes the code, with no agy. Prompt `v3` is a new file. `v2`, production config, production S1 and `eval/` stay unchanged. Tuning uses only the 10 dev gold chapters (`xn.gold.gold_split`, the first of each pair). The 10 held-out chapters are scored once, in the last round. Any name filter is measured in this goal only, and putting it into production S1 is a later owner decision. No downloads. The model is `qwen35-9b-udq6-10k`, num_ctx 10240, thinking off, temperature 0.1, on the G-13 50-chapter set. At most 3 prompt attempts; if the targets are not reached, stop and report what each attempt reached. Databases go to new folders under `data/bench/` in the main checkout. The two-pass/scratchpad, dynamic glossary and GLiNER ideas are parked. Three rounds: offline filter study, prompt v3, full run.
 Done when:
@@ -59,14 +63,13 @@ Done when:
 Rounds:
 - R-1 2026-11-05: sort the 26 false names by type and score filter rules offline on dev -> PASS, 0 blockers, 9f65355, 0 agy tokens
 - R-2 2026-11-05: prompt v3, bench --prompt and --gold-split, two v3 attempts on dev (precision unchanged by the prompt; v3 kept at attempt 1) -> PASS, 0 blockers, 7b4a205, 0 agy tokens
+- R-3 2026-11-05: run prompt v3 on all 50 chapters, score the filters on all 20 gold chapters with held out apart -> PASS, 0 blockers, 5d03c1b, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
 - 2026-11-05: owner approved the goal and the decisions above ("Go")
-
-## Parked
-
-## Archive
+- 2026-11-05: owner set `OLLAMA_NUM_PARALLEL=4` on the host during R-3; S1 sends one request at a time, so it is noted as a caveat only
+- 2026-11-05: done after R-3 PASS: v3 + caps-proper+words filter, recall 0.95, precision 0.88, 16.3 s/chapter; the filter stays offline
 
 ### G-24: S3-T4 arc prefix summaries for L2 spoiler safety (done)
 Plan: `docs/IMPLEMENTATION_PLAN.md` S3-T4; blueprint §3.4 L2, §3.9. Chat plan of 2026-11-04. Cut from `cld/sprint-3-tasks-60f7ab`. Runs beside S3-T2 and S3-T3; S3-T5 waits for it.
