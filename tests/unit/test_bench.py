@@ -424,9 +424,11 @@ def test_v3_keeps_v2_and_adds_the_not_an_entity_rules() -> None:
     v3 = Path("prompts/s1_extract/v3.md").read_text(encoding="utf-8")
     assert "QUY TẮC PHỦ KÍN THỰC THỂ" in v3 and "KHÔNG PHẢI THỰC THỂ" in v3
     assert "version: v3" in v3
-    body = v2.split("---", 2)[2]
-    kept = body.split("Trước khi trả lời")[0]
-    assert kept in v3
+    v3_lines = set(v3.splitlines())
+    body = v2.split("---", 2)[2].splitlines()
+    missing = [line for line in body if line not in v3_lines and not line.startswith("Trước khi trả lời")]
+    assert missing == []
+    assert v3.index("KHÔNG PHẢI THỰC THỂ") < v3.index("QUY TẮC PHỦ KÍN THỰC THỂ")
 
 
 def test_run_benchmark_runs_the_prompt_version_of_its_config(tmp_path: Path) -> None:
