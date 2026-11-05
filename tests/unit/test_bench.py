@@ -428,7 +428,6 @@ def test_v3_keeps_v2_and_adds_the_not_an_entity_rules() -> None:
     body = v2.split("---", 2)[2].splitlines()
     missing = [line for line in body if line not in v3_lines and not line.startswith("Trước khi trả lời")]
     assert missing == []
-    assert v3.index("KHÔNG PHẢI THỰC THỂ") < v3.index("QUY TẮC PHỦ KÍN THỰC THỂ")
 
 
 def test_run_benchmark_runs_the_prompt_version_of_its_config(tmp_path: Path) -> None:

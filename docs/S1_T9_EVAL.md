@@ -275,6 +275,40 @@ Command (read-only on both databases):
 uv run py -m xn.name_filter --split dev --db <data>/bench/g25-qwen35-9b/qwen35-9b-udq6-10k.db --db <data>/eval/g101-full.db
 ```
 
+### R-2: prompt v3, two attempts on dev
+
+`prompts/s1_extract/v3.md` is v2 with one added block of "not an entity" rules: kinship and address terms, people named only by a description, counted groups, and common nouns with descriptors or demonstratives. Every example comes from the dev chapters ("Đại ca", "Nhị ca", "Cha mẹ", "Tiểu muội muội", "sư huynh", "Tên mập", "bảy cái đầu quỷ", "bảy thanh dao nhọn", "cái bình kia", "đạo phù lục vũ hình thanh tiểu kiếm", "Sơn biên tiểu thôn"). It also says that lower-case item and technique names still count, with dev gold examples ("Trừu tủy hoàn", "Dưỡng tinh đan", "Thất quỷ phệ hồn đại pháp", "bình thần bí"), and adds a check for these cases to v2's closing self-check. `xn.bench` gained `--prompt <version>`, which sets `prompts.s1_extract` on a copy of the config, and `--gold-split dev|held_out`, which runs only that split's gold chapters and scores only that split. Production config still says v2.
+
+Each attempt ran `qwen35-9b-udq6-10k` on the 10 dev chapters, one chapter at a time, in a new database, with the GPU checked free first (`ollama ps` empty, no other `xn` process). Attempt 1 put the block after v2's name rules. Attempt 2 moved it before v2's "cover every entity" block and marked it as overriding that block. The G-25 column is the v2 run on the same dev chapters, taken from its 50-chapter run.
+
+| Dev chapters (10, 50 gold names) | v2 (G-25) | v3 attempt 1 (`882932be`) | v3 attempt 2 (`21fee82d`) |
+|---|---|---|---|
+| Recall, no filter | 0.94 (47) | **0.96** (48) | 0.88 (44) |
+| Precision, no filter | 0.75 (16 false) | 0.76 (15 false) | 0.75 (15 false) |
+| With caps: recall / precision | 0.92 / 0.94 | 0.94 / **0.98** | 0.86 / 0.98 |
+| With caps-proper+words: recall / precision | 0.94 / 0.89 | **0.96** / 0.92 | 0.88 / 0.92 |
+| Category / event-type accuracy | see G-25 (all 20 only) | 0.83 / 0.83 | 0.91 / 0.82 |
+| s/chapter, mean / p95 | 16.5 / 31.4 (50 chapters) | 18.6 / 29.0 | 16.8 / 31.9 |
+| Schema success / first try | 100% / 100% | 100% / 100% | 100% / 100% |
+
+- **The prompt rules alone did not cut false names.** Both attempts still wrote "Đại ca", "Nhị ca", "Tên mập" and "đạo phù lục vũ hình thanh tiểu kiếm", the very examples the prompt names as not entities, usually as `MENTIONED` events. Attempt 2 also wrote "bảy cái đầu quỷ" and "bảy thanh dao nhọn". Precision stayed at 0.75-0.76.
+- **The filter cuts them.** On v3 attempt 1, caps leaves 1 false name ("Bang chủ Dã Lang", chapter 95) and caps-proper+words leaves 4.
+- Attempt 2 lost 4 more dev gold names ("Trừu tủy hoàn", "Lạc Nhật Phong", "Dã Lang bang", "Thất huyền môn"). With one run each at temperature 0.1, this may be noise rather than the prompt change.
+- **Stopped after 2 of the 3 allowed attempts.** The model followed neither placement, and a third rewording had no better reason to work. `v3.md` is back to the attempt 1 text, which had the best dev recall.
+- **The setup for R-3, chosen on dev before any held-out scoring:** prompt v3 (attempt 1) with the **caps-proper+words** filter. It keeps every dev gold name the model found, and its dev precision of 0.92 clears 0.88. Plain caps has higher dev precision (0.98), but it drops lower-case gold names such as "bình thần bí", and the goal's brief lists 11 gold names that are never capitalized mid-sentence. R-3 reports every rule on all 20 chapters, with held out apart.
+
+Commands, from the repository root with `PYTHONIOENCODING=utf-8` (the attempt 2 prompt is commit `ba17ba8`):
+
+```bash
+uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/bench/g26-v3-a1 --chapter-max 100 --gold --gold-split dev --model qwen35-9b-udq6-10k --prompt v3
+```
+
+```bash
+uv run py -m xn.name_filter --split dev --db <data>/bench/g26-v3-a1/qwen35-9b-udq6-10k.db
+```
+
+Attempt 2 used the same commands with `--out <data>/bench/g26-v3-a2`. Console logs are in `<data>/bench/g26-v3-a1.log` and `g26-v3-a2.log`.
+
 ## Reproduce
 
 Paths outside the repo must use the `--option=value` form. With a space, pytest reads the path as a test target and takes its settings from the wrong checkout.
