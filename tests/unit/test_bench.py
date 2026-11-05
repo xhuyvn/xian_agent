@@ -391,3 +391,11 @@ def test_qwen25_16k_candidate_runs_at_16384() -> None:
     modelfile = Path("ollama/Modelfile.qwen25-14b-16k").read_text(encoding="utf-8")
     assert "FROM qwen2.5:14b-instruct" in modelfile
     assert "PARAMETER num_ctx 16384" in modelfile
+
+
+def test_qwen35_9b_candidate_runs_at_10k_with_thinking_off() -> None:
+    (picked,) = select_candidates(["qwen35-9b-udq6-10k"])
+    assert picked.base_name == "qwen3.5:9b_UD_Q6" and picked.think is False
+    modelfile = Path("ollama/Modelfile.qwen35-9b-udq6-10k").read_text(encoding="utf-8")
+    assert "FROM qwen3.5:9b_UD_Q6" in modelfile
+    assert "PARAMETER num_ctx 10240" in modelfile

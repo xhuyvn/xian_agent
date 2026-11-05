@@ -47,6 +47,7 @@ CANDIDATES = (
     Candidate("qwen38-udiq4-hui-10k", "qwen3.8:udiq4_hui", think=False),
     Candidate("qwen25-14b-10k", "qwen2.5:14b-instruct"),
     Candidate("qwen25-14b-16k", "qwen2.5:14b-instruct"),
+    Candidate("qwen35-9b-udq6-10k", "qwen3.5:9b_UD_Q6", think=False),
 )
 
 
