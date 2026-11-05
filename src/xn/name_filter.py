@@ -24,7 +24,7 @@ SENTENCE_ENDS = ".!?:\n…-–—"
 # are often lower case ("phi kiếm", "trừu tủy hoàn"), so the capital rule leaves them alone.
 PROPER_CATEGORIES = frozenset({"character", "dungeon"})
 
-# Kinship and address terms, and people named by a description: never one entity.
+# Kinship and address terms, pronouns, and people named by a description: never one entity.
 ADDRESS_TERMS = frozenset(
     name_key(term)
     for term in (

@@ -57,7 +57,7 @@ Done when:
 - The results are in a "G-26" section of `docs/S1_T9_EVAL.md`, next to qwen3.5 on v2 and production, with exact commands and caveats, including that these 20 gold chapters have been used to judge every run since G-10.1
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
-- none yet
+- R-1 2026-11-05: sort the 26 false names by type and score filter rules offline on dev -> PASS, 0 blockers, 9f65355, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
