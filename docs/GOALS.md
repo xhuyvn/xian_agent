@@ -70,6 +70,7 @@ Changes:
 - 2026-11-05: owner approved the goal and the decisions above ("Go")
 - 2026-11-05: owner set `OLLAMA_NUM_PARALLEL=4` on the host during R-3; S1 sends one request at a time, so it is noted as a caveat only
 - 2026-11-05: done after R-3 PASS: v3 + caps-proper+words filter, recall 0.95, precision 0.88, 16.3 s/chapter; the filter stays offline
+- 2026-11-05: owner: "Yes, run it" (a 2-worker test with `OLLAMA_NUM_PARALLEL` raised). Ran after the goal closed and added to the G-26 section: no speed-up, because Ollama runs the qwen35 architecture with one slot (`n_seq_max = 1`)
 
 ### G-24: S3-T4 arc prefix summaries for L2 spoiler safety (done)
 Plan: `docs/IMPLEMENTATION_PLAN.md` S3-T4; blueprint §3.4 L2, §3.9. Chat plan of 2026-11-04. Cut from `cld/sprint-3-tasks-60f7ab`. Runs beside S3-T2 and S3-T3; S3-T5 waits for it.

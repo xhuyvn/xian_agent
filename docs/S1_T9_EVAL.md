@@ -371,6 +371,28 @@ uv run py -m xn.name_filter --split all --db <data>/bench/g26-v3-full/qwen35-9b-
 
 The same `xn.name_filter` command with `--split dev` and `--split held_out` gives the split columns. The console log is `<data>/bench/g26-v3-full.log`.
 
+### Two chapters at once (owner request, after R-3)
+
+The owner raised `OLLAMA_NUM_PARALLEL` to 4 and asked for a 2-worker test of the G-26 setup. `--workers 2` ran prompt v3 on the same 50 chapters with 2 S1 processes at once, each on its own new database with every second chapter. The GPU was checked free first.
+
+| Measure | One at a time (R-3) | 2 workers |
+|---|---|---|
+| s/chapter, wall | 16.3 (summed calls) | 16.0 |
+| s per call, mean / p95 | 16.3 / 31.6 | 31.4 / 44.2 |
+| Peak VRAM (MiB) | 12,175 | 12,126 |
+| Recall / precision, all 20, no filter | 0.96 / 0.75 | 0.97 / 0.75 |
+| Recall / precision, all 20, caps-proper+words | 0.95 / 0.88 | 0.95 / 0.90 (dev 0.96 / 0.91, held out 0.94 / 0.89) |
+
+**No gain, and Ollama says why.** For this model, Ollama's server log (`%LOCALAPPDATA%\Ollama\server.log`) records `model architecture does not currently support parallel requests` with `architecture=qwen35`, and the model loads with `n_seq_max = 1`: one slot, so the second request waits for the first. That is why each call took twice as long and the wall time did not move. More parallel slots cannot help this model on this Ollama version. Peak VRAM did not grow either, because no extra KV cache was allocated. The same log shows the running server started with `OLLAMA_NUM_PARALLEL:2`, so the new value of 4 had not reached it. For qwen3.5 that makes no difference. The gold scores moved by a few names, within run-to-run variation.
+
+Command:
+
+```bash
+uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/bench/g26-v3-w2 --chapter-max 100 --gold --model qwen35-9b-udq6-10k --prompt v3 --workers 2
+```
+
+The filtered scores combine the two worker databases (`qwen35-9b-udq6-10k-w2-1.db` and `-2.db`), read only, with `xn.name_filter.read_db` and `score_rules`. The `xn.name_filter` CLI reads one database per column, so it cannot score a split run directly.
+
 ## Reproduce
 
 Paths outside the repo must use the `--option=value` form. With a space, pytest reads the path as a test target and takes its settings from the wrong checkout.
