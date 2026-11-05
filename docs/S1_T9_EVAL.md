@@ -124,7 +124,7 @@ Open items it found, none blocking. G-11 has since fixed the first five; the las
 
 Date: 2026-11-05. Goal: G-25.
 
-**`qwen2.5:14b-instruct` is 3.4 times faster, but its recall of 0.70 fails Sprint 1's 0.80 bar.** The production extractor stays `qwen3.8:udiq4_hui`. Nothing in config, the prompt or S1 changed. Running 2 chapters at once gave no speed-up.
+**`qwen2.5:14b-instruct` is 3.4 times faster, but its recall of 0.70 fails Sprint 1's 0.80 bar.** The production extractor stays `qwen3.8:udiq4_hui`. Nothing in config, the prompt or S1 changed. Running 2 chapters at once gave no speed-up, and a 16k context changed nothing but VRAM.
 
 Both models ran prompt v2 (`6f35c798`) on the G-13 set: 50 chapters from 1-100, the 20 gold chapters plus 30 others. Gold scores cover the 20 gold chapters. `qwen2.5:14b-instruct` ran as `qwen25-14b-10k` (`ollama/Modelfile.qwen25-14b-10k`: `num_ctx 10240`, temperature 0.1), with native JSON-schema output, one chapter at a time, on an RTX 5070 Ti 16 GB with nothing else on the GPU. The production column is the G-10.1 full run in `data/eval/g101-full.db`, read only and restricted to the same 50 chapters. The owner chose not to run it again.
 
@@ -162,6 +162,28 @@ The owner asked for a test of 2 chapters in parallel. `--workers 2` ran the same
 
 **No gain:** each call took twice as long, so throughput stayed the same. These numbers cannot show whether Ollama ran the two requests together on a GPU that one request already keeps busy, or queued one behind the other; either way S1 got no faster. A 2-chapter smoke test first looked faster (29.7 s of wall time against 42.8 s of summed call time). But those call times included the slowdown from the other request, so their sum was not a fair one-at-a-time figure. The gold scores moved by one name and a few false names, which is run-to-run variation at temperature 0.1.
 
+### At 16k context
+
+The owner asked for a run at 16k tokens. `qwen25-14b-16k` (`ollama/Modelfile.qwen25-14b-16k`: `num_ctx 16384`, temperature 0.1) ran the same 50 chapters, one at a time, on a fresh database. The GPU was checked free first.
+
+| Metric | 10k (`qwen25-14b-10k`) | 16k (`qwen25-14b-16k`) |
+|---|---|---|
+| Schema success / first try | 100% / 100% | 100% / 100% |
+| Entity recall, all 20 | 0.70 (71 of 102) | 0.68 (69 of 102) |
+| Entity precision, all 20 | 0.95 (4 false names) | 0.91 (7 false names) |
+| Recall, dev / held out | 0.60 / 0.79 | 0.68 / 0.67 |
+| Precision, dev / held out | 0.94 / 0.95 | 0.94 / 0.88 |
+| Category accuracy | 0.91 | 0.99 |
+| Event-type accuracy | 0.81 | 0.74 |
+| Flag F1, `location_change` / `realm_breakthrough` / `major_conflict` | 0.57 / 0.00 / 0.75 | 0.57 / 0.00 / 0.75 |
+| Events kept per chapter | 5.1 (range 0-8) | 5.4 (range 0-10) |
+| Events dropped for low evidence | not counted, log cut | 25, 8 of them in chapter 79 |
+| Tokens per chapter, input / output | 2,977 / 656 | 2,977 / 664 |
+| s/chapter, mean / p95 | 10.3 / 14.5 | 10.4 / 14.7 |
+| Idle / peak VRAM (MiB) | 1,822 / 11,514 | 2,367 / 14,360 |
+
+**16k buys nothing here.** The largest chapter in the set needs about 3,000 input and 700 output tokens, so 10k was never full, and the model saw the same prompt at both sizes. Recall, precision and the type scores moved by a few names in each direction, which is the size of run-to-run variation at temperature 0.1: the 2-worker run at 10k moved by as much. The flag results are identical. The bigger KV cache costs about 2.8 GB more VRAM and no measurable time. The 16k run is one run, on 2026-11-05 in the evening, hours after the 10k runs.
+
 ### How to read this
 
 - **Recall fails the bar, and the gap is in named things, not people.** 31 gold names were missed. Most are techniques, items, places and sects: "Trường Xuân Công", "La Yên bộ" (three chapters), "Ngự Phong quyết", "Thanh Linh Tán", "Lạc Nhật Phong", "Thất huyền môn". Chapters 84 and 95 lose the Kim Quang thượng nhân group, and chapters 53 and 58 lose "Hàn Lập" himself. Dev recall was 0.60 and held-out 0.79; prompt v2 was tuned on the other model, so that split says little here.
@@ -189,7 +211,15 @@ uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/be
 uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/bench/g25-qwen25 --chapter-max 100 --gold --model qwen25-14b-10k --workers 2
 ```
 
-The outputs are `report.md`, `report.json`, `parallel-qwen25-14b-10k-w2.md` and `.json` in `<data>/bench/g25-qwen25/`. The production column was read from `g101-full.db` with `xn.bench.pick_gold_chapters`, `_measure_runs` and `score_gold`, without writing to it.
+```bash
+ollama create qwen25-14b-16k -f ollama/Modelfile.qwen25-14b-16k
+```
+
+```bash
+uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/bench/g25-qwen25-16k --chapter-max 100 --gold --model qwen25-14b-16k
+```
+
+The outputs are `report.md`, `report.json`, `parallel-qwen25-14b-10k-w2.md` and `.json` in `<data>/bench/g25-qwen25/`, and `report.md` and `report.json` in `<data>/bench/g25-qwen25-16k/`, with the console log in `<data>/bench/g25-qwen25-16k.log`. The production column was read from `g101-full.db` with `xn.bench.pick_gold_chapters`, `_measure_runs` and `score_gold`, without writing to it.
 
 ## Reproduce
 
