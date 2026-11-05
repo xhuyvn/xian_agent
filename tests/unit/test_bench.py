@@ -383,3 +383,11 @@ def test_run_parallel_refuses_a_resumed_run(tmp_path: Path) -> None:
 def test_run_parallel_needs_two_workers(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="at least 2"):
         parallel_fake(tmp_path, fake_model(["Hàn Lập"]), workers=1)
+
+
+def test_qwen25_16k_candidate_runs_at_16384() -> None:
+    (picked,) = select_candidates(["qwen25-14b-16k"])
+    assert picked.base_name == "qwen2.5:14b-instruct" and picked.think is None
+    modelfile = Path("ollama/Modelfile.qwen25-14b-16k").read_text(encoding="utf-8")
+    assert "FROM qwen2.5:14b-instruct" in modelfile
+    assert "PARAMETER num_ctx 16384" in modelfile
