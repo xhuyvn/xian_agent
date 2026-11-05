@@ -39,6 +39,7 @@ Rounds:
 - R-1 2026-11-05: deliver the gold chapter set, gold scoring, the qwen2.5 candidate and parallel workers -> PASS, 0 blockers, e1c1373, 0 agy tokens
 - R-2 2026-11-05: run qwen25-14b-10k one at a time and with 2 workers, and report against the G-10.1 baseline -> PASS, 0 blockers, 6223bd6, 0 agy tokens
 - R-3 2026-11-05: run qwen25-14b-16k on the same chapters and report it next to 10k -> PASS, 0 blockers, e6dc5d8, 0 agy tokens
+- R-4 2026-11-05: run qwen35-9b-udq6-10k on the same chapters and report it next to qwen2.5 and production -> PASS, 0 blockers, afef249, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
