@@ -10,7 +10,7 @@ from typing import Any
 from pydantic_ai import Agent
 import rapidfuzz
 
-from xn.llm import extractor_output, extractor_settings, local_model, run_logged
+from xn.llm import LOCAL_KEY, extractor_output, extractor_settings, local_model, run_logged, s1_model_key
 from xn.pipeline.s1_postprocess import job_input_hash, postprocess, settings_from_config
 from xn.prompts import load_prompt, profile_from_config
 from xn.schemas.extraction import ChapterExtraction, EntityEvent, MicroSummary
@@ -167,10 +167,12 @@ def run_s1(
     if chapter_to is None:
         chapter_to = config["total_chapters"]
 
+    # G-27.1: models.s1_extractor, when set, runs S1; other stages keep local_extractor.
+    model_key = s1_model_key(config)
     if model is None:
-        model = local_model(config)
+        model = local_model(config) if model_key == LOCAL_KEY else local_model(config, model_key)
 
-    serving_name = config["models"]["local_extractor"]["serving_name"]
+    serving_name = config["models"][model_key]["serving_name"]
     cleanup = settings_from_config(config)
 
     profile = profile_from_config(config)
@@ -182,13 +184,13 @@ def run_s1(
     extract_prompt = load_prompt("s1_extract", extract_version, profile, prompts_dir)
     resummary_prompt = load_prompt("s1_resummary", resummary_version, profile, prompts_dir)
 
-    model_settings = extractor_settings(config)
+    model_settings = extractor_settings(config, model_key)
     extract_agent = Agent(
-        model, output_type=extractor_output(ChapterExtraction, config),
+        model, output_type=extractor_output(ChapterExtraction, config, model_key),
         system_prompt=extract_prompt.text, retries=3, model_settings=model_settings,
     )
     resummary_agent = Agent(
-        model, output_type=extractor_output(MicroSummary, config),
+        model, output_type=extractor_output(MicroSummary, config, model_key),
         system_prompt=resummary_prompt.text, retries=3, model_settings=model_settings,
     )
 
