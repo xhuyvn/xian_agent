@@ -77,9 +77,17 @@ Rounds:
 - R-1 2026-11-06: prompt v4 (two dev attempts; attempt 1 kept: dev recall 0.96, category 1.00, realm_breakthrough found, 19.6 s/chapter; with clean-up precision 0.85) and the S1 clean-up step, off by default -> PASS, 0 blockers, fcf8787, 0 agy tokens; the lead wrote the code under CLAUDE.md's owner override; NIT: extra blank lines in s1_postprocess.py (fixed in c0c7367)
 - R-2 2026-11-06: full S0-S3 test on chapters 1-100 (qwen3.5, v4, clean-up on) and the G-27 report: recall 0.96, precision 0.90, category 0.98 (held out 0.94 / 0.91 / 0.98), alias F1 0.67 vs 0.64, leaks 0, S1 17.5 s/chapter; Q&A citation hit rate 0.80 vs 0.93 with the whole local model on qwen3.5 (the router), 0.93 with qwen3.5 as extractor only -> FAIL, 1 blocker (a wrong held-out count in the report), 9873130; fixed in fb53ba3 -> PASS, 0 blockers, 0 agy tokens. The Q&A line is not met with the whole model switched, so the goal stays active for the owner's decision
 Sub-goals:
-- none yet
+- G-27.1 (active): run qwen3.5 for S1 only and keep `qwen3.8:udiq4_hui` as router, S2 adjudicator, S5 review and prefix model. An optional `models.s1_extractor` block (same shape as `local_extractor`) is used by S1 when set; every other stage keeps `local_extractor`; without the block nothing changes. `xn.bench` sets its candidate on `s1_extractor` too. Checked by re-running only the gold report on the G-27 database with a config copy (S1 model qwen3.5, `local_extractor` qwen3.8). The lead writes the code. Production config is out of scope; switching it needs a separate owner yes. One round.
+  Done when:
+  - Without `s1_extractor`, every stage uses `local_extractor` exactly as now, with unit tests
+  - With it set, S1 calls and records the S1 model, and S2, the router, S5 and prefix use `local_extractor`, with unit tests on fake models
+  - The config-copy gold report gives Q&A citation hit rate >= 0.93, alias F1 >= 0.64 and 0 leaks
+  - `py -m compileall -q src` and `uv run pytest tests/unit` pass
+  Rounds:
+  - none yet
 Changes:
 - 2026-11-06: owner approved the goal and the decisions above ("go")
+- 2026-11-06: owner approved sub-goal G-27.1, the S1-only model split ("Go")
 
 ## Parked
 
