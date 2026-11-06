@@ -51,6 +51,27 @@ Changes:
 
 ## Archive
 
+### G-26: cut the false names of `qwen3.5:9b_UD_Q6` on S1 extraction (done)
+Plan: chat plan of 2026-11-05. Follows G-25. Cut from `cld/bench-qwen25-14b-872abd`.
+Owner decisions: the lead writes the code, with no agy. Prompt `v3` is a new file. `v2`, production config, production S1 and `eval/` stay unchanged. Tuning uses only the 10 dev gold chapters (`xn.gold.gold_split`, the first of each pair). The 10 held-out chapters are scored once, in the last round. Any name filter is measured in this goal only, and putting it into production S1 is a later owner decision. No downloads. The model is `qwen35-9b-udq6-10k`, num_ctx 10240, thinking off, temperature 0.1, on the G-13 50-chapter set. At most 3 prompt attempts; if the targets are not reached, stop and report what each attempt reached. Databases go to new folders under `data/bench/` in the main checkout. The two-pass/scratchpad, dynamic glossary and GLiNER ideas are parked. Three rounds: offline filter study, prompt v3, full run.
+Done when:
+- The 26 false names of the G-25 qwen3.5 run are sorted by type, and filter rules (capitalization outside sentence starts, category, a list of kinship and address words) are scored offline on the G-25 qwen3.5 database and on `g101-full.db`, tuned on dev chapters only
+- `prompts/s1_extract/v3.md` exists, and `xn.bench` can run a chosen prompt version (for example `--prompt v3`, applied to a config copy), with a unit test
+- On the 20 gold chapters, qwen3.5 9B with the best setup (prompt v3, with or without a filter) reaches recall >= 0.90 and precision >= 0.88, with held out reported apart, at <= 20 s/chapter mean
+- The results are in a "G-26" section of `docs/S1_T9_EVAL.md`, next to qwen3.5 on v2 and production, with exact commands and caveats, including that these 20 gold chapters have been used to judge every run since G-10.1
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-05: sort the 26 false names by type and score filter rules offline on dev -> PASS, 0 blockers, 9f65355, 0 agy tokens
+- R-2 2026-11-05: prompt v3, bench --prompt and --gold-split, two v3 attempts on dev (precision unchanged by the prompt; v3 kept at attempt 1) -> PASS, 0 blockers, 7b4a205, 0 agy tokens
+- R-3 2026-11-05: run prompt v3 on all 50 chapters, score the filters on all 20 gold chapters with held out apart -> PASS, 0 blockers, 5d03c1b, 0 agy tokens
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-05: owner approved the goal and the decisions above ("Go")
+- 2026-11-05: owner set `OLLAMA_NUM_PARALLEL=4` on the host during R-3; S1 sends one request at a time, so it is noted as a caveat only
+- 2026-11-05: done after R-3 PASS: v3 + caps-proper+words filter, recall 0.95, precision 0.88, 16.3 s/chapter; the filter stays offline
+- 2026-11-05: owner: "Yes, run it" (a 2-worker test with `OLLAMA_NUM_PARALLEL` raised). Ran after the goal closed and added to the G-26 section: no speed-up, because Ollama runs the qwen35 architecture with one slot (`n_seq_max = 1`)
+
 ### G-24: S3-T4 arc prefix summaries for L2 spoiler safety (done)
 Plan: `docs/IMPLEMENTATION_PLAN.md` S3-T4; blueprint §3.4 L2, §3.9. Chat plan of 2026-11-04. Cut from `cld/sprint-3-tasks-60f7ab`. Runs beside S3-T2 and S3-T3; S3-T5 waits for it.
 Owner decisions: the lead writes the code, with no agy. D1: a checkpoint is every chapter `c` with `c % 10 == 0` and `start < c ≤ end` of its arc; a reader at N snaps down to the greatest stored checkpoint ≤ N in N's arc. D2: each checkpoint's summary comes from the S1 micro-summaries of `start..c` only, not from the previous checkpoint. D3: stage id `prefix`; one `jobs` row per checkpoint with `chapter_id = upto_chapter`, the end chapter of the span it covers (OQ-05); the input hash covers the arc id and span, the micro-summaries up to `c`, the prompt version and the model; rows and jobs of checkpoints that no longer exist are pruned. D4: prompt `prompts/arc_prefix_summary/v1.md`, output schema kept in `prefix_summaries.py`. D5: `arc_prefix_view(repo, novel_id, chapter_max)` in `prefix_summaries.py` returns the checkpoint summary plus the raw micro-summaries after it up to N, and never the arc's end chapter; the query graph is untouched. D6: `repository.py`, its guard tests, `runner.py` and `cli/main.py` change only additively. The live run uses `data/eval/g24-prefix.db`, a backup-API copy of `g21-s5.db`. One round.

@@ -221,6 +221,178 @@ uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/be
 
 The outputs are `report.md`, `report.json`, `parallel-qwen25-14b-10k-w2.md` and `.json` in `<data>/bench/g25-qwen25/`, and `report.md` and `report.json` in `<data>/bench/g25-qwen25-16k/`, with the console log in `<data>/bench/g25-qwen25-16k.log`. The production column was read from `g101-full.db` with `xn.bench.pick_gold_chapters`, `_measure_runs` and `score_gold`, without writing to it.
 
+## G-26: cutting the false names of `qwen3.5:9b_UD_Q6`
+
+Date: 2026-11-05. Goal: G-26.
+
+**`qwen3.5:9b_UD_Q6` on prompt v3 with an offline name filter reaches recall 0.95 and precision 0.88 on the 20 gold chapters (held out 0.94 / 0.89), at 16.3 s/chapter.** The filter does the work: prompt v3 alone did not cut false names. Production config, prompt v2 and S1 are unchanged.
+
+In G-25, `qwen3.5:9b_UD_Q6` (served as `qwen35-9b-udq6-10k`: `num_ctx 10240`, thinking off, temperature 0.1) ran prompt v2 on the G-13 set at 16.5 s/chapter, with recall 0.93 (95 of 102) and precision 0.79 (26 false names) on the 20 gold chapters. Production (`qwen3.8:udiq4_hui`, G-10.1) has 0.98 and 0.88 at 35.4 s/chapter. G-26 tries to cut the false names without losing much recall: an offline name filter, then a prompt v3. Rules and prompt are tuned on the 10 dev gold chapters only (`xn.gold.gold_split`, the first of each pair); the 10 held-out chapters are scored once, in the last round.
+
+### The 26 false names by type
+
+The false names of the G-25 qwen3.5 run on all 20 gold chapters, as `score_extraction` lists them (chapter: name, category the model gave). Dev chapters are 1, 11, 22, 32, 43, 53, 64, 74, 84, 95; held out are 6, 17, 27, 37, 48, 58, 69, 79, 90, 100.
+
+| Type | Count | Dev | Held out |
+|---|---|---|---|
+| Kinship and address terms | 6 | 1: Đại ca, Tiểu muội muội; 22: Cha mẹ, Đại ca, Nhị ca | 79: Gia hoả |
+| People named by a description or role | 4 | 74: Tử y chưởng kỳ sứ; 84: Tên mập | 69: thiếu nữ; 79: Chấp pháp |
+| Counted groups | 3 | 53: bảy cái đầu quỷ, bảy thanh dao nhọn | 27: năm loại thảo dược |
+| Common nouns with descriptors, generic arts | 5 | 43: ngụy chân khí; 64: luyện thi thuật; 95: đạo phù lục vũ hình thanh tiểu kiếm | 27: cách điều chế hi hữu; 100: chú chim nhỏ màu vàng |
+| Generic places | 4 | 1: Sơn biên tiểu thôn | 6: Sơn cốc; 79: Môn phái, Sân nhà Lý trưởng lão |
+| Proper-looking names the gold does not list | 4 | 74: Ngũ sát Tam ưng Nhị báo, Thất kiệt Song hùng; 84: Vương môn | 100: Hương Lỗ đại vận hà |
+
+16 of the 26 are in dev chapters. The last type may be gold gaps rather than model errors: group nicknames and place names that the annotation left out. No filter here can or should remove them.
+
+### R-1: filter rules, scored offline on dev
+
+`xn.name_filter` (not used by production S1) filters stored extractions and scores them with `xn.gold.score_extraction`. A filtered name loses its events; a filtered holder or `same_as` name is cleared, because S2 also makes entities from those.
+
+- **caps**: keep a name only if the chapter writes it with a capital first letter somewhere other than at a sentence start. Matching ignores case and diacritics and must cover whole words. A match is at a sentence start when the text before it, ignoring spaces, tabs and quotes, is empty or ends in `.`, `!`, `?`, `:`, a newline, an ellipsis or a dash.
+- **caps-proper** / **caps-character**: the same test, applied only to names in `character` and `dungeon`, or only `character`. Other categories pass, because this translation writes many items and techniques in lower case ("phi kiếm", "Trừu tủy hoàn").
+- **words**: drop kinship and address terms ("đại ca", "cha mẹ", "sư huynh", "thiếu nữ", "tên mập" and others), names whose first word is a native numeral or a classifier ("bảy", "năm", "mấy", "cái", "con", "tên"), and names of two or more words ending in a demonstrative ("kia", "này", "đó"). The list is general Vietnamese kinship and address vocabulary plus the dev false names; the brief that started this goal also quoted three held-out false names ("thiếu nữ", "năm loại thảo dược", "chú chim nhỏ màu vàng"), and the first two are in the list because they are generic.
+- Combinations: **caps+words**, **caps-proper+words**, **caps-character+words**.
+
+Dev chapters only (10 chapters, 50 gold names). R is recall, P precision:
+
+| Rule | qwen3.5 9B, prompt v2 (G-25) | production, prompt v2 (G-10.1) |
+|---|---|---|
+| none | R 0.94 (47/50), P 0.75 (16 false) | R 0.96 (48/50), P 0.86 (8 false) |
+| caps | R 0.92 (46/50), P 0.94 (3 false) | R 0.96 (48/50), P 1.00 (0 false) |
+| caps-proper | R 0.94 (47/50), P 0.85 (8 false) | R 0.96 (48/50), P 0.92 (4 false) |
+| caps-character | R 0.94 (47/50), P 0.84 (9 false) | R 0.96 (48/50), P 0.91 (5 false) |
+| words | R 0.94 (47/50), P 0.85 (8 false) | R 0.96 (48/50), P 0.92 (4 false) |
+| caps+words | R 0.92 (46/50), P 0.94 (3 false) | R 0.96 (48/50), P 1.00 (0 false) |
+| caps-proper+words | R 0.94 (47/50), P 0.89 (6 false) | R 0.96 (48/50), P 0.94 (3 false) |
+| caps-character+words | R 0.94 (47/50), P 0.87 (7 false) | R 0.96 (48/50), P 0.92 (4 false) |
+
+- **caps** removes 13 of the 16 dev false names of qwen3.5 and all 8 of production's, for one gold name: "bình thần bí" (chapter 11), which this chapter never capitalizes. The 3 it keeps are the proper-looking names of the last type above. On dev, adding **words** to caps changes nothing.
+- **caps-proper+words** loses no dev gold name, and keeps 6 qwen3.5 false names: the 3 proper-looking ones and 3 lower-case items and arts ("ngụy chân khí", "luyện thi thuật", "đạo phù lục vũ hình thanh tiểu kiếm"), which only the capital test catches.
+- The scratch check in the goal's brief reported production falling from 0.98 to 0.89 recall on all 20 chapters with this test. On dev, production loses no gold name here, and a version that matches with diacritics gives the same dev numbers, so the losses behind that figure would be in held-out chapters; they are measured in R-3.
+- The two candidates for the last round are **caps** (best precision) and **caps-proper+words** (no dev recall loss). Held-out scores for every rule come in R-3.
+
+Command (read-only on both databases):
+
+```bash
+uv run py -m xn.name_filter --split dev --db <data>/bench/g25-qwen35-9b/qwen35-9b-udq6-10k.db --db <data>/eval/g101-full.db
+```
+
+### R-2: prompt v3, two attempts on dev
+
+`prompts/s1_extract/v3.md` is v2 with one added block of "not an entity" rules: kinship and address terms, people named only by a description, counted groups, and common nouns with descriptors or demonstratives. Every example comes from the dev chapters ("Đại ca", "Nhị ca", "Cha mẹ", "Tiểu muội muội", "sư huynh", "Tên mập", "bảy cái đầu quỷ", "bảy thanh dao nhọn", "cái bình kia", "đạo phù lục vũ hình thanh tiểu kiếm", "Sơn biên tiểu thôn"). It also says that lower-case item and technique names still count, with dev gold examples ("Trừu tủy hoàn", "Dưỡng tinh đan", "Thất quỷ phệ hồn đại pháp", "bình thần bí"), and adds a check for these cases to v2's closing self-check. `xn.bench` gained `--prompt <version>`, which sets `prompts.s1_extract` on a copy of the config, and `--gold-split dev|held_out`, which runs only that split's gold chapters and scores only that split. Production config still says v2.
+
+Each attempt ran `qwen35-9b-udq6-10k` on the 10 dev chapters, one chapter at a time, in a new database, with the GPU checked free first (`ollama ps` empty, no other `xn` process). Attempt 1 put the block after v2's name rules. Attempt 2 moved it before v2's "cover every entity" block and marked it as overriding that block. The G-25 column is the v2 run on the same dev chapters, taken from its 50-chapter run.
+
+| Dev chapters (10, 50 gold names) | v2 (G-25) | v3 attempt 1 (`882932be`) | v3 attempt 2 (`21fee82d`) |
+|---|---|---|---|
+| Recall, no filter | 0.94 (47) | **0.96** (48) | 0.88 (44) |
+| Precision, no filter | 0.75 (16 false) | 0.76 (15 false) | 0.75 (15 false) |
+| With caps: recall / precision | 0.92 / 0.94 | 0.94 / **0.98** | 0.86 / 0.98 |
+| With caps-proper+words: recall / precision | 0.94 / 0.89 | **0.96** / 0.92 | 0.88 / 0.92 |
+| Category / event-type accuracy | see G-25 (all 20 only) | 0.83 / 0.83 | 0.91 / 0.82 |
+| s/chapter, mean / p95 | 16.5 / 31.4 (50 chapters) | 18.6 / 29.0 | 16.8 / 31.9 |
+| Schema success / first try | 100% / 100% | 100% / 100% | 100% / 100% |
+
+- **The prompt rules alone did not cut false names.** Both attempts still wrote "Đại ca", "Nhị ca", "Tên mập" and "đạo phù lục vũ hình thanh tiểu kiếm", the very examples the prompt names as not entities, usually as `MENTIONED` events. Attempt 2 also wrote "bảy cái đầu quỷ" and "bảy thanh dao nhọn". Precision stayed at 0.75-0.76.
+- **The filter cuts them.** On v3 attempt 1, caps leaves 1 false name ("Bang chủ Dã Lang", chapter 95) and caps-proper+words leaves 4.
+- Attempt 2 lost 4 more dev gold names ("Trừu tủy hoàn", "Lạc Nhật Phong", "Dã Lang bang", "Thất huyền môn"). With one run each at temperature 0.1, this may be noise rather than the prompt change.
+- **Stopped after 2 of the 3 allowed attempts.** The model followed neither placement, and a third rewording had no better reason to work. `v3.md` is back to the attempt 1 text, which had the best dev recall.
+- **The setup for R-3, chosen on dev before any held-out scoring:** prompt v3 (attempt 1) with the **caps-proper+words** filter. It keeps every dev gold name the model found, and its dev precision of 0.92 clears 0.88. Plain caps has higher dev precision (0.98), but it drops lower-case gold names such as "bình thần bí", and the goal's brief lists 11 gold names that are never capitalized mid-sentence. R-3 reports every rule on all 20 chapters, with held out apart.
+
+Commands, from the repository root with `PYTHONIOENCODING=utf-8` (the attempt 2 prompt is commit `ba17ba8`):
+
+```bash
+uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/bench/g26-v3-a1 --chapter-max 100 --gold --gold-split dev --model qwen35-9b-udq6-10k --prompt v3
+```
+
+```bash
+uv run py -m xn.name_filter --split dev --db <data>/bench/g26-v3-a1/qwen35-9b-udq6-10k.db
+```
+
+Attempt 2 used the same commands with `--out <data>/bench/g26-v3-a2`. Console logs are in `<data>/bench/g26-v3-a1.log` and `g26-v3-a2.log`.
+
+### R-3: the chosen setup on all 50 chapters
+
+`qwen35-9b-udq6-10k` ran prompt v3 (`882932be`) on the G-13 set (50 chapters from 1-100: the 20 gold chapters plus 30 others), one chapter at a time, in a new database, with the GPU checked free first. The filter was scored offline afterwards. This is the first time any G-26 setup was scored on the 10 held-out chapters. The qwen3.5 v2 columns are the G-25 run and the production columns are the G-10.1 run (`g101-full.db`), both read only, with the same filter applied.
+
+| All 20 gold chapters | qwen3.5 9B, v3 + caps-proper+words (**G-26 setup**) | qwen3.5 9B, v3, no filter | qwen3.5 9B, v2, no filter (G-25) | qwen3.5 9B, v2 + caps-proper+words | production, v2, no filter (G-10.1) | production, v2 + caps-proper+words |
+|---|---|---|---|---|---|---|
+| Entity recall | **0.95** (97 of 102) | 0.96 (98) | 0.93 (95) | 0.91 (93) | 0.98 (100) | 0.96 (98) |
+| Entity precision | **0.88** (13 false names) | 0.75 (32) | 0.79 (26) | 0.92 (8) | 0.88 (14) | 0.96 (4) |
+| Recall, dev / held out | 0.96 / **0.94** | 0.96 / 0.96 | 0.94 / 0.92 | 0.94 / 0.88 | 0.96 / 1.00 | 0.96 / 0.96 |
+| Precision, dev / held out | 0.87 / **0.89** | 0.73 / 0.78 | 0.75 / 0.83 | 0.89 / 0.96 | 0.86 / 0.90 | 0.94 / 0.98 |
+| Category / event-type accuracy | 0.82 / 0.87 | 0.83 / 0.88 | 0.82 / 0.88 | 0.83 / 0.88 | 0.91 / 0.90 | 0.92 / 0.90 |
+| Flag F1, `location_change` / `realm_breakthrough` / `major_conflict` | 0.44 / 0.00 / 1.00 | same | 0.25 / 0.00 / 1.00 | same | 0.33 / 1.00 / 0.92 | same |
+| s/chapter, mean / p95 (50 chapters) | **16.3** / 31.6 | same run | 16.5 / 31.4 | same run | 35.4 / 58.9 | same run |
+
+The precision of the G-26 setup is 97 / 110 = 0.882, just over the 0.88 target. The other run figures: schema success and first-try success 100%, 11.6 events per chapter (range 4-25), 3,069 input and 1,261 output tokens per chapter, idle / peak VRAM 2,656 / 12,175 MiB, 7 events dropped by S1's evidence check.
+
+Every filter rule on the v3 run, all 20 chapters (dev / held out in brackets):
+
+| Rule | Recall | Precision |
+|---|---|---|
+| none | 0.96 (0.96 / 0.96) | 0.75 (0.73 / 0.78) |
+| caps | 0.89 (0.94 / 0.85) | 0.95 (0.94 / 0.96) |
+| caps-proper | 0.95 (0.96 / 0.94) | 0.86 (0.84 / 0.88) |
+| caps-character | 0.95 (0.96 / 0.94) | 0.80 (0.81 / 0.79) |
+| words | 0.96 (0.96 / 0.96) | 0.82 (0.83 / 0.81) |
+| caps+words | 0.89 (0.94 / 0.85) | 0.96 (0.94 / 0.98) |
+| **caps-proper+words** | **0.95 (0.96 / 0.94)** | **0.88 (0.87 / 0.89)** |
+| caps-character+words | 0.95 (0.96 / 0.94) | 0.82 (0.84 / 0.80) |
+
+How to read this:
+
+- **The targets are met, by the filter rather than the prompt.** Recall 0.95 >= 0.90, precision 0.88 >= 0.88 (0.882), 16.3 s/chapter <= 20. Prompt v3 alone gave 0.96 recall and 0.75 precision, no better than v2's 0.79. The filter took the false names from 32 to 13. Recall rose from 0.93 to 0.96 between the v2 and v3 runs, but one run each at temperature 0.1 cannot separate the prompt's effect from run-to-run variation; R-2's two dev attempts differed by 4 gold names with no clear cause.
+- **v2 with the same filter also meets the targets** on these 20 chapters: recall 0.91, precision 0.92. Recall is the deciding difference: 0.95 for v3 against 0.91 for v2, at the same speed.
+- **The held-out chapters confirm the dev choice.** Plain caps kept dev recall at 0.94 but fell to 0.85 on held out, losing lower-case gold names ("vô danh khẩu quyết", "bình nhỏ", "huyết tiến âm hồn chú", "phi kiếm", "Tiểu toán bàn" among them). caps-proper+words held at 0.94.
+- **What the filter cost:** one gold name, "Tiểu toán bàn" (chapter 17), which this chapter never capitalizes mid-sentence. The model itself missed four others: "Mã phó môn chủ" (chapter 69; S1's evidence check dropped its event), "cự hán", "La Yên bộ" and "Ngự Phong quyết".
+- **What it leaves:** 13 false names, mostly lower-case items and generic arts that the capital test does not touch, since items and techniques are exempt ("thuốc trị ngoại thương", "khẩu quyết", "luyện thi thuật", "dược vật", "chim nhỏ màu vàng"), plus proper-looking group and title names ("Ngũ sát Tam ưng Nhị báo", "Thất kiệt Song hùng", "Bang chủ Dã Lang").
+- **It still trails production on quality**: category accuracy 0.82 against 0.91, and it missed the one gold `realm_breakthrough` (chapter 43). With the same filter, production reaches 0.96 / 0.96. qwen3.5 is 2.2 times faster.
+- The model sometimes repeats the same event many times (in chapter 22 of the dev attempt 1 run, "Hàn Lập" `MENTIONED` alternates between two quotes about a dozen times), and one chapter hit the 25-event cap. Duplicates do not change the name scores, but they cost output tokens.
+
+Caveats:
+
+- **These 20 gold chapters have judged every extraction run since G-10.1**, and prompt v2 was tuned on them for the production model. The "held-out" chapters were held out from G-26's tuning only; G-10.1 had already seen them. The brief that started G-26 also quoted three held-out false names, two of which are in the word list (see R-1). The gold was drafted by Claude.
+- **One run per setup** at temperature 0.1. Run-to-run variation on the dev chapters (R-2) was about 4 gold names, so differences of 1-3 names between columns are not meaningful, and the 0.882 precision clears 0.88 by one false name.
+- **The filter is offline only.** Production S1 does not run it, and the precision above assumes something like `xn.name_filter` would run after S1. Putting it into S1 is a later owner decision. It also clears filtered holder and `same_as` names, which S2 would otherwise turn into entities.
+- **Timing**: the owner set `OLLAMA_NUM_PARALLEL=4` during this goal. S1 sent one request at a time, the model stayed 100% on the GPU at context 10240, and the slowest call took 36.6 s, in line with G-25's p95 of 31.4 s, so the setting is not expected to affect these numbers. The production timing is from G-10.1 on 2026-11-01, as in G-25.
+
+**Recommendation:** if a faster extractor is wanted, qwen3.5 9B on prompt v3 with the caps-proper+words filter in S1 meets this goal's bar at 2.2 times production speed, but production with the same filter is better on every quality measure here. Whether to change the extractor, and whether to add the filter to S1, are owner decisions.
+
+Commands, from the repository root with `PYTHONIOENCODING=utf-8`:
+
+```bash
+uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/bench/g26-v3-full --chapter-max 100 --gold --model qwen35-9b-udq6-10k --prompt v3
+```
+
+```bash
+uv run py -m xn.name_filter --split all --db <data>/bench/g26-v3-full/qwen35-9b-udq6-10k.db --db <data>/bench/g25-qwen35-9b/qwen35-9b-udq6-10k.db --db <data>/eval/g101-full.db
+```
+
+The same `xn.name_filter` command with `--split dev` and `--split held_out` gives the split columns. The console log is `<data>/bench/g26-v3-full.log`.
+
+### Two chapters at once (owner request, after R-3)
+
+The owner raised `OLLAMA_NUM_PARALLEL` to 4 and asked for a 2-worker test of the G-26 setup. `--workers 2` ran prompt v3 on the same 50 chapters with 2 S1 processes at once, each on its own new database with every second chapter. The GPU was checked free first.
+
+| Measure | One at a time (R-3) | 2 workers |
+|---|---|---|
+| s/chapter, wall | 16.3 (summed calls) | 16.0 |
+| s per call, mean / p95 | 16.3 / 31.6 | 31.4 / 44.2 |
+| Peak VRAM (MiB) | 12,175 | 12,126 |
+| Recall / precision, all 20, no filter | 0.96 / 0.75 | 0.97 / 0.75 |
+| Recall / precision, all 20, caps-proper+words | 0.95 / 0.88 | 0.95 / 0.90 (dev 0.96 / 0.91, held out 0.94 / 0.89) |
+
+**No gain, and Ollama says why.** For this model, Ollama's server log (`%LOCALAPPDATA%\Ollama\server.log`) records `model architecture does not currently support parallel requests` with `architecture=qwen35`, and the model loads with `n_seq_max = 1`: one slot, so the second request waits for the first. That is why each call took twice as long and the wall time did not move. More parallel slots cannot help this model on this Ollama version. Peak VRAM did not grow either, because no extra KV cache was allocated. The same log shows the running server started with `OLLAMA_NUM_PARALLEL:2`, so the new value of 4 had not reached it. For qwen3.5 that makes no difference. The gold scores moved by a few names, within run-to-run variation.
+
+Command:
+
+```bash
+uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/bench/g26-v3-w2 --chapter-max 100 --gold --model qwen35-9b-udq6-10k --prompt v3 --workers 2
+```
+
+The filtered scores combine the two worker databases (`qwen35-9b-udq6-10k-w2-1.db` and `-2.db`), read only, with `xn.name_filter.read_db` and `score_rules`. The `xn.name_filter` CLI reads one database per column, so it cannot score a split run directly.
+
 ## Reproduce
 
 Paths outside the repo must use the `--option=value` form. With a space, pytest reads the path as a test target and takes its settings from the wrong checkout.
