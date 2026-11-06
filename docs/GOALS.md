@@ -84,7 +84,7 @@ Sub-goals:
   - The config-copy gold report gives Q&A citation hit rate >= 0.93, alias F1 >= 0.64 and 0 leaks
   - `py -m compileall -q src` and `uv run pytest tests/unit` pass
   Rounds:
-  - none yet
+  - R-1 2026-11-06: `models.s1_extractor` for S1 only, unit tests, S2 rebuild + S3 + gold report on a copy of the G-27 database with a split config copy: Q&A citation hit rate 0.93, alias F1 0.644, 0 leaks, extraction unchanged -> FAIL, 1 blocker (an uncommitted CLAUDE.md edit from the working tree was swept into 037ef04), 46c0a00; taken out in ca1a4ad -> PASS, 0 blockers, 0 agy tokens; NIT: S2, S5 and prefix are covered by a source scan, only the router by a fake-model test
 Changes:
 - 2026-11-06: owner approved the goal and the decisions above ("go")
 - 2026-11-06: owner approved sub-goal G-27.1, the S1-only model split ("Go")
