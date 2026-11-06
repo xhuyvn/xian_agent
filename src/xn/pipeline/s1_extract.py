@@ -11,6 +11,7 @@ from pydantic_ai import Agent
 import rapidfuzz
 
 from xn.llm import extractor_output, extractor_settings, local_model, run_logged
+from xn.pipeline.s1_postprocess import job_input_hash, postprocess, settings_from_config
 from xn.prompts import load_prompt, profile_from_config
 from xn.schemas.extraction import ChapterExtraction, EntityEvent, MicroSummary
 from xn.storage.repository import Repository
@@ -170,6 +171,7 @@ def run_s1(
         model = local_model(config)
 
     serving_name = config["models"]["local_extractor"]["serving_name"]
+    cleanup = settings_from_config(config)
 
     profile = profile_from_config(config)
 
@@ -209,7 +211,7 @@ def run_s1(
         processed += 1
         chapter_id = ch["chapter_id"]
         clean_text = ch["clean_text"]
-        input_hash = ch["sha256"]
+        input_hash = job_input_hash(ch["sha256"], cleanup)
 
         existing_job = repo.get_job(novel_id=novel_id, chapter_id=chapter_id, stage=STAGE)
         if (
@@ -279,6 +281,9 @@ def run_s1(
                     "chapter_id": chapter_id,
                     "events": valid_events,
                 }
+            )
+            final_extraction = postprocess(
+                final_extraction, clean_text, cleanup, allowed_categories=allowed_categories
             )
 
             repo.save_extraction(
