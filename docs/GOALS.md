@@ -74,7 +74,7 @@ Done when:
 - The "G-27" section of `docs/S1_T9_EVAL.md` has exact commands and caveats, including that the 20 gold chapters have judged every run since G-10.1
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
-- none yet
+- R-1 2026-11-06: prompt v4 (two dev attempts; attempt 1 kept: dev recall 0.96, category 1.00, realm_breakthrough found, 19.6 s/chapter; with clean-up precision 0.85) and the S1 clean-up step, off by default -> PASS, 0 blockers, fcf8787, 0 agy tokens; the lead wrote the code under CLAUDE.md's owner override; NIT: extra blank lines in s1_postprocess.py
 Sub-goals:
 - none yet
 Changes:

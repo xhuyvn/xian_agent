@@ -31,7 +31,6 @@ CATEGORY_BY_LAST_WORD: dict[str, str] = {
 PROTECTED_CATEGORIES = frozenset({"character"})
 
 
-
 def _rules_by_name() -> dict[str, Any]:
     # Imported here: xn.name_filter pulls in xn.gold and the query graph, which S1 does not
     # need unless the name filter is on.
