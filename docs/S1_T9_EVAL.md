@@ -393,6 +393,139 @@ uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/be
 
 The filtered scores combine the two worker databases (`qwen35-9b-udq6-10k-w2-1.db` and `-2.db`), read only, with `xn.name_filter.read_db` and `score_rules`. The `xn.name_filter` CLI reads one database per column, so it cannot score a split run directly.
 
+## G-27: `qwen3.5:9b_UD_Q6` as the S1 extractor
+
+Date: 2026-11-06. Goal: G-27.
+
+**As the S1 extractor, `qwen3.5:9b_UD_Q6` on prompt v4 with the new S1 clean-up step passes every extraction target, and runs at half production's time per chapter (17.5 s against 34.7). Switching the whole local model fails one target: Q&A citation hit rate falls from 0.93 to 0.80. The cause is qwen3.5 as the query router, not its extraction.** Production config is unchanged; the switch is the owner's decision.
+
+Setup: `qwen35-9b-udq6-10k` (`num_ctx 10240`, thinking off, temperature 0.1). Prompt v4 and the clean-up were tuned on the 10 dev gold chapters only (`xn.gold.gold_split`, the first of each pair). The 10 held-out chapters were scored once, in the full test. The production column is the G-10.1 run of `qwen3.8:udiq4_hui` on prompt v2 (`data/eval/g101-full.db`, read only).
+
+### Prompt v4 and the clean-up step
+
+`prompts/s1_extract/v4.md` is v3 plus a one-line definition of each category, and a rule for `realm_breakthrough`. Under the definitions, pills, potions, talismans and treasures are `weapon_treasure`; arts and methods are `technique`; sects, gangs and places are `dungeon`; beasts and puppets, including a person made into a puppet, are `puppet_beast`. Under the rule, the protagonist reaching a new layer of his main cultivation method counts, even when the chapter tells it as past ("Trường xuân công của Hàn Lập đã luyện đến tầng thứ sáu", chapter 43). Every quoted example is a gold entity of a dev chapter. Some of them, such as "Hàn Lập" and "Dưỡng tinh đan", recur in held-out chapters too.
+
+The S1 clean-up step (`src/xn/pipeline/s1_postprocess.py`) runs after S1's own category and evidence checks. It is off unless the config turns it on:
+
+```yaml
+s1:
+  postprocess:
+    name_filter: caps-proper+words   # a rule from xn.name_filter; null for none
+    category_fix: true
+    dedupe_events: true
+```
+
+- **name_filter** applies the G-26 rule `caps-proper+words`. It drops a name with its events, and clears the holder and `same_as` names that the rule drops.
+- **category_fix** sets the category from the name's last word, lower case, with diacritics: "đan/hoàn/tán/thủy/phù" give `weapon_treasure`, "công/quyết/bộ/thuật/pháp/chú" give `technique`, and "môn/bang/cốc/phong/thôn" give `dungeon`. It never changes a `character`, and it ignores categories outside the profile.
+- **dedupe_events** keeps the first of events that share name, category, event type, holder, `same_as` and realm, and differ only in quote and description.
+
+With the section absent, S1 saves the same payload under the same job hash (the chapter's sha256) as before. With any fix on, the settings are hashed into the S1 job's input hash, so changing them reruns the chapter. `xn.name_filter --cleanup` scores the step offline on stored extractions. Its table now also shows category accuracy (C).
+
+### Two v4 attempts on dev
+
+Each attempt ran on the 10 dev chapters, one chapter at a time, in a new database, with the GPU checked free first. Attempt 2 also listed generic nouns as not entities, and asked for one event per entity and event type. The generic nouns were "thuốc trị ngoại thương", "bí dược", "kiếm mang", "căn nhà đá" and "Bang chủ Dã Lang", all dev false names of attempt 1.
+
+| Dev chapters (10, 50 gold names) | v3 attempt 1 (G-26) | v4 attempt 1 (`6e05907`, **kept**) | v4 attempt 2 (`15066d4`) |
+|---|---|---|---|
+| Recall / precision, raw | 0.96 / 0.76 | 0.96 / 0.72 | 0.98 / 0.67 |
+| Recall / precision, with clean-up | 0.96 / 0.92 | 0.94 / 0.85 | 0.98 / 0.84 |
+| Category accuracy, raw / with clean-up | 0.83 / 0.94 | **1.00** / 1.00 | 0.98 / 0.98 |
+| Event-type accuracy | 0.83 | 0.89 | 0.90 |
+| `realm_breakthrough` F1 (gold in chapter 43 only) | 1.00 | 1.00 | 1.00 |
+| Events per chapter | | 11.2 | 13.4 |
+| s/chapter, mean / p95 | 18.6 / 29.0 | 19.6 / 35.5 | 20.5 / 37.4 |
+
+- **The category definitions worked**: raw dev category accuracy rose from 0.83 to 1.00. Pills are no longer filed as `technique`.
+- **The generic-noun rules did not.** In attempt 2 the model again wrote "thuốc trị ngoại thương", "bí dược" and "Bang chủ Dã Lang", the very examples it was told to skip. G-26 saw the same with v3. Attempt 2 also wrote more events and ran slower. v4 went back to the attempt 1 text (`fcf8787`), which has the same precision after clean-up and runs faster.
+- The clean-up cost attempt 1 one dev gold name: "Khúc Hồn" (chapter 64). The model wrote it only as the holder of "căn nhà đá", which the name filter drops. S1's evidence check had already dropped its own event.
+
+### Full test: S0-S3 on chapters 1-100
+
+Real S0-S3 ran on chapters 1-100 in a new database, using a config copy with the qwen3.5 extractor, prompt v4 and every clean-up fix on. The GPU was checked free first. S1 made 100 calls in 29 min 21 s, with none failed or retried. The gold report then ran on that database. It ran again with the production config on a backup-API copy of `g101-full.db`, so that both reports used the same Qdrant chunks. The re-scored production column matches the G-10.1 numbers exactly.
+
+| All 20 gold chapters | qwen3.5 9B, v4 + clean-up (**G-27**) | production, v2 (G-10.1) | Target |
+|---|---|---|---|
+| Entity recall | **0.96** (98 of 102) | 0.98 (100) | >= 0.90 |
+| Entity precision | **0.90** (11 false names) | 0.88 (14) | >= 0.88 |
+| Recall, dev / held out | 0.98 / **0.94** | 0.96 / 1.00 | |
+| Precision, dev / held out | 0.89 / **0.91** | 0.86 / 0.90 | |
+| Category accuracy | **0.98** (dev 0.98 / held out 0.98) | 0.91 | >= 0.90 |
+| Event-type accuracy | 0.87 | 0.90 | |
+| Flag F1, `location_change` / `realm_breakthrough` / `major_conflict` | 0.29 / 0.67 / 1.00 | 0.33 / 1.00 / 0.92 | |
+| Alias F1 (precision / recall) | **0.67** (1.00 / 0.50) | 0.64 (1.00 / 0.48) | no worse |
+| Q&A citation hit rate / context recall | **0.80** / 0.78 | 0.93 / 0.91 | no worse |
+| Spoiler leaks (10 probes) | **0** | 0 | 0 |
+| S1 s/chapter, mean / p95 (100 chapters) | **17.5** / 33.7 | 34.7 / 58.9 | <= 20 |
+| Schema success / first try | 100% / 100% | 100% / 100% | |
+| Events per chapter (after clean-up) | 8.2 (range 3-18) | 8.5 | |
+
+- **Missed:** "Kim Quang thượng nhân" (chapter 84, dev), plus three held-out names: "Tiểu toán bàn" (17), "Mã phó môn chủ" (69) and "cự hán" (79). G-26 missed the same three.
+- **False names left:** generic arts and items ("luyện công", "khẩu quyết", "bộ pháp", "kỹ xảo", "lệnh bài", "Trường xuân công khẩu quyết"), the dev group nicknames "Ngũ sát Tam ưng Nhị báo" and "Thất kiệt Song hùng" (possibly gold gaps), "Đinh tâm hoàn", "chẩm kích" and "đạo phù lục vũ hình thanh tiểu kiếm". Five of the 11 are in held-out chapter 48.
+- **`realm_breakthrough`:** dev chapter 43 is now found; G-26 missed it. The F1 is 0.67 because of one flag set in a chapter whose gold has none. No held-out chapter has a gold breakthrough, so the held-out 0.00 means nothing.
+- **Where the Q&A loss comes from.** `local_model(config)` also drives the S2 adjudicator and the query router, so this run swapped all three. Two cross-checks, each on a copy of its database, separate the parts:
+
+| Ledger from | Router and adjudicator | Citation hit rate | Context recall | Alias F1 | Leaks |
+|---|---|---|---|---|---|
+| production (G-10.1) | production | 0.93 (miss q13) | 0.91 | 0.64 | 0 |
+| **qwen3.5 (G-27)** | **production** | **0.93** (miss q14) | 0.91 | 0.67 | 0 |
+| production (G-10.1) | qwen3.5 | 0.73 (miss q03, q08, q13, q15) | 0.71 | 0.67 | 0 |
+| qwen3.5 (G-27) | qwen3.5 | 0.80 (miss q03, q08, q14) | 0.78 | 0.67 | 0 |
+
+  With the production model routing, the qwen3.5 ledger loses nothing in Q&A. The qwen3.5 router misses q03 and q08 on either ledger. Alias F1 on the qwen3.5 ledger is 0.67 with either adjudicator.
+
+Done-when status:
+
+| Line | Status |
+|---|---|
+| Clean-up from config, off by default, with unit tests | met |
+| Recall >= 0.90, precision >= 0.88, category >= 0.90 on the 20 gold chapters, held out apart | met: 0.96 / 0.90 / 0.98; held out 0.94 / 0.91 / 0.98 |
+| Alias F1 and Q&A citation hit rate no worse than G-10.1, 0 leaks | aliases and leaks met. **Q&A not met** with the whole local model on qwen3.5 (0.80 against 0.93); met with qwen3.5 as the extractor only (0.93) |
+| S1 <= 20 s/chapter mean | met: 17.5 |
+| This section, with commands and caveats | met |
+| `compileall` and unit tests | met |
+
+**Recommendation:** use qwen3.5 9B with prompt v4 and the clean-up as the S1 extractor only, and keep `qwen3.8:udiq4_hui` as the query router and S2 adjudicator. That keeps production's Q&A and halves S1 time: about 12 hours for the 2,468 chapters at 17.5 s/chapter, against about 24. Today one config key, `models.local_extractor`, sets all three uses, so this needs a small code change: either a separate model key for the router and adjudicator, or an S1-only override. Both the change and the switch need the owner's yes. Switching the whole local model to qwen3.5 is not recommended, because of the Q&A loss.
+
+Caveats:
+
+- **These 20 gold chapters have judged every extraction run since G-10.1**, and prompt v2 was tuned on them for the production model. The held-out chapters were held out from G-26's and G-27's tuning only. The gold was drafted by Claude. Before attempt 2, a check confirmed that its new examples are not among G-26's held-out false names; the check printed nothing.
+- **One run per setup** at temperature 0.1. Repeated dev runs have differed by up to 4 gold names (G-26 R-2), so differences of 1-3 names are not meaningful. The precision of 0.90 clears 0.88 by two false names.
+- **The clean-up lists were drawn from dev errors.** The category word lists came from G-26's dev category errors, and the filter's word list partly from dev false names. Held-out category accuracy matched dev (0.98), but the v4 definitions had done most of that work before the fix ran.
+- **Q&A ran against the live Qdrant** (`xn_chunks`, 704 points). Both reports and both cross-checks read the same collection, and S0-S3 do not write to it. With Qdrant off, the gate refuses nearly every question for both models (0.00 and 0.07), so the G-10.1 figure of 0.93 also relied on these chunks. The gold report's router and adjudicator calls write `llm_runs` rows, so the production runs used copies of `g101-full.db`, and the original was only read.
+- **Timing:** S1 ran alone on the GPU. The production timing is from G-10.1 on 2026-11-01. `OLLAMA_NUM_PARALLEL` does not matter for qwen3.5, which loads with one slot (G-26).
+
+Commands, from the repository root with `PYTHONIOENCODING=utf-8`:
+
+- `<data>` is the main checkout's `data` folder.
+- `<cfg>` is `<data>/bench/g27-full/configs`, a copy of `configs/`. Its `config.yaml` sets `models.local_extractor` to `qwen3.5:9b_UD_Q6` / `qwen35-9b-udq6-10k`, sets `prompts.s1_extract: v4`, and adds the `s1.postprocess` block above.
+- `<prod>` is `<data>/bench/g27-full/prod-configs`, an unchanged copy of `configs/`.
+
+```bash
+uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/bench/g27-v4-a1 --chapter-max 100 --gold --gold-split dev --model qwen35-9b-udq6-10k --prompt v4
+```
+
+```bash
+uv run py -m xn.name_filter --split dev --cleanup --db <data>/bench/g27-v4-a1/qwen35-9b-udq6-10k.db
+```
+
+Attempt 2 used the same commands with `--out <data>/bench/g27-v4-a2`. The full test runs stages `s0` (with `--raw-dir <data>/novel/pham_nhan_tu_tien_1`), `s1`, `s2` and `s3`, each like this:
+
+```bash
+uv run xn run --novel pntt1 --stage s1 --from 1 --to 100 --db <data>/bench/g27-full/g27-full.db --configs-dir <cfg>
+```
+
+```bash
+uv run pytest tests/eval -m gold --novel pntt1 --gold-db=<data>/bench/g27-full/g27-full.db --gold-report=<data>/bench/g27-full/g27-full-report-q.json --gold-configs-dir=<cfg>
+```
+
+For the production column, run the same pytest command with `--gold-db=<data>/bench/g27-full/g101-copy.db --gold-configs-dir=<prod>`. The cross-checks run it on `g27-cross.db` with `<prod>`, and on `g101-cross.db` with `<cfg>`. The S1 timings come from `xn.bench._measure_runs` on each database.
+
+All files are in `<data>/bench/g27-full/`:
+
+- logs: `run.log`, `gold-q.log`, `gold-base-q.log`, `cross1.log` and `cross2.log`
+- reports without Qdrant: `-report.json`
+- reports with Qdrant: `-report-q.json`
+
 ## Reproduce
 
 Paths outside the repo must use the `--option=value` form. With a space, pytest reads the path as a test target and takes its settings from the wrong checkout.
