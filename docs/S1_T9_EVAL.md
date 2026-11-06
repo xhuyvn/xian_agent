@@ -526,6 +526,41 @@ All files are in `<data>/bench/g27-full/`:
 - reports without Qdrant: `-report.json`
 - reports with Qdrant: `-report-q.json`
 
+### G-27.1: qwen3.5 for S1 only
+
+A new optional `models.s1_extractor` block, shaped like `local_extractor`, sets the model S1 runs on. When it is set, S1 calls that model, applies its settings and records its serving name. The router, the S2 adjudicator, the S5 review and the prefix summaries stay on `local_extractor`. Without the block, every stage runs exactly as before. `xn.bench` puts its candidate on both keys, so a benchmark still runs the model it names.
+
+Check: S2 (`--rebuild`) and S3 ran again on a copy of the G-27 database, followed by the gold report, all with a config copy. That config sets `s1_extractor` to qwen3.5, keeps `qwen3.8:udiq4_hui` as `local_extractor`, and sets prompt v4 with the clean-up on. The S1 extractions are the ones from the G-27 full test, since S1 does not depend on the other model. S2 made 42 adjudication calls on qwen3.8, and the report's 25 router and 10 adjudicator calls also ran on qwen3.8.
+
+| All 20 gold chapters | qwen3.5 S1, qwen3.8 for the rest (**G-27.1**) | qwen3.5 for everything (G-27) | production (G-10.1) |
+|---|---|---|---|
+| Entity recall / precision | 0.96 / 0.90 | 0.96 / 0.90 | 0.98 / 0.88 |
+| Category accuracy | 0.98 | 0.98 | 0.91 |
+| Alias F1 | **0.644** | 0.667 | 0.644 |
+| Q&A citation hit rate / context recall | **0.93** / 0.91 (miss q14) | 0.80 / 0.78 | 0.93 / 0.91 (miss q13) |
+| Spoiler leaks | **0** | 0 | 0 |
+| S1 s/chapter | 17.5 | 17.5 | 34.7 |
+
+Every line of G-27.1 is met. Alias F1 equals production's to three places. In an earlier cross-check on the same ledger, the same production adjudicator scored 0.667, so alias F1 moves by about one pair between runs.
+
+**Recommendation, updated:** in `configs/config.yaml`, add `models.s1_extractor` for `qwen3.5:9b_UD_Q6` (`qwen35-9b-udq6-10k`), set `prompts.s1_extract: v4`, and add the `s1.postprocess` block. Keep `local_extractor` on `qwen3.8:udiq4_hui`. That change needs the owner's yes. The new prompt version makes S1 run again on every chapter, which takes about 12 hours for the 2,468 chapters. S2 then has to be rebuilt.
+
+Commands, with `<split>` = `<data>/bench/g27-full/split-configs` and `<db>` = `<data>/bench/g27-full/g27-split.db` (a copy of `g27-full.db`):
+
+```bash
+uv run xn run --novel pntt1 --stage s2 --from 1 --to 100 --rebuild --db <db> --configs-dir <split>
+```
+
+```bash
+uv run xn run --novel pntt1 --stage s3 --from 1 --to 100 --db <db> --configs-dir <split>
+```
+
+```bash
+uv run pytest tests/eval -m gold --novel pntt1 --gold-db=<db> --gold-report=<data>/bench/g27-full/g27-split-report.json --gold-configs-dir=<split>
+```
+
+The logs are `split-s2s3.log` and `gold-split.log` in `<data>/bench/g27-full/`.
+
 ## Reproduce
 
 Paths outside the repo must use the `--option=value` form. With a space, pytest reads the path as a test target and takes its settings from the wrong checkout.
