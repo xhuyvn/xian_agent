@@ -88,6 +88,7 @@ Sub-goals:
 Changes:
 - 2026-11-06: owner approved the goal and the decisions above ("go")
 - 2026-11-06: owner approved sub-goal G-27.1, the S1-only model split ("Go")
+- 2026-11-06: owner approved the production switch ("Yes, switch it"): `configs/config.yaml` gains `models.s1_extractor` = `qwen3.5:9b_UD_Q6` (`qwen35-9b-udq6-10k`), `prompts.s1_extract: v4` and the `s1.postprocess` block (all three fixes on); `local_extractor` stays `qwen3.8:udiq4_hui` for the router, S2, S5 and prefix. `xn run --stage s1 --stale-only` now compares jobs against the clean-up-aware hash, and the runner tests' fixture names the protagonist mid-sentence so the name filter keeps him. The existing ingests are not re-run here: v4 makes S1 redo every chapter (about 12 h for 2,468), then S2 needs `--rebuild`
 
 ## Parked
 

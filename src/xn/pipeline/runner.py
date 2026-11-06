@@ -9,6 +9,7 @@ from typing import Any, Callable
 from xn.embed import OllamaEmbedder
 from xn.pipeline.s0_parse import S0Result, run_s0
 from xn.pipeline.s1_extract import S1Result, run_s1
+from xn.pipeline.s1_postprocess import job_input_hash, settings_from_config
 from xn.pipeline.s2_resolve import S2Result, run_s2
 from xn.pipeline.s3_ledger import S3Result, compute_input_hash, run_s3
 from xn.pipeline.s4_embed import Embedder, S4Result, run_s4
@@ -95,6 +96,8 @@ def run_stage(
             extract_version = prompts_cfg.get("s1_extract", "v1")
             extract_prompt = load_prompt("s1_extract", extract_version, profile, prompts_dir)
             current_prompt_version = extract_prompt.prompt_version
+            # S1 records the chapter hash, mixed with the clean-up settings when any is on (G-27).
+            cleanup = settings_from_config(config)
 
             stale_set: set[int] = set()
             for ch in chapters:
@@ -106,7 +109,7 @@ def run_stage(
                     continue
                 if (
                     job["status"] != "done"
-                    or job["input_hash"] != ch["sha256"]
+                    or job["input_hash"] != job_input_hash(ch["sha256"], cleanup)
                     or job["prompt_version"] != current_prompt_version
                 ):
                     stale_set.add(cid)
