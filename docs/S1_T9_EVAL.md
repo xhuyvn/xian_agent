@@ -460,7 +460,7 @@ Real S0-S3 ran on chapters 1-100 in a new database, using a config copy with the
 | Events per chapter (after clean-up) | 8.2 (range 3-18) | 8.5 | |
 
 - **Missed:** "Kim Quang thượng nhân" (chapter 84, dev), plus three held-out names: "Tiểu toán bàn" (17), "Mã phó môn chủ" (69) and "cự hán" (79). G-26 missed the same three.
-- **False names left:** generic arts and items ("luyện công", "khẩu quyết", "bộ pháp", "kỹ xảo", "lệnh bài", "Trường xuân công khẩu quyết"), the dev group nicknames "Ngũ sát Tam ưng Nhị báo" and "Thất kiệt Song hùng" (possibly gold gaps), "Đinh tâm hoàn", "chẩm kích" and "đạo phù lục vũ hình thanh tiểu kiếm". Five of the 11 are in held-out chapter 48.
+- **False names left:** generic arts and items ("luyện công", "khẩu quyết", "bộ pháp", "kỹ xảo", "lệnh bài", "Trường xuân công khẩu quyết"), the dev group nicknames "Ngũ sát Tam ưng Nhị báo" and "Thất kiệt Song hùng" (possibly gold gaps), "Đinh tâm hoàn", "chẩm kích" and "đạo phù lục vũ hình thanh tiểu kiếm". Five of the 11 are in held-out chapters, three of them in chapter 48.
 - **`realm_breakthrough`:** dev chapter 43 is now found; G-26 missed it. The F1 is 0.67 because of one flag set in a chapter whose gold has none. No held-out chapter has a gold breakthrough, so the held-out 0.00 means nothing.
 - **Where the Q&A loss comes from.** `local_model(config)` also drives the S2 adjudicator and the query router, so this run swapped all three. Two cross-checks, each on a copy of its database, separate the parts:
 
