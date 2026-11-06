@@ -17,6 +17,7 @@ from xn.name_filter import (
     keep_name,
     read_db,
     render_study,
+    score_cleanup,
     score_rules,
 )
 
@@ -101,7 +102,7 @@ def test_score_rules_scores_each_rule_on_gold() -> None:
     assert (scores["caps"]["found"], scores["caps"]["false_names"]) == (1, 1)
     assert (scores["caps-proper+words"]["found"], scores["caps-proper+words"]["false_names"]) == (2, 0)
     table = render_study({"db": scores}, "dev")
-    assert "| caps-proper+words | R 1.00 (2/2), P 1.00 (0 false) |" in table
+    assert "| caps-proper+words | R 1.00 (2/2), P 1.00 (0 false), C 1.00 |" in table
 
 
 def test_read_db_reads_only_the_chapters_asked_for(tmp_path: Path) -> None:
@@ -116,3 +117,32 @@ def test_read_db_reads_only_the_chapters_asked_for(tmp_path: Path) -> None:
     conn.close()
     payloads, texts = read_db(path, novel_id="pntt1", chapter_ids={2})
     assert payloads == {2: {"events": []}} and texts == {2: "text 2"}
+
+
+def test_score_cleanup_applies_every_fix_before_scoring() -> None:
+    from tests.unit.test_s1_extract import make_canned_extraction
+
+    chapter = GoldChapter(
+        chapter_id=5, location_change=False, realm_breakthrough=False, major_conflict=False,
+        entities=[
+            GoldEntity(name="Hàn Lập", category="character", event_types=["MENTIONED"]),
+            GoldEntity(name="Dưỡng tinh đan", category="weapon_treasure", event_types=["ACQUISITION"]),
+        ],
+    )
+
+    def full(name: str, category: str, event_type: str, evidence: str) -> dict[str, Any]:
+        return {
+            "name": name, "category": category, "event_type": event_type, "holder": None,
+            "tier_or_realm": None, "same_as": None, "description": "x", "evidence": evidence,
+        }
+
+    payload = make_canned_extraction(chapter_id=5, events=[
+        full("Hàn Lập", "character", "MENTIONED", "Hàn Lập theo"),
+        full("Hàn Lập", "character", "MENTIONED", "cho Hàn Lập"),
+        full("Dưỡng tinh đan", "technique", "ACQUISITION", "thuốc"),
+        full("Đại ca", "character", "MENTIONED", "theo Đại ca"),
+    ])
+    raw = score_rules([chapter], {5: payload}, {5: TEXT})["none"]
+    assert (raw["false_names"], raw["category_accuracy"]) == (1, 0.5)
+    cleaned = score_cleanup([chapter], {5: payload}, {5: TEXT}, {"character", "weapon_treasure", "technique"})
+    assert (cleaned["found"], cleaned["false_names"], cleaned["category_accuracy"]) == (2, 0, 1.0)

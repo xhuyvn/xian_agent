@@ -160,6 +160,30 @@ def score_rules(
     }
 
 
+CLEANUP_ROW = "cleanup: caps-proper+words, category fix, dedupe"
+
+
+def score_cleanup(
+    chapters: list[GoldChapter],
+    payloads: dict[int, dict[str, Any]],
+    texts: dict[int, str],
+    allowed_categories: set[str],
+) -> dict[str, Any]:
+    """Score the extractions after S1's clean-up step (G-27) with every fix on."""
+    from xn.pipeline.s1_postprocess import PostprocessSettings, postprocess
+    from xn.schemas.extraction import ChapterExtraction
+
+    settings = PostprocessSettings(name_filter="caps-proper+words", category_fix=True, dedupe_events=True)
+    cleaned = {
+        c.chapter_id: postprocess(
+            ChapterExtraction.model_validate(payloads[c.chapter_id]), texts[c.chapter_id], settings,
+            allowed_categories=allowed_categories,
+        ).model_dump(mode="json")
+        for c in chapters
+    }
+    return score_extraction(chapters, cleaned)
+
+
 def read_db(path: Path, *, novel_id: str, chapter_ids: set[int]) -> tuple[dict[int, dict[str, Any]], dict[int, str]]:
     """Read extractions and clean texts of these chapters from a database, opened read-only."""
     conn = sqlite3.connect(f"{path.resolve().as_uri()}?mode=ro", uri=True)
@@ -196,7 +220,7 @@ def render_study(scores: dict[str, dict[str, dict[str, Any]]], split: str) -> st
             s = scores[db][rule]
             cells.append(
                 f"R {s['recall']:.2f} ({s['found']}/{s['gold_entities']}), "
-                f"P {s['precision']:.2f} ({s['false_names']} false)"
+                f"P {s['precision']:.2f} ({s['false_names']} false), C {s['category_accuracy']:.2f}"
             )
         lines.append(f"| {rule} | " + " | ".join(cells) + " |")
     return "\n".join(lines) + "\n"
@@ -207,6 +231,7 @@ def main(
     split: str = typer.Option("dev", "--split", help="Gold chapters: dev, held_out or all"),
     novel: str = typer.Option("pntt1", "--novel", help="Novel ID"),
     out: Path | None = typer.Option(None, "--out", help="Write the full scores as JSON here"),
+    cleanup: bool = typer.Option(False, "--cleanup", help="Also score S1's clean-up step with every fix on"),
 ) -> None:
     """Score every filter rule on the gold chapters of each database and print the table."""
     gold = load_gold(Path("eval") / novel)
@@ -221,6 +246,11 @@ def main(
         stems = [other.stem for other in db]
         label = path.stem if stems.count(path.stem) == 1 else f"{path.parent.name}/{path.stem}"
         scores[label] = score_rules(chapters, payloads, texts)
+        if cleanup:
+            from xn.config import load_config
+
+            allowed = set(load_config(novel, configs_dir=Path("configs")).get("categories") or [])
+            scores[label][CLEANUP_ROW] = score_cleanup(chapters, payloads, texts, allowed)
     if out is not None:
         out.write_text(json.dumps(scores, ensure_ascii=False, indent=2), encoding="utf-8")
     typer.echo(render_study(scores, split))

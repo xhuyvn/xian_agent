@@ -233,13 +233,21 @@ class _PeakVram:
 
 
 def _candidate_config(config: dict[str, Any], candidate: Candidate) -> dict[str, Any]:
+    """Return a config copy whose S1 model is the candidate.
+
+    The candidate goes on local_extractor and, when the config has one, on s1_extractor
+    (G-27.1), which S1 then runs on.
+    """
     cfg = copy.deepcopy(config)
-    extractor = cfg["models"]["local_extractor"]
-    extractor["name"] = candidate.base_name
-    extractor["serving_name"] = candidate.serving_name
-    extractor["output_mode"] = candidate.output_mode
-    if candidate.think is not None:
-        extractor["think"] = candidate.think
+    for key in ("local_extractor", "s1_extractor"):
+        extractor = cfg["models"].get(key)
+        if not extractor:
+            continue
+        extractor["name"] = candidate.base_name
+        extractor["serving_name"] = candidate.serving_name
+        extractor["output_mode"] = candidate.output_mode
+        if candidate.think is not None:
+            extractor["think"] = candidate.think
     return cfg
 
 

@@ -5,13 +5,21 @@ cloud_provider:
   sort: latency
 long_context_model: null
 prompts:
-  s1_extract: v2
+  s1_extract: v4
   synthesize_compact: v3
 
 models:
   local_extractor:
     name: "qwen3.8:udiq4_hui"
     serving_name: "qwen38-udiq4-hui-10k"
+    base_url: "http://localhost:11434/v1"
+    temperature: 0.1
+    output_mode: "native"
+    think: false
+  # G-27.1: S1 runs on qwen3.5; the router, S2, S5 and prefix keep local_extractor.
+  s1_extractor:
+    name: "qwen3.5:9b_UD_Q6"
+    serving_name: "qwen35-9b-udq6-10k"
     base_url: "http://localhost:11434/v1"
     temperature: 0.1
     output_mode: "native"
@@ -51,3 +59,10 @@ retrieval:
   fused_k: 30
   top_k: 8
   min_rerank_score: 0.3
+
+# G-27: S1 clean-up step (src/xn/pipeline/s1_postprocess.py).
+s1:
+  postprocess:
+    name_filter: caps-proper+words
+    category_fix: true
+    dedupe_events: true

@@ -47,6 +47,49 @@ Changes:
 - 2026-11-05: owner: "why you run test with qwen38-udiq4-hui-10k, it already had result test before. run only qwen25-14b-10k and add to benchmark S1_T9_EVAL.md". The fresh baseline run was stopped after about 8 minutes and its database deleted; the G-10.1 run is the baseline and the results go into `docs/S1_T9_EVAL.md` instead of a new report
 - 2026-11-05: owner: "try to run with model qwen2.5:14b-instruct with 16k token." Added `qwen25-14b-16k` (`ollama/Modelfile.qwen25-14b-16k`, `num_ctx 16384`), run one at a time on the same 50 chapters and added to the G-25 section; the 10k results stay
 
+### G-27: make `qwen3.5:9b_UD_Q6` good enough to replace `qwen3.8:udiq4_hui` as the S1 extractor (active)
+Plan: chat plan of 2026-11-06. Follows G-26. Cut from `cld/heuristic-austin-b6a073` (PR xhuyvn/xian_agent#31, not yet merged).
+Owner decisions:
+- The owner did not say who writes code. The default from the plan is that `agy-coder` writes steps 1 and 2. If `agy` is unavailable or blocked, stop and ask the owner. Infrastructure and runs are the lead's.
+- Prompt `v4` is a new file. `v2`, `v3`, `eval/` and production config stay unchanged until the final owner yes.
+- Tuning uses the 10 dev gold chapters only (`xn.gold.gold_split`, first of each pair). Held out is scored once, in the full test. At most 2 prompt attempts.
+- Model: `qwen35-9b-udq6-10k`, num_ctx 10240, thinking off, temperature 0.1.
+- Databases go to new folders under `data/bench/` in the main checkout. Never write to `data/eval/*.db`.
+- No downloads. agy as the extractor and the two-pass/glossary/GLiNER ideas are parked.
+- Switching the production config needs a separate explicit owner yes after the report.
+Steps:
+1. Prompt v4 = v3 plus a one-line definition for each category (pills, potions, talismans and treasures are `weapon_treasure`; arts and methods are `technique`; sects, gangs, valleys, peaks and villages are `dungeon`; beasts and puppets are `puppet_beast`), plus a clearer `realm_breakthrough` rule. Examples come from dev chapters only. Run each attempt with `uv run py -m xn.bench ... --gold --gold-split dev --model qwen35-9b-udq6-10k --prompt v4`.
+2. An S1 clean-up step behind config, off by default (e.g. `s1.postprocess` keys), with unit tests:
+   - the G-26 name filter (`xn.name_filter`, rule `caps-proper+words`);
+   - a category fix by the name's last word (offline on G-26's v3 run, dev only, this lifted category accuracy from 0.83 to 0.96; the lists were drawn from those dev errors, so expect less on held out; draft: "đan/hoàn/tán/thủy/phù" -> `weapon_treasure`, "công/quyết/bộ/thuật/pháp/chú" -> `technique`, "môn/bang/cốc/phong/thôn" -> `dungeon`, never overriding `character`);
+   - removing repeated identical events (the model repeats "Hàn Lập MENTIONED" with alternating quotes).
+   With it off, S1 must behave exactly as now.
+3. Full test: S0-S3 on chapters 1-100 with qwen3.5 + the best prompt + clean-up on, using a config copy, then the full gold report (extraction, aliases, Q&A, spoilers; see `xn.gold.gold_report`, `xn.gold_run`, and the "Reproduce" section of `docs/S1_T9_EVAL.md`), next to the G-10.1 production run (`data/eval/g101-full.db`, read only). Note: `local_model(config)` also drives the S2 adjudicator and the query router, so switching the extractor changes those too.
+4. Report in a "G-27" section of `docs/S1_T9_EVAL.md`. Recommend; the owner decides the switch.
+Done when:
+- S1 can run the clean-up step from config, off by default, with unit tests
+- With qwen3.5 on the 20 gold chapters: entity recall >= 0.90, precision >= 0.88, category accuracy >= 0.90, held out reported apart
+- Alias F1 and Q&A citation hit rate are no worse than G-10.1, and spoiler leaks are 0
+- S1 <= 20 s/chapter mean
+- The "G-27" section of `docs/S1_T9_EVAL.md` has exact commands and caveats, including that the 20 gold chapters have judged every run since G-10.1
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-06: prompt v4 (two dev attempts; attempt 1 kept: dev recall 0.96, category 1.00, realm_breakthrough found, 19.6 s/chapter; with clean-up precision 0.85) and the S1 clean-up step, off by default -> PASS, 0 blockers, fcf8787, 0 agy tokens; the lead wrote the code under CLAUDE.md's owner override; NIT: extra blank lines in s1_postprocess.py (fixed in c0c7367)
+- R-2 2026-11-06: full S0-S3 test on chapters 1-100 (qwen3.5, v4, clean-up on) and the G-27 report: recall 0.96, precision 0.90, category 0.98 (held out 0.94 / 0.91 / 0.98), alias F1 0.67 vs 0.64, leaks 0, S1 17.5 s/chapter; Q&A citation hit rate 0.80 vs 0.93 with the whole local model on qwen3.5 (the router), 0.93 with qwen3.5 as extractor only -> FAIL, 1 blocker (a wrong held-out count in the report), 9873130; fixed in fb53ba3 -> PASS, 0 blockers, 0 agy tokens. The Q&A line is not met with the whole model switched, so the goal stays active for the owner's decision
+Sub-goals:
+- G-27.1 (active): run qwen3.5 for S1 only and keep `qwen3.8:udiq4_hui` as router, S2 adjudicator, S5 review and prefix model. An optional `models.s1_extractor` block (same shape as `local_extractor`) is used by S1 when set; every other stage keeps `local_extractor`; without the block nothing changes. `xn.bench` sets its candidate on `s1_extractor` too. Checked by re-running only the gold report on the G-27 database with a config copy (S1 model qwen3.5, `local_extractor` qwen3.8). The lead writes the code. Production config is out of scope; switching it needs a separate owner yes. One round.
+  Done when:
+  - Without `s1_extractor`, every stage uses `local_extractor` exactly as now, with unit tests
+  - With it set, S1 calls and records the S1 model, and S2, the router, S5 and prefix use `local_extractor`, with unit tests on fake models
+  - The config-copy gold report gives Q&A citation hit rate >= 0.93, alias F1 >= 0.64 and 0 leaks
+  - `py -m compileall -q src` and `uv run pytest tests/unit` pass
+  Rounds:
+  - R-1 2026-11-06: `models.s1_extractor` for S1 only, unit tests, S2 rebuild + S3 + gold report on a copy of the G-27 database with a split config copy: Q&A citation hit rate 0.93, alias F1 0.644, 0 leaks, extraction unchanged -> FAIL, 1 blocker (an uncommitted CLAUDE.md edit from the working tree was swept into 037ef04), 46c0a00; taken out in ca1a4ad -> PASS, 0 blockers, 0 agy tokens; NIT: S2, S5 and prefix are covered by a source scan, only the router by a fake-model test
+Changes:
+- 2026-11-06: owner approved the goal and the decisions above ("go")
+- 2026-11-06: owner approved sub-goal G-27.1, the S1-only model split ("Go")
+- 2026-11-06: owner approved the production switch ("Yes, switch it"): `configs/config.yaml` gains `models.s1_extractor` = `qwen3.5:9b_UD_Q6` (`qwen35-9b-udq6-10k`), `prompts.s1_extract: v4` and the `s1.postprocess` block (all three fixes on); `local_extractor` stays `qwen3.8:udiq4_hui` for the router, S2, S5 and prefix. `xn run --stage s1 --stale-only` now compares jobs against the clean-up-aware hash, and the runner tests' fixture names the protagonist mid-sentence so the name filter keeps him. The existing ingests are not re-run here: v4 makes S1 redo every chapter (about 12 h for 2,468), then S2 needs `--rebuild`
+
 ## Parked
 
 ## Archive
