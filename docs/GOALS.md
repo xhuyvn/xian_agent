@@ -35,6 +35,7 @@ Done when:
 - the live run reports digest counts (full and prefix), failures and time
 Rounds:
 - R-1 2026-11-04: deliver the S7 stage code, prompt, runner and CLI registration and fake-model tests -> PASS, 0 blockers, 34ec789, 0 agy tokens; NITs: `STAGES += ("s7",)` on its own line (for D7); past MENTIONED, the budget cuts the latest events; a failure building the model leaves the arc's job `running`
+- R-2 2026-11-07: live run over the 17 arcs of chapters 1-600 on g23-s7.db, with a length-retry fix (directional retry note, ~100-word target, then a warmer second round of 3 retries at temperature 0.7) -> PASS, 0 blockers, 7653c46, 0 agy tokens; 1,521 digests (659 full, 862 prefix, 468 entities), every one 80-150 words; restarted run processed=14 skipped=3 failed=0 in 5h14m (1,362 calls, avg 13.8 s, 13 digests needed the second round); rerun skipped all 17 in 4 s with no model call; NITs: R-1 NITs still open; `raise AssertionError("unreachable")` is dead code
 Sub-goals:
 - none yet
 Changes:
