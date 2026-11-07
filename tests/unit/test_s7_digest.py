@@ -112,9 +112,11 @@ class FakeModel:
         self.prompts = []
         self.requests = 0
         self.answers = list(answers or [])
+        self.temperatures = []
 
     def respond(self, messages, info):
         self.requests += 1
+        self.temperatures.append((info.model_settings or {}).get("temperature"))
         self.prompts.extend(p for p in user_prompts(messages) if p not in self.prompts)
         text = self.answers.pop(0) if self.answers else GOOD
         content = json.dumps({"digest": text}, ensure_ascii=False)
@@ -181,13 +183,24 @@ def test_digest_outside_the_word_range_goes_back_to_the_model(repo, conn):
     assert len(stored.split()) == 100
 
 
+def test_a_digest_that_fails_the_first_round_gets_a_warmer_second_round(repo, conn):
+    fake = FakeModel(answers=[SHORT] * 5)
+    result = run_s7(repo, novel_id=NOVEL, config=CONFIG, model=fake.model())
+    assert (result.processed, result.failed) == (2, 0)
+    assert fake.temperatures[:4] == [0.1] * 4 and fake.temperatures[4:6] == [0.7, 0.7]
+    first = conn.execute("SELECT digest FROM entity_arc_digests WHERE upto_chapter = 10").fetchone()[0]
+    assert len(first.split()) == 100
+    failed_runs = conn.execute("SELECT COUNT(*) FROM llm_runs WHERE stage = 's7' AND ok = 0").fetchone()[0]
+    assert failed_runs == 1
+
+
 def test_a_failed_arc_keeps_its_old_rows_and_the_next_arc_still_runs(repo, conn):
     run_s7(repo, novel_id=NOVEL, config=CONFIG, model=FakeModel().model())
     before = digest_rows(conn)
     save_chapter_events(repo, 9, [event(HAN_LAP, 9)])  # arc 1 changes
     save_chapter_events(repo, 36, [event(MAC, 36)])  # arc 2 changes
 
-    fake = FakeModel(answers=[SHORT] * 4)  # arc 1's first digest fails after 3 retries
+    fake = FakeModel(answers=[SHORT] * 8)  # arc 1's first digest fails both rounds of 3 retries
     result = run_s7(repo, novel_id=NOVEL, config=CONFIG, model=fake.model())
 
     assert (result.processed, result.failed) == (1, 1)

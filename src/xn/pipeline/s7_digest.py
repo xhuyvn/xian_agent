@@ -12,6 +12,7 @@ from typing import Any, Callable
 
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelRetry
+from pydantic_ai.exceptions import UnexpectedModelBehavior
 
 from xn.llm import extractor_output, extractor_settings, local_model, run_logged
 from xn.prompts import load_prompt, profile_from_config
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 STAGE = "s7"
 CHARS_PER_TOKEN = 3  # rough size of Vietnamese text in Qwen tokens
+RETRY_TEMPERATURE = 0.7  # second round: at 0.1 the model tends to send the same text back
 
 # (entity name, category, event lines, upto_chapter) -> digest text
 Digester = Callable[[str, str, list[str], int], str]
@@ -172,16 +174,12 @@ def render_user_prompt(name: str, category: str, lines: list[str], upto: int) ->
 def build_digester(
     repo: Repository, *, novel_id: str, config: dict[str, Any], model: Any, prompt: Any, settings: S7Settings
 ) -> Digester:
-    r"""The local-model digester; a digest outside the word range goes back to the model, 3 retries at most."""
-    agent = Agent(
-        model,
-        output_type=extractor_output(EntityDigest, config),
-        system_prompt=prompt.text,
-        retries=3,
-        model_settings=extractor_settings(config),
-    )
+    r"""The local-model digester; a digest outside the word range goes back to the model.
 
-    @agent.output_validator
+    The first round runs at the configured temperature with 3 retries. If it still fails, a
+    second round of 3 retries starts fresh at RETRY_TEMPERATURE, so one stubborn digest does
+    not fail its whole arc.
+    """
     def check_words(output: EntityDigest) -> EntityDigest:
         words = len(output.digest.split())
         target = (settings.min_words + settings.max_words) // 2 - 15
@@ -198,14 +196,40 @@ def build_digester(
             )
         return output
 
+    def make_agent(model_settings: dict[str, Any]) -> Agent:
+        agent = Agent(
+            model,
+            output_type=extractor_output(EntityDigest, config),
+            system_prompt=prompt.text,
+            retries=3,
+            model_settings=model_settings,
+        )
+        agent.output_validator(check_words)
+        return agent
+
+    base_settings = extractor_settings(config)
+    agents = [
+        make_agent(base_settings),
+        make_agent({**base_settings, "temperature": max(RETRY_TEMPERATURE, base_settings.get("temperature", 0))}),
+    ]
+
     serving_name = config["models"]["local_extractor"]["serving_name"]
 
     def digest(name: str, category: str, lines: list[str], upto: int) -> str:
-        result = run_logged(
-            agent, render_user_prompt(name, category, lines, upto), repo=repo, novel_id=novel_id,
-            stage=STAGE, chapter_id=upto, model=serving_name, prompt_version=prompt.prompt_version,
-        )
-        return " ".join(result.output.digest.split())
+        user_prompt = render_user_prompt(name, category, lines, upto)
+        for round_no, agent in enumerate(agents, start=1):
+            try:
+                result = run_logged(
+                    agent, user_prompt, repo=repo, novel_id=novel_id, stage=STAGE, chapter_id=upto,
+                    model=serving_name, prompt_version=prompt.prompt_version,
+                )
+            except UnexpectedModelBehavior as err:
+                if round_no == len(agents):
+                    raise
+                logger.warning("S7 digest of %s at chapter %d: %s; retrying warmer", name, upto, err)
+                continue
+            return " ".join(result.output.digest.split())
+        raise AssertionError("unreachable")
 
     return digest
 
