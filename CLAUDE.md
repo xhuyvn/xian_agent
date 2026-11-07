@@ -86,5 +86,5 @@ Quick one-offs that skip the plan step need no entry.
 - Base branch: `main`
 - Docs-only tasks: also check every acceptance criterion against the source document and `src/`;
   a passing compile check alone proves nothing about a document.
-- Owner override: the lead writes all code directly. Don’t use agy-coder.
+- agy-coder for pure-logic tasks; the lead codes pipeline, LLM and graph-wiring tasks
 <!-- ai-secretary:end -->
