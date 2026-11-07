@@ -103,6 +103,7 @@ Done when:
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
 - R-1 2026-11-07: timeline and deep-dive packs, budget packer, synthesize v4, gate/verify/scan wiring and unit tests -> PASS, 0 blockers, 7b3c9ee, 0 agy tokens; NITs: the prefix view is never trimmed (a very long micro-summary tail could exceed the cap alone), chunks over 450 tokens are not split (as before), unit suite takes ~137 s
+- R-2 2026-11-07: live probes on `g28-t5.db` and the 8000-token synthesize cap -> PASS (delta), 0 blockers for the round, ad86707, 0 agy tokens; evidence probes: 306 packs, 0 hard problems (chapter bound, source provenance, egress, 20k), 13 review terms all read as diacritic/punctuation artifacts or generic phrases, max Hàn Lập deep-dive 6,348 tokens, max pack 16,470; answer probes at the 2500 cap: 1 of 12 answered (reasoning filled the cap); at 8000: 10 usable answers with 0 citations after N and 0 future terms, but the timeline at N=385 gave no answer (8000 spent before any) and at N=585 a truncated 139-character stub accepted as ok, so the answer-probe line is not met and G-28 stays open; spend $0.26 on the copy today; NITs: the probe does not flag a short or uncited answer, R-1 NITs still open
 Sub-goals:
 - none yet
 Changes:
