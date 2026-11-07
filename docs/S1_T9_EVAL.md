@@ -601,6 +601,83 @@ uv run pytest tests/eval -m gold --novel pntt1 --gold-db=<db> --gold-report=<dat
 
 The logs are `split-s2s3.log` and `gold-split.log` in `<data>/bench/g27-full/`.
 
+## G-30: `qwen3.5_12k:q8_mtp` against production S1
+
+Date: 2026-11-07. Goal: G-30.
+
+**`qwen3.5_12k:q8_mtp` matches production S1 on quality and is 1.56 times faster: 10.7 s/chapter against 16.7, measured the same evening on the same 50 chapters. S1 on all 2,468 chapters drops from about 11.5 hours to about 7.3 hours. Ollama now runs both qwen3.5 models with 4 slots. With 4 chapters at once the candidate reaches 5.7 s/chapter, about 3.9 hours. But `xn run` runs S1 one chapter at a time, so that needs a code change.** Production config is unchanged; the switch is the owner's decision.
+
+Setup: the owner built `qwen3.5_12k:q8_mtp` in Ollama from `hf.co/unsloth/Qwen3.5-9B-MTP-GGUF:Q8_0`. `ollama show` gives architecture `qwen35`, 9.2B, Q8_0, `num_ctx 12240`, `temperature 0.1` and `draft_num_predict 2`, with a 456M vision projector. It was used as it is, with no Modelfile in this repo. The new bench candidate puts it on `models.s1_extractor` with thinking off. Both models ran with the production setup: prompt v4, the `s1.postprocess` clean-up from `configs/config.yaml` (name filter `caps-proper+words`, category fix, de-duplication), temperature 0.1, native JSON-schema output. They used the G-25 chapter set, 50 chapters from 1-100: the 20 gold chapters plus 30 others. The run was one chapter at a time, on an RTX 5070 Ti 16 GB, with the GPU checked free first (about 1,280 MiB in use by the desktop, no model loaded). Production `qwen35-9b-udq6-10k` ran again in the same bench call as a same-day control, each model in its own new database. Ollama is version 0.40.15.
+
+| Metric | `qwen3.5_12k:q8_mtp` | `qwen3.5:9b_UD_Q6`, production S1 (same run) | `qwen3.5:9b_UD_Q6` (G-27, v4 + clean-up, chapters 1-100) | `qwen3.8:udiq4_hui` (G-10.1, v2) | `qwen2.5:14b-instruct` 10k / 16k (G-25, v2) |
+|---|---|---|---|---|---|
+| Schema success / first try | 100% / 100% | 100% / 100% | 100% / 100% | 100% / 100% | 100% / 100% |
+| Entity recall, all 20 | 0.95 (97 of 102) | 0.95 (97 of 102) | 0.96 | **0.98** (100 of 102) | 0.70 / 0.68 |
+| Entity precision, all 20 | **0.94** (6 false names) | 0.92 (9) | 0.90 | 0.88 (14) | **0.95** (4) / 0.91 (7) |
+| Recall, dev 10 / held out 10 | 0.94 / 0.96 | 0.98 / 0.92 | see G-27 (held out 0.94) | 0.96 / 1.00 | 0.60 / 0.79 (10k) |
+| Precision, dev 10 / held out 10 | 0.90 / 0.98 | 0.91 / 0.92 | see G-27 (held out 0.91) | 0.86 / 0.90 | 0.94 / 0.95 (10k) |
+| Category accuracy | **0.98** | **0.98** | **0.98** | 0.91 | 0.91 / 0.99 |
+| Event-type accuracy | 0.90 | **0.93** | see G-27 | 0.90 | 0.81 / 0.74 |
+| Flag F1, `location_change` (2 gold chapters) | 0.44 | 0.50 | see G-27 | 0.33 | 0.57 / 0.57 |
+| Flag F1, `realm_breakthrough` (1 gold chapter) | 0.50 | 1.00 | see G-27 | 1.00 | 0.00 / 0.00 |
+| Flag F1, `major_conflict` (6 gold chapters) | **1.00** | 0.92 | see G-27 | 0.92 | 0.75 / 0.75 |
+| Events kept per chapter | 8.2 (range 2-20) | 8.3 (range 3-18) | not counted | 8.7 (range 4-18) | 5.1 / 5.4 |
+| Events dropped for low evidence | 2 | 7 | not counted | not counted | not counted / 25 |
+| Tokens per chapter, input / output | 3,578 / 1,381 | 3,578 / 1,285 | not counted | 2,679 / 947 | 2,977 / 656 |
+| Output tokens per second | **129** | 77 | not counted | not counted | not counted |
+| s/chapter, mean | **10.7** | 16.7 | 17.5 | 35.4 | **10.3** / 10.4 |
+| s/chapter, p95 | 21.3 | 28.4 | not counted | 58.9 | 14.5 / 14.7 |
+| Idle / peak VRAM (MiB) | 1,289 / 13,277 | 1,267 / 11,273 | not counted | 15,425 peak, from G-8 | 1,822 / 11,514 (10k) |
+| S1 for all 2,468 chapters, one at a time | **about 7.3 hours** | about 11.5 hours | about 12 hours | about 24 hours | about 7 hours |
+
+The G-27 column comes from a full S1 run over chapters 1-100, not this 50-chapter set. The G-10.1 and G-25 columns ran prompt v2 without the clean-up. Only the first two columns compare like with like. Hours are the mean s/chapter times 2,468, for S1 alone.
+
+- **Quality is level with production.** Both models found 97 of the 102 gold names. Three misses are shared: "Tiểu toán bàn" (17), "cự hán" (79) and "Thất huyền môn" (95). The candidate also missed "Trừu tủy hoàn" (22) and "Dư Tử Đồng" (64); production missed "bình nhỏ" (27) and "Mã phó môn chủ" (69). The candidate had 6 false names against production's 9, mostly descriptions of items ("bí dược", "thuốc", "kiếm mang"). 3 of them are shared ("định tâm hoàn" in 84 and two in 95). The candidate is weaker on dev (recall 0.94 against 0.98) and stronger on held out (0.96 against 0.92). With 1 to 3 names in each split, these gaps are within run-to-run variation at temperature 0.1.
+- **Flags:** `major_conflict` matched all 6 gold chapters. `realm_breakthrough` was set on 8 of the 50 chapters against production's 5, which cost it F1 on the single gold chapter (0.50 against 1.00). `location_change` was set on 13 chapters by both models. Flag gold rests on 1, 2 and 6 positive chapters, so one chapter moves these scores a lot.
+- **MTP is why it is faster.** Ollama starts this model's `llama-server` with `--spec-type draft-mtp --spec-draft-n-max 2`. Its log shows 44,044 of 49,966 drafted tokens accepted over the 50 calls, an acceptance rate of 0.88. Output speed was 129 tokens per second, against 77 for production, which runs without a draft. The candidate wrote 7% more output tokens per chapter and still took 36% less time. A Q8_0 model without MTP was not run, since no model may be created here. Q8_0 weights are larger than Q6, so without the draft it would most likely be slower than production, not faster. That is an inference, not a measurement.
+- **Ollama now gives both models 4 slots.** G-26 found `n_seq_max = 1` for the `qwen35` architecture. On Ollama 0.40.15, the server log shows `llama-server ... -np 4`, `n_seq_max = 4` and `n_slots = 4` for both models. The context is 12,288 tokens per slot for the candidate and 10,240 for production, with the KV cache in q8_0. G-26's "more parallel slots cannot help this model" no longer holds.
+- **VRAM:** the candidate peaked at 13,277 MiB, 2,004 MiB above production, with 4 slots and the vision projector loaded. That leaves about 3 GB free on the 16 GB card. The largest call used 4,162 input and 3,185 output tokens, so a 12k slot was never full.
+- **Ollama's Modelfile for this model carries an odd stop string**, `".Prompt }}<|im_end|>"`, next to the usual `<|im_start|>`, `<|im_end|>` and `<think>`. It did no visible harm: every call gave valid JSON on the first try. It was left as the owner built it.
+- **One run each**, on 2026-11-07 in the evening. The candidate ran first, then production. The 20 gold chapters have judged every run since G-10.1, and prompt v4 and the clean-up were tuned on the dev 10 with production's model. That may favour production a little. The gold was drafted by Claude, not by a person.
+
+### Four chapters at once
+
+Both models then ran again with `--workers 4`: four S1 processes at once, each on its own new database with every fourth chapter. The GPU was checked free before each.
+
+| Measure | `qwen3.5_12k:q8_mtp`, 1 at a time | `qwen3.5_12k:q8_mtp`, 4 workers | production, 1 at a time | production, 4 workers |
+|---|---|---|---|---|
+| Time for 50 chapters | 535 s, summed calls | 284 s, wall | 836 s, summed calls | 422 s, wall |
+| s/chapter, wall | 10.7 | **5.7** | 16.7 | 8.4 |
+| s per call, mean / p95 | 10.7 / 21.3 | 21.5 / 49.4 | 16.7 / 28.4 | 30.5 / 63.8 |
+| Peak VRAM (MiB) | 13,277 | 12,926 | 11,273 | 11,079 |
+| Recall / precision, all 20 | 0.95 / 0.94 | 0.95 / 0.92 | 0.95 / 0.92 | 0.95 / 0.88 |
+| Category accuracy | 0.98 | 0.99 | 0.98 | 0.98 |
+| S1 for 2,468 chapters | about 7.3 hours | **about 3.9 hours** | about 11.5 hours | about 5.8 hours |
+
+**Four workers nearly halve wall time for both models,** 1.9 times faster for the candidate and 2.0 times for production. Each call takes about twice as long, but four run at once. Quality stays within run-to-run variation. Peak VRAM did not grow, because Ollama allocates all 4 slots when it loads the model. **The pipeline cannot use this yet.** `xn run --stage s1` calls the model one chapter at a time on one database. Only `xn.bench --workers` splits chapters across processes, and it writes one database per worker. Running S4-T1 with parallel S1 would need a change to S1 or the runner, with its own goal.
+
+### Commands
+
+Run from the repository root. `<data>` is the main checkout's `data` folder. The model was not created or pulled here.
+
+```bash
+uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/bench/g30-q8mtp --chapter-max 100 --gold --model qwen3.5_12k:q8_mtp --model qwen35-9b-udq6-10k --prompt v4
+```
+
+```bash
+uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/bench/g30-q8mtp-w4 --chapter-max 100 --gold --model qwen3.5_12k:q8_mtp --prompt v4 --workers 4
+```
+
+```bash
+uv run py -m xn.bench --raw-dir <data>/novel/pham_nhan_tu_tien_1 --out <data>/bench/g30-udq6-w4 --chapter-max 100 --gold --model qwen35-9b-udq6-10k --prompt v4 --workers 4
+```
+
+The outputs are `report.md` and `report.json` with `qwen3.5_12k-q8_mtp.db` and `qwen35-9b-udq6-10k.db` in `<data>/bench/g30-q8mtp/`, and `parallel-<model>-w4.md` and `.json` with one database per worker in the two `-w4` folders. The console logs are next to each folder (`g30-q8mtp.log` and so on). Database file names replace the `:` of the serving name with `-`.
+
+An earlier build of the bench cut a dotted model name at the dot, so the candidate's first 4-worker report was saved as `parallel-qwen3.md` and `.json`. Commit 814e11c fixed that. The two files were renamed by hand to `parallel-qwen3.5_12k-q8_mtp-w4.*`, and their contents are unchanged. Events kept and dropped, token counts and flag counts were read from the databases, read only. Draft acceptance and slot counts come from `%LOCALAPPDATA%\Ollama\server.log`.
+
+**Recommendation:** switch S1 to `qwen3.5_12k:q8_mtp` for S4-T1. It gives the same recall and category accuracy and slightly better precision. It cuts S1 from about 11.5 hours to about 7.3, with about 2 GB more peak VRAM and one weaker `realm_breakthrough` result on a single gold chapter. The switch is two values in `models.s1_extractor` of `configs/config.yaml`: `name` and `serving_name` both `qwen3.5_12k:q8_mtp`. The prompt and the clean-up stay as they are. S1 decides whether to skip a done chapter from its input hash and prompt version, not from the model. The switch has to land before S4-T1's S1 run starts, or chapters already done stay on the old model. It needs the owner's yes. Running 4 chapters at once would bring it to about 4 hours, but needs parallel S1 in the pipeline first, which would be a separate goal.
+
 ## Reproduce
 
 Paths outside the repo must use the `--option=value` form. With a space, pytest reads the path as a test target and takes its settings from the wrong checkout.

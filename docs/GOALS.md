@@ -92,6 +92,18 @@ Changes:
 - 2026-11-06: owner approved sub-goal G-27.1, the S1-only model split ("Go")
 - 2026-11-06: owner approved the production switch ("Yes, switch it"): `configs/config.yaml` gains `models.s1_extractor` = `qwen3.5:9b_UD_Q6` (`qwen35-9b-udq6-10k`), `prompts.s1_extract: v4` and the `s1.postprocess` block (all three fixes on); `local_extractor` stays `qwen3.8:udiq4_hui` for the router, S2, S5 and prefix. `xn run --stage s1 --stale-only` now compares jobs against the clean-up-aware hash, and the runner tests' fixture names the protagonist mid-sentence so the name filter keeps him. The existing ingests are not re-run here: v4 makes S1 redo every chapter (about 12 h for 2,468), then S2 needs `--rebuild`
 
+### G-30: benchmark `qwen3.5_12k:q8_mtp` against production S1 (`qwen35-9b-udq6-10k`) on S1 extraction (active)
+Plan: chat plan of 2026-11-07, from the S4-T1 planning session, to decide which model runs the 12 h S1 of S4-T1. Follows G-25, G-26, G-27 and G-27.1. Cut from `main` at 1551d08.
+Owner decisions: the lead writes the code, no agy in Sprint 4 (2026-11-07). The model already exists in Ollama as the owner built it (Q8_0, MTP draft 2, `num_ctx 12240`); nothing is created, pulled or downloaded. Same 50 chapters as G-25 (20 gold + 30 others from 1-100), production setup: prompt v4, `s1.postprocess` on, temperature 0.1, thinking off, one chapter at a time, GPU checked free first. Databases go to new folders under `data/bench/`, never `data/eval/*.db`. `configs/config.yaml`, `eval/`, the prompts and production S1 stay unchanged; any switch is the owner's decision.
+Done when:
+- `xn.bench` has a `qwen3.5_12k:q8_mtp` candidate that runs the existing model as it is, set on `models.s1_extractor` with thinking off, with unit tests on a fake model
+- It has run on the 50 chapters with the production setup, into `data/bench/` only
+- A "G-30" section of `docs/S1_T9_EVAL.md` puts it next to production S1 and the earlier rows, with schema success, first-try rate, recall and precision (all 20, dev and held out apart), category, event type, flag F1, s/chapter mean and p95, idle and peak VRAM, estimated hours for 2,468 chapters, whether MTP changes speed, whether Ollama runs it with more than one slot, exact commands and caveats
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+Changes:
+- 2026-11-07: owner approved the goal and the plan ("Go")
+
 ## Parked
 
 ## Archive
