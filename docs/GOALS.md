@@ -39,6 +39,7 @@ Rounds:
 - R-1 2026-11-05: deliver the gold chapter set, gold scoring, the qwen2.5 candidate and parallel workers -> PASS, 0 blockers, e1c1373, 0 agy tokens
 - R-2 2026-11-05: run qwen25-14b-10k one at a time and with 2 workers, and report against the G-10.1 baseline -> PASS, 0 blockers, 6223bd6, 0 agy tokens
 - R-3 2026-11-05: run qwen25-14b-16k on the same chapters and report it next to 10k -> PASS, 0 blockers, e6dc5d8, 0 agy tokens
+- R-4 2026-11-05: run qwen35-9b-udq6-10k on the same chapters and report it next to qwen2.5 and production -> PASS, 0 blockers, afef249, 0 agy tokens
 Sub-goals:
 - none yet
 Changes:
@@ -46,6 +47,7 @@ Changes:
 - 2026-11-05: owner added a test of `qwen25-14b-10k` processing 2 chapters in parallel, for speed, as a "Done when" line. Ollama's `OLLAMA_NUM_PARALLEL` is unset and stays so unless the owner says otherwise
 - 2026-11-05: owner: "why you run test with qwen38-udiq4-hui-10k, it already had result test before. run only qwen25-14b-10k and add to benchmark S1_T9_EVAL.md". The fresh baseline run was stopped after about 8 minutes and its database deleted; the G-10.1 run is the baseline and the results go into `docs/S1_T9_EVAL.md` instead of a new report
 - 2026-11-05: owner: "try to run with model qwen2.5:14b-instruct with 16k token." Added `qwen25-14b-16k` (`ollama/Modelfile.qwen25-14b-16k`, `num_ctx 16384`), run one at a time on the same 50 chapters and added to the G-25 section; the 10k results stay
+- 2026-11-05: owner: "let test with for speed and quality with qwen3.5:9b_UD_Q6 add result to S1_T9_EVAL.md". Added `qwen35-9b-udq6-10k` (`ollama/Modelfile.qwen35-9b-udq6-10k`, `num_ctx 10240`, thinking off), run one at a time on the same 50 chapters and reported in the G-25 section
 
 ### G-27: make `qwen3.5:9b_UD_Q6` good enough to replace `qwen3.8:udiq4_hui` as the S1 extractor (active)
 Plan: chat plan of 2026-11-06. Follows G-26. Cut from `cld/heuristic-austin-b6a073` (PR xhuyvn/xian_agent#31, not yet merged).
