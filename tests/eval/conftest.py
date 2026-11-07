@@ -11,6 +11,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption("--novel", default="pntt1", help="Novel ID to evaluate")
     parser.addoption("--gold-db", default="data/xn.db", help="Database holding the ingest")
     parser.addoption("--gold-report", default=None, help="Report path (default: data/eval/<novel>.json)")
+    parser.addoption("--gold-configs-dir", default=None, help="Configs directory (default: the repository's configs)")
 
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:

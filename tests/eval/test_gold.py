@@ -21,7 +21,10 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.fixture(scope="module")
 def config(request: pytest.FixtureRequest) -> dict[str, Any]:
-    return load_config(request.config.getoption("--novel"), configs_dir=REPO_ROOT / "configs")
+    configs_dir = request.config.getoption("--gold-configs-dir")
+    return load_config(
+        request.config.getoption("--novel"), configs_dir=Path(configs_dir) if configs_dir else REPO_ROOT / "configs"
+    )
 
 
 @pytest.fixture(scope="module")

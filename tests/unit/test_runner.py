@@ -54,7 +54,7 @@ def create_chapter_files(raw_dir: Path, count: int = 3) -> None:
         1: (
             "# Chương 1: Thiếu Niên Xuất Thân\n\n"
             "Hàn Lập sinh ra tại một thôn trang nghèo khó ở phương nam.\n"
-            "Hắn nhặt được một cái bình nhỏ màu xanh lục dưới chân vách núi kỳ bí.\n"
+            "Một ngày nọ Hàn Lập nhặt được một cái bình nhỏ màu xanh lục dưới chân vách núi kỳ bí.\n"
             "Vật phẩm này tỏa ra linh khí mờ ảo khiến tâm thần hắn chấn động mạnh mẽ."
         ),
         2: (
@@ -72,7 +72,7 @@ def create_chapter_files(raw_dir: Path, count: int = 3) -> None:
         4: (
             "# Chương 4: Bế Quan Khổ Tu\n\n"
             "Mặc đại phu truyền thụ cho đệ tử khẩu quyết độc môn dưỡng khí.\n"
-            "Hàn Lập bế quan tu luyện Trường Xuân Công suốt ba tháng ròng rã không nghỉ.\n"
+            "Hàn Lập bế quan tu luyện Trường Xuân Công suốt ba tháng, rồi Hàn Lập xuất quan.\n"
             "Linh lực trong đan điền dần dần ngưng tụ thành từng luồng khí tức thanh khiết."
         ),
     }
@@ -171,9 +171,9 @@ def test_criterion_1_end_to_end_and_idempotent_second_run(
 
     tracker = FakeModelTracker()
     fake_model = FunctionModel(tracker, profile=NATIVE_PROFILE)
-    monkeypatch.setattr("xn.llm.local_model", lambda cfg: fake_model)
-    monkeypatch.setattr("xn.pipeline.s1_extract.local_model", lambda cfg: fake_model)
-    monkeypatch.setattr("xn.pipeline.s2_resolve.local_model", lambda cfg: fake_model)
+    monkeypatch.setattr("xn.llm.local_model", lambda cfg, *key: fake_model)
+    monkeypatch.setattr("xn.pipeline.s1_extract.local_model", lambda cfg, *key: fake_model)
+    monkeypatch.setattr("xn.pipeline.s2_resolve.local_model", lambda cfg, *key: fake_model)
 
     runner = CliRunner()
     common_args = [
@@ -243,9 +243,9 @@ def test_criterion_2_stale_only_on_s1_and_s3(
 
     tracker = FakeModelTracker()
     fake_model = FunctionModel(tracker, profile=NATIVE_PROFILE)
-    monkeypatch.setattr("xn.llm.local_model", lambda cfg: fake_model)
-    monkeypatch.setattr("xn.pipeline.s1_extract.local_model", lambda cfg: fake_model)
-    monkeypatch.setattr("xn.pipeline.s2_resolve.local_model", lambda cfg: fake_model)
+    monkeypatch.setattr("xn.llm.local_model", lambda cfg, *key: fake_model)
+    monkeypatch.setattr("xn.pipeline.s1_extract.local_model", lambda cfg, *key: fake_model)
+    monkeypatch.setattr("xn.pipeline.s2_resolve.local_model", lambda cfg, *key: fake_model)
 
     runner = CliRunner()
     common_args = [
@@ -348,9 +348,9 @@ def test_criterion_3_stale_only_nothing_stale(
 
     tracker = FakeModelTracker()
     fake_model = FunctionModel(tracker, profile=NATIVE_PROFILE)
-    monkeypatch.setattr("xn.llm.local_model", lambda cfg: fake_model)
-    monkeypatch.setattr("xn.pipeline.s1_extract.local_model", lambda cfg: fake_model)
-    monkeypatch.setattr("xn.pipeline.s2_resolve.local_model", lambda cfg: fake_model)
+    monkeypatch.setattr("xn.llm.local_model", lambda cfg, *key: fake_model)
+    monkeypatch.setattr("xn.pipeline.s1_extract.local_model", lambda cfg, *key: fake_model)
+    monkeypatch.setattr("xn.pipeline.s2_resolve.local_model", lambda cfg, *key: fake_model)
 
     runner = CliRunner()
     common_args = [
@@ -478,9 +478,9 @@ def test_criterion_5_rebuild_on_s2_clears_ledger_and_s3_jobs(
 
     tracker = FakeModelTracker()
     fake_model = FunctionModel(tracker, profile=NATIVE_PROFILE)
-    monkeypatch.setattr("xn.llm.local_model", lambda cfg: fake_model)
-    monkeypatch.setattr("xn.pipeline.s1_extract.local_model", lambda cfg: fake_model)
-    monkeypatch.setattr("xn.pipeline.s2_resolve.local_model", lambda cfg: fake_model)
+    monkeypatch.setattr("xn.llm.local_model", lambda cfg, *key: fake_model)
+    monkeypatch.setattr("xn.pipeline.s1_extract.local_model", lambda cfg, *key: fake_model)
+    monkeypatch.setattr("xn.pipeline.s2_resolve.local_model", lambda cfg, *key: fake_model)
 
     runner = CliRunner()
     common_args = [
@@ -543,9 +543,9 @@ def test_criterion_6_stale_s2_without_rebuild_mentions_rebuild(
 
     tracker = FakeModelTracker()
     fake_model = FunctionModel(tracker, profile=NATIVE_PROFILE)
-    monkeypatch.setattr("xn.llm.local_model", lambda cfg: fake_model)
-    monkeypatch.setattr("xn.pipeline.s1_extract.local_model", lambda cfg: fake_model)
-    monkeypatch.setattr("xn.pipeline.s2_resolve.local_model", lambda cfg: fake_model)
+    monkeypatch.setattr("xn.llm.local_model", lambda cfg, *key: fake_model)
+    monkeypatch.setattr("xn.pipeline.s1_extract.local_model", lambda cfg, *key: fake_model)
+    monkeypatch.setattr("xn.pipeline.s2_resolve.local_model", lambda cfg, *key: fake_model)
 
     runner = CliRunner()
     common_args = [
@@ -596,9 +596,9 @@ def test_criterion_7_failed_or_stopped_exits_1_successful_exits_0(
 
     tracker = FakeModelTracker()
     fake_model = FunctionModel(tracker, profile=NATIVE_PROFILE)
-    monkeypatch.setattr("xn.llm.local_model", lambda cfg: fake_model)
-    monkeypatch.setattr("xn.pipeline.s1_extract.local_model", lambda cfg: fake_model)
-    monkeypatch.setattr("xn.pipeline.s2_resolve.local_model", lambda cfg: fake_model)
+    monkeypatch.setattr("xn.llm.local_model", lambda cfg, *key: fake_model)
+    monkeypatch.setattr("xn.pipeline.s1_extract.local_model", lambda cfg, *key: fake_model)
+    monkeypatch.setattr("xn.pipeline.s2_resolve.local_model", lambda cfg, *key: fake_model)
 
     runner = CliRunner()
     common_args = [

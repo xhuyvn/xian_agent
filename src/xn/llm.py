@@ -104,19 +104,32 @@ def render_compact_prompt(question: str, items: list[CompactItem]) -> str:
     )
 
 
-def local_model(config: dict[str, Any]) -> OpenAIChatModel:
-    """Build or retrieve cached Pydantic-AI OpenAIChatModel for local extraction.
+LOCAL_KEY = "local_extractor"
+S1_KEY = "s1_extractor"
 
-    Constructs the model on first call from models.local_extractor.serving_name
+
+def s1_model_key(config: dict[str, Any]) -> str:
+    """Return the models key S1 runs on: s1_extractor when set (G-27.1), else local_extractor.
+
+    Every other local stage (S2 adjudicator, query router, S5 review, prefix summaries)
+    always uses local_extractor.
+    """
+    return S1_KEY if (config.get("models") or {}).get(S1_KEY) else LOCAL_KEY
+
+
+def local_model(config: dict[str, Any], key: str = LOCAL_KEY) -> OpenAIChatModel:
+    """Build or retrieve cached Pydantic-AI OpenAIChatModel for a local model.
+
+    Constructs the model on first call from models.<key>.serving_name
     and base_url with api_key="ollama", and caches per (serving_name, base_url).
 
     Raises:
-        ValueError: If models.local_extractor.serving_name is missing.
+        ValueError: If models.<key>.serving_name is missing.
     """
-    models_cfg = config.get("models", {}).get("local_extractor", {})
+    models_cfg = config.get("models", {}).get(key, {})
     serving_name = models_cfg.get("serving_name")
     if not serving_name:
-        raise ValueError("Missing required config key: models.local_extractor.serving_name")
+        raise ValueError(f"Missing required config key: models.{key}.serving_name")
     base_url = models_cfg.get("base_url") or "http://localhost:11434/v1"
 
     cache_key = (serving_name, base_url)
@@ -141,8 +154,8 @@ def cloud_model(model_name: str) -> OpenRouterModel:
     return OpenRouterModel(model_name, provider=OpenRouterProvider(openai_client=client))
 
 
-def extractor_output(output_type: Any, config: dict[str, Any]) -> Any:
-    """Wrap output_type for models.local_extractor.output_mode (tool by default).
+def extractor_output(output_type: Any, config: dict[str, Any], key: str = LOCAL_KEY) -> Any:
+    """Wrap output_type for models.<key>.output_mode (tool by default).
 
     Models that ignore tools, such as deepseek-r1, need "native", the JSON-schema
     response format.
@@ -150,20 +163,20 @@ def extractor_output(output_type: Any, config: dict[str, Any]) -> Any:
     Raises:
         ValueError: If output_mode is neither "tool" nor "native".
     """
-    mode = config.get("models", {}).get("local_extractor", {}).get("output_mode", "tool")
+    mode = config.get("models", {}).get(key, {}).get("output_mode", "tool")
     if mode == "tool":
         return output_type
     if mode == "native":
         return NativeOutput(output_type)
-    raise ValueError(f"Unknown models.local_extractor.output_mode: {mode!r}")
+    raise ValueError(f"Unknown models.{key}.output_mode: {mode!r}")
 
 
-def extractor_settings(config: dict[str, Any]) -> dict[str, Any]:
-    """Build model settings from models.local_extractor temperature and think.
+def extractor_settings(config: dict[str, Any], key: str = LOCAL_KEY) -> dict[str, Any]:
+    """Build model settings from models.<key> temperature and think.
 
     think: false asks Ollama to skip thinking. When unset, the model's default applies.
     """
-    models_cfg = config.get("models", {}).get("local_extractor", {})
+    models_cfg = config.get("models", {}).get(key, {})
     settings: dict[str, Any] = {"temperature": models_cfg.get("temperature", 0.1)}
     if models_cfg.get("think") is False:
         settings["openai_reasoning_effort"] = "none"
@@ -306,6 +319,7 @@ def run_compact(
     egress_class: str = "compact",
     model_factory: Callable[[str], Any] = cloud_model,
     sleep: Callable[[float], None] = time.sleep,
+    max_tokens: int = CLOUD_MAX_TOKENS,
 ) -> Any:
     """Send compact evidence to OpenRouter and write one llm_runs row per attempt.
 
@@ -313,7 +327,7 @@ def run_compact(
     Retries 429/5xx and connection failures with exponential backoff, then tries
     fallback_model once if it is configured. A connection that drops at once is retried
     after a short pause instead. cloud_provider in config, if set, is OpenRouter's
-    provider routing (for example {sort: latency}).
+    provider routing (for example {sort: latency}). max_tokens caps the output, reasoning included.
 
     Raises:
         EgressError: If the class is not compact or items break the compact rule.
@@ -327,7 +341,7 @@ def run_compact(
     payload_chapters = ",".join(str(c) for c in sorted({i.chapter_id for i in items}))
     settings = {
         "temperature": temperature,
-        "max_tokens": CLOUD_MAX_TOKENS,
+        "max_tokens": max_tokens,
         "openrouter_usage": {"include": True},
     }
     if config.get("cloud_provider"):
