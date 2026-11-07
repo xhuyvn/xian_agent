@@ -516,3 +516,11 @@ def test_run_parallel_saves_a_colon_name_under_safe_file_names(tmp_path: Path) -
     out = tmp_path / "out"
     assert (out / "tag-q8-w2-1.db").exists() and (out / "tag-q8-w2-2.db").exists()
     assert (out / "parallel-tag-q8-w2.md").exists()
+
+
+def test_run_parallel_keeps_a_dotted_name_whole_in_the_report_file(tmp_path: Path) -> None:
+    parallel_fake(tmp_path, fake_model(["Hàn Lập"]), name="qwen3.5_12k:q8")
+    out = tmp_path / "out"
+    assert (out / "parallel-qwen3.5_12k-q8-w2.md").exists()
+    assert (out / "parallel-qwen3.5_12k-q8-w2.json").exists()
+    assert not (out / "parallel-qwen3.md").exists()

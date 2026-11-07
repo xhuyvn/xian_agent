@@ -78,6 +78,11 @@ def db_stem(serving_name: str) -> str:
     return re.sub(r'[<>:"/\|?*]', "-", serving_name)
 
 
+def parallel_report_path(out_dir: Path, serving_name: str, workers: int, suffix: str) -> Path:
+    """Return the parallel report path; built by name, since a dot in the model name breaks with_suffix."""
+    return out_dir / f"parallel-{db_stem(serving_name)}-w{workers}{suffix}"
+
+
 def select_candidates(names: list[str] | None) -> tuple[Candidate, ...]:
     """Return the candidates with these serving names, or all of them when names is empty."""
     if not names:
@@ -650,12 +655,11 @@ def run_parallel(
         baseline_vram_mib=baseline, peak_vram_mib=peak.peak,
     )
     scores = score_gold(gold, payloads) if gold is not None else None
-    stem = out_dir / f"parallel-{db_stem(name)}-w{workers}"
     report = render_parallel(result)
     if scores is not None:
         report += "\n" + render_gold({name: scores})
-    stem.with_suffix(".md").write_text(report, encoding="utf-8")
-    stem.with_suffix(".json").write_text(
+    parallel_report_path(out_dir, name, workers, ".md").write_text(report, encoding="utf-8")
+    parallel_report_path(out_dir, name, workers, ".json").write_text(
         json.dumps(
             {"chapters": chapters, "shares": shares, "result": asdict(result), "gold": scores},
             ensure_ascii=False, indent=2,
@@ -711,8 +715,8 @@ def main(
             config=config, raw_dir=raw_dir, out_dir=out_dir, chapter_max=chapter_max, candidate=candidates[0],
             chapters=chapters or pick_chapters(chapter_max, count), workers=workers, gold=gold,
         )
-        stem = out_dir / f"parallel-{db_stem(result.serving_name)}-w{workers}"
-        typer.echo(stem.with_suffix(".md").read_text(encoding="utf-8"))
+        report_path = parallel_report_path(out_dir, result.serving_name, workers, ".md")
+        typer.echo(report_path.read_text(encoding="utf-8"))
         return
     run_benchmark(
         config=config, raw_dir=raw_dir, out_dir=out_dir, chapter_max=chapter_max, count=count,
