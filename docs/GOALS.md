@@ -25,23 +25,6 @@ Sub-goals:
 Changes:
 - 2026-11-01: owner approved the goal and the decisions above
 
-### G-23: S3-T3 pipeline stage S7, entity×arc digests and prefix digests (active)
-Plan: `docs/IMPLEMENTATION_PLAN.md` S3-T3, blueprint §3.2 S7 and §3.4 L3, chat plan of 2026-11-04. Cut from `cld/sprint-3-tasks-60f7ab`. Runs beside S3-T2 and S3-T4; S3-T5 waits for it.
-Owner decisions: the lead writes the code, with no agy. D1: for each (entity, arc) with >= 3 `entity_events` in the arc, the local model writes an 80-150 word digest with `upto_chapter` = the arc's end chapter and `event_count` = events used; the word count is checked in code and sent back to the model, up to 3 tries. D2: prefix digests at every multiple of 10 inside an arc before its end (S3-T4's grid), written only when the entity has >= 3 events up to that chapter and more than at its last checkpoint. D3: each digest's events are read with `chapter_max = upto_chapter`; the entity is named by `canonical_name`, its first surface form. D4: one `jobs` row per arc, `chapter_id` = the arc's end chapter, `stage = 's7'` (OQ-05), whose input hash covers every digest's events, the checkpoint rule, prompt and model; any change redoes the arc. D5: an arc's digests replace its old rows in one transaction; a failed call marks that arc failed and keeps its old rows, other arcs go on; only arcs ending <= `--to` run, and an arc needs S3 done on all its chapters. D6: over ~5k input tokens, MENTIONED events go first. D7: `runner.py`, `cli/main.py`, `repository.py` and `test_repository_guards.py` change only additively. The live run uses `data/eval/g23-s7.db`, a copy of `g21-s5.db` with S2 rebuilt and S3 run on 1-600.
-Done when:
-- `xn run --novel pntt1 --stage s7 --to 600` writes full and prefix digests for the 17 arcs, and a rerun on unchanged input skips every arc with no model call
-- unit tests with a fake model cover the >= 3 threshold, the checkpoint rule and the word-count retry, and a spoiler test shows a prefix digest's prompt and row ignore events after its `upto_chapter`
-- `py -m compileall -q src` and `uv run pytest tests/unit` pass
-- the live run reports digest counts (full and prefix), failures and time
-Rounds:
-- R-1 2026-11-04: deliver the S7 stage code, prompt, runner and CLI registration and fake-model tests -> PASS, 0 blockers, 34ec789, 0 agy tokens; NITs: `STAGES += ("s7",)` on its own line (for D7); past MENTIONED, the budget cuts the latest events; a failure building the model leaves the arc's job `running`
-- R-2 2026-11-07: live run over the 17 arcs of chapters 1-600 on g23-s7.db, with a length-retry fix (directional retry note, ~100-word target, then a warmer second round of 3 retries at temperature 0.7) -> PASS, 0 blockers, 7653c46, 0 agy tokens; 1,521 digests (659 full, 862 prefix, 468 entities), every one 80-150 words; restarted run processed=14 skipped=3 failed=0 in 5h14m (1,362 calls, avg 13.8 s, 13 digests needed the second round); rerun skipped all 17 in 4 s with no model call; NITs: R-1 NITs still open; `raise AssertionError("unreachable")` is dead code
-- R-3 2026-11-07: merge `cld/sprint-3-tasks-60f7ab` (S6, prefix summaries, G-25, G-27) into the S7 branch, both sides kept -> PASS (delta), 0 blockers, 2adddd0, 0 agy tokens; 661 unit tests pass, S7 rerun on g23-s7.db still skips all 17 arcs; NIT: S7 imports sit before the S6 and prefix imports
-Sub-goals:
-- none yet
-Changes:
-- 2026-11-04: owner approved the goal and the decisions above
-
 ### G-25: benchmark `qwen2.5:14b-instruct` against `qwen3.8:udiq4_hui` on S1 extraction (active)
 Plan: chat plan of 2026-11-05. Follows G-7, G-8, G-10.1 and G-13. Cut from `cld/sprint-3-tasks-60f7ab`.
 Owner decisions: the lead writes the code, with no agy. Chapters are the G-13 set: the 20 gold chapters and 30 others from 1-100. Prompt v2, one chapter at a time, temperature 0.1. `qwen2.5:14b-instruct` runs as a new Ollama model `qwen25-14b-10k` from `ollama/Modelfile.qwen25-14b-10k` at `num_ctx 10240`; it has no thinking mode. The baseline is the G-10.1 run of `qwen38-udiq4-hui-10k` in `data/eval/g101-full.db` (prompt v2, chapters 1-100), read only; it is not run again. Databases go to `data/bench/g25-qwen25/`, never `data/eval/*.db`. No winner rule: the report recommends and the owner decides. Nothing is downloaded. Two rounds: harness, then run and report.
@@ -110,6 +93,24 @@ Changes:
 ## Parked
 
 ## Archive
+
+### G-23: S3-T3 pipeline stage S7, entity×arc digests and prefix digests (done)
+Plan: `docs/IMPLEMENTATION_PLAN.md` S3-T3, blueprint §3.2 S7 and §3.4 L3, chat plan of 2026-11-04. Cut from `cld/sprint-3-tasks-60f7ab`. Runs beside S3-T2 and S3-T4; S3-T5 waits for it.
+Owner decisions: the lead writes the code, with no agy. D1: for each (entity, arc) with >= 3 `entity_events` in the arc, the local model writes an 80-150 word digest with `upto_chapter` = the arc's end chapter and `event_count` = events used; the word count is checked in code and sent back to the model, up to 3 tries. D2: prefix digests at every multiple of 10 inside an arc before its end (S3-T4's grid), written only when the entity has >= 3 events up to that chapter and more than at its last checkpoint. D3: each digest's events are read with `chapter_max = upto_chapter`; the entity is named by `canonical_name`, its first surface form. D4: one `jobs` row per arc, `chapter_id` = the arc's end chapter, `stage = 's7'` (OQ-05), whose input hash covers every digest's events, the checkpoint rule, prompt and model; any change redoes the arc. D5: an arc's digests replace its old rows in one transaction; a failed call marks that arc failed and keeps its old rows, other arcs go on; only arcs ending <= `--to` run, and an arc needs S3 done on all its chapters. D6: over ~5k input tokens, MENTIONED events go first. D7: `runner.py`, `cli/main.py`, `repository.py` and `test_repository_guards.py` change only additively. The live run uses `data/eval/g23-s7.db`, a copy of `g21-s5.db` with S2 rebuilt and S3 run on 1-600.
+Done when:
+- `xn run --novel pntt1 --stage s7 --to 600` writes full and prefix digests for the 17 arcs, and a rerun on unchanged input skips every arc with no model call
+- unit tests with a fake model cover the >= 3 threshold, the checkpoint rule and the word-count retry, and a spoiler test shows a prefix digest's prompt and row ignore events after its `upto_chapter`
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+- the live run reports digest counts (full and prefix), failures and time
+Rounds:
+- R-1 2026-11-04: deliver the S7 stage code, prompt, runner and CLI registration and fake-model tests -> PASS, 0 blockers, 34ec789, 0 agy tokens; NITs: `STAGES += ("s7",)` on its own line (for D7); past MENTIONED, the budget cuts the latest events; a failure building the model leaves the arc's job `running`
+- R-2 2026-11-07: live run over the 17 arcs of chapters 1-600 on g23-s7.db, with a length-retry fix (directional retry note, ~100-word target, then a warmer second round of 3 retries at temperature 0.7) -> PASS, 0 blockers, 7653c46, 0 agy tokens; 1,521 digests (659 full, 862 prefix, 468 entities), every one 80-150 words; restarted run processed=14 skipped=3 failed=0 in 5h14m (1,362 calls, avg 13.8 s, 13 digests needed the second round); rerun skipped all 17 in 4 s with no model call; NITs: R-1 NITs still open; `raise AssertionError("unreachable")` is dead code
+- R-3 2026-11-07: merge `cld/sprint-3-tasks-60f7ab` (S6, prefix summaries, G-25, G-27) into the S7 branch, both sides kept -> PASS (delta), 0 blockers, 2adddd0, 0 agy tokens; 661 unit tests pass, S7 rerun on g23-s7.db still skips all 17 arcs; NIT: S7 imports sit before the S6 and prefix imports
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-04: owner approved the goal and the decisions above
+- 2026-11-07: owner marked G-23 done ("Yes, mark done") after PASS on R-2 (live run) and R-3 (merged branch), PR xhuyvn/xian_agent#33
 
 ### G-26: cut the false names of `qwen3.5:9b_UD_Q6` on S1 extraction (done)
 Plan: chat plan of 2026-11-05. Follows G-25. Cut from `cld/bench-qwen25-14b-872abd`.
