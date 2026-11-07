@@ -14,6 +14,7 @@ from xn.pipeline.s2_resolve import S2Result, run_s2
 from xn.pipeline.s3_ledger import S3Result, compute_input_hash, run_s3
 from xn.pipeline.s4_embed import Embedder, S4Result, run_s4
 from xn.pipeline.s5_segment import S5Result, run_s5
+from xn.pipeline.s7_digest import S7Result, run_s7
 from xn.pipeline.s6_synthesize import S6Result, run_s6
 from xn.pipeline.prefix_summaries import PrefixResult, run_prefix
 from xn.prompts import load_prompt, profile_from_config
@@ -23,6 +24,8 @@ from xn.storage.repository import Repository
 logger = logging.getLogger(__name__)
 
 STAGES = ("s0", "s1", "s2", "s3", "s4", "s5", "s6", "prefix")
+# S7 stays additive on its own line (D7)
+STAGES += ("s7",)
 
 
 class RunRequestError(ValueError):
@@ -45,7 +48,7 @@ def run_stage(
     store: QdrantStore | None = None,
     embedder: Embedder | None = None,
     cloud_factory: Callable[[str], Any] | None = None,
-) -> S0Result | S1Result | S2Result | S3Result | S4Result | S5Result | S6Result | PrefixResult:
+) -> S0Result | S1Result | S2Result | S3Result | S4Result | S5Result | S6Result | PrefixResult | S7Result:
     """Run a pipeline stage with request validation and error checking."""
     # 1. Validation before touching the database
     if stage not in STAGES:
@@ -70,6 +73,12 @@ def run_stage(
 
     if stage == "s6" and (stale_only or chapter_from > 1):
         raise RunRequestError("stage s6 runs every arc up to --to; stale_only and chapter_from > 1 are not supported")
+
+    if stage == "s7" and stale_only:
+        raise RunRequestError("stale_only is not supported on stage s7")
+
+    if stage == "s7" and chapter_from > 1:
+        raise RunRequestError("chapter_from > 1 is not supported on stage s7")
 
     if rebuild and stage != "s2":
         raise RunRequestError(f"rebuild is only supported on stage s2, got {stage}")
@@ -217,6 +226,16 @@ def run_stage(
 
     if stage == "prefix":
         return run_prefix(
+            repo,
+            novel_id=novel_id,
+            config=config,
+            chapter_to=chapter_to,
+            model=model,
+            prompts_dir=prompts_dir,
+        )
+
+    if stage == "s7":
+        return run_s7(
             repo,
             novel_id=novel_id,
             config=config,
