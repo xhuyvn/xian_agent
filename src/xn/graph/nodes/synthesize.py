@@ -19,6 +19,10 @@ SUMMARY_KINDS = {
     "digest": "digest",
 }
 
+# The model reasons before it answers, and on G-28's larger packs 2500 tokens ran out before
+# any answer (11 of 12 live probes); S6 uses the same cap for the same reason (owner, G-28).
+MAX_OUTPUT_TOKENS = 8000
+
 MODEL_KEYS = {
     "timeline": "macro_synthesizer",
     "factual_qa": "macro_synthesizer",
@@ -69,5 +73,6 @@ def synthesize(state: QueryState, deps: GraphDeps) -> dict[str, Any]:
         temperature=model_cfg.get("temperature", 0.3),
         model_factory=deps.cloud_factory,
         sleep=deps.sleep,
+        max_tokens=MAX_OUTPUT_TOKENS,
     )
     return {"answer": result.output}

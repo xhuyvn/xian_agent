@@ -56,12 +56,14 @@ class FakeCloud:
         self.names: list[str] = []
         self.prompts: list[str] = []
         self.systems: list[str] = []
+        self.max_tokens: list[int] = []
 
     def __call__(self, name: str) -> FunctionModel:
         self.names.append(name)
 
         def respond(messages: list[Any], info: AgentInfo) -> ModelResponse:
             self.prompts.append(str(messages[-1].parts[-1].content))
+            self.max_tokens.append(info.model_settings["max_tokens"])
             self.systems.append(str(messages[0].parts[0].content))
             markdown = self.answers[min(len(self.names), len(self.answers)) - 1]
             args = {"markdown": markdown, "citations": self.citations}
@@ -754,3 +756,11 @@ def test_real_configs_name_both_cloud_models() -> None:
     assert config["models"]["macro_synthesizer"]["name"]
     assert config["models"]["deep_dive_evaluator"]["name"]
     assert config["daily_spend_cap_usd"] == 1.0
+
+
+def test_synthesize_gives_the_answer_8000_output_tokens(run_query: Any, db_conn: Any) -> None:
+    # G-28: the model reasons first, and 2500 tokens ran out before any answer on larger packs.
+    cloud = FakeCloud()
+    state = run_query("Hàn Lập ra sao?", cloud=cloud, until=50)
+    assert state["answer"] is not None
+    assert cloud.max_tokens == [8000]

@@ -107,6 +107,7 @@ Sub-goals:
 - none yet
 Changes:
 - 2026-11-07: owner approved the goal and the decisions above ("Go")
+- 2026-11-07: owner chose "Raise cap to 8000": synthesize calls `run_compact` with `max_tokens=8000`, as S6 does, instead of the blueprint's 2500. The first live answer probes failed 11 of 12, mostly because the model's reasoning filled 2500 tokens before any answer
 
 ## Parked
 
