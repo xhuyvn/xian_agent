@@ -62,11 +62,28 @@ class ChunkEvidence(BaseModel):
     entity_id: Optional[int] = None
 
 
+class SummaryEvidence(BaseModel):
+    """One summary text a reader at chapter_max may see (§3.4 L2, L3).
+
+    kind is an arc summary (arc ends <= N), the current arc's prefix summary, a raw S1
+    micro-summary, or an entity digest. chapter_id is the last chapter the text covers and the
+    one it is cited by; start_chapter is the first. A long text is split into several items.
+    """
+
+    kind: Literal["arc_summary", "arc_prefix", "micro_summary", "digest"]
+    chapter_id: int
+    start_chapter: int
+    text: str
+    arc_id: Optional[int] = None
+    entity_id: Optional[int] = None
+
+
 class EvidencePack(BaseModel):
     """Evidence for one query, ranked so the most useful items come first."""
 
     items: list[EvidenceItem] = Field(default_factory=list)
     chunks: list[ChunkEvidence] = Field(default_factory=list)
+    summaries: list[SummaryEvidence] = Field(default_factory=list)
     tokens: int = 0
 
 

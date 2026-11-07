@@ -92,6 +92,22 @@ Changes:
 - 2026-11-06: owner approved sub-goal G-27.1, the S1-only model split ("Go")
 - 2026-11-06: owner approved the production switch ("Yes, switch it"): `configs/config.yaml` gains `models.s1_extractor` = `qwen3.5:9b_UD_Q6` (`qwen35-9b-udq6-10k`), `prompts.s1_extract: v4` and the `s1.postprocess` block (all three fixes on); `local_extractor` stays `qwen3.8:udiq4_hui` for the router, S2, S5 and prefix. `xn run --stage s1 --stale-only` now compares jobs against the clean-up-aware hash, and the runner tests' fixture names the protagonist mid-sentence so the name filter keeps him. The existing ingests are not re-run here: v4 makes S1 redo every chapter (about 12 h for 2,468), then S2 needs `--rebuild`
 
+### G-28: S3-T5 timeline and deep-dive evidence under the 20k cap (active)
+Plan: `docs/IMPLEMENTATION_PLAN.md` S3-T5, blueprint §3.3 `retrieve`, §3.4 L2/L3, chat plan of 2026-11-07. Cut from `cld/sprint-3-tasks-60f7ab` (after G-22, G-23, G-24). PR into that branch while PR #34 is open.
+Owner decisions: the lead writes the code, with no agy. D1 timeline pack, highest rank first: the current arc's `arc_prefix_view` (snapped checkpoint + raw micro-summaries up to N), summaries of arcs ending <= N newest first (split at sentences into items <= 450 tokens, each opening with its span and citing the arc's end chapter), top 8 hybrid chunks, then the resolved entities' events. D2 timeline trim over 20k: events, then chunks lowest score first, then older arcs shrink to a short form (title + resolution) oldest first, then the oldest short forms go; the prefix view is never dropped. D3 deep-dive pack: one digest per arc (full if the arc ends <= N, else the prefix digest at the largest `upto_chapter` <= N), the top 25 ranked events, the top 8 entity-filtered chunks. D4 deep-dive trim: chunks lowest score first, events lowest rank first down to 3, oldest digests, the last 3 events. D5 compare: the D3 pack per entity at half the budget. D6 files: `retrieve.py`, `synthesize.py`, new `src/xn/graph/budget.py`, `schemas/state.py` (`SummaryEvidence`, `EvidencePack.summaries`), `llm.py` (additive `arc_summary` compact kind), `gate.py` (timeline passes with >= 1 summary), `verify.py` and `spoiler_scan.py` (summary chapters cite, summary text counts as evidence), `workflow.py` (checkpoint allowlist), `prompts/synthesize_compact/v4.md` pinned in `configs/config.yaml`, probe module `src/xn/straddle_probe.py`, unit tests. D7 live data: `data/eval/g28-t5.db`, a backup-API copy of `g23-s7.db` with arc payloads from `g22-s6.db` and prefix rows from `g24-prefix.db` (spans checked equal); the originals are never written. Two rounds: code + unit tests, then live probes.
+Done when:
+- timeline and deep-dive packs follow D1-D5 and synthesize sends them through the compact path with prompt v4
+- unit tests with fakes cover the cap and both trim orders (incl. a 250-arc large-N case), the full-vs-prefix digest choice at, below and between checkpoints, no item after N in any pack, and a no-entity timeline passing the gate
+- on `g28-t5.db`, evidence probes (each of the 17 arcs at start, first checkpoint, checkpoint+3, mid, end-1, plus end as a control; timeline, Hàn Lập deep-dive, one other entity) show 0 leaks, with the max Hàn Lập deep-dive tokens reported
+- 12 `xn ask` answer probes (6 timeline, 6 Hàn Lập deep-dive, N inside 6 arcs) give 0 citations after N and 0 leaks, answers logged
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- none yet
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-07: owner approved the goal and the decisions above ("Go")
+
 ## Parked
 
 ## Archive

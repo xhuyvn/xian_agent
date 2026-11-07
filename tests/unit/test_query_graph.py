@@ -132,7 +132,8 @@ def run_query(db_conn: sqlite3.Connection, tmp_path: Path):
         until: int | None = None,
         retriever: Any = None,
     ) -> Any:
-        extra = {"retriever_factory": lambda _config: retriever} if retriever else {}
+        # No chunks by default: every intent searches since G-28, and the real retriever must not load.
+        extra = {"retriever_factory": lambda _config: retriever or ChapterRetriever(())}
         deps = GraphDeps(
             repo=Repository(db_conn),
             config=CONFIG,
@@ -603,6 +604,8 @@ def cli_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     def fake_deps(*, config: dict[str, Any], **kwargs: Any) -> GraphDeps:
         config = copy.deepcopy(config)
         config["models"]["local_extractor"]["output_mode"] = "tool"
+        # Every intent searches chunks since G-28; no test here should load the real reranker.
+        kwargs.setdefault("retriever_factory", lambda _config: ChapterRetriever(()))
         return GraphDeps(
             config=config, router_model=env["router"], cloud_factory=env["cloud"], **kwargs
         )

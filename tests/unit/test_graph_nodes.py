@@ -373,7 +373,7 @@ def run_retrieve(repo: Repository, entity_ids: list[int], chapter_max: int, inte
             "entity_ids": entity_ids,
             "decision": decision(intent=intent),
         },
-        deps_for(repo),
+        deps_for(repo, retriever_factory=lambda _config: FakeRetriever()),
     )["evidence"]
 
 
@@ -617,12 +617,18 @@ def test_factual_qa_gets_hybrid_chunks_within_the_bound(repo: Repository) -> Non
     assert "errors" not in out
 
 
-@pytest.mark.parametrize("intent", ["deep_dive", "timeline"])
-def test_other_intents_do_not_call_the_retriever(repo: Repository, intent: str) -> None:
+def test_timeline_searches_every_chunk(repo: Repository) -> None:
     fake = FakeRetriever([chunk_evidence()])
-    out = retrieve_with(repo, fake, intent, [1])
-    assert fake.calls == []
-    assert out["evidence"].chunks == []
+    out = retrieve_with(repo, fake, "timeline", [1])
+    assert fake.calls == [{"novel_id": "nov", "chapter_max": 20, "query": "Hàn Lập học công pháp gì?"}]
+    assert out["evidence"].chunks == fake.chunks
+
+
+def test_deep_dive_searches_the_entity_chunks(repo: Repository) -> None:
+    fake = FakeRetriever(by_entity={1: [entity_chunk(1, c) for c in range(1, 12)]})
+    out = retrieve_with(repo, fake, "deep_dive", [1])
+    assert [(c["entity_id"], c["top_k"]) for c in fake.calls] == [(1, 8)]
+    assert [c.chapter_id for c in out["evidence"].chunks] == list(range(1, 9))
 
 
 def test_retriever_failure_gives_no_chunks_and_an_error(repo: Repository) -> None:

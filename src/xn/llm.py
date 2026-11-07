@@ -60,14 +60,14 @@ class UpstreamError(RuntimeError):
 class CompactItem:
     """One piece of compact evidence, with the chapter it came from."""
 
-    kind: Literal["event", "micro_summary", "digest", "chunk"]
+    kind: Literal["event", "micro_summary", "digest", "arc_summary", "chunk"]
     chapter_id: int
     text: str
 
 
 def validate_compact(items: list[CompactItem], chapter_max: int) -> None:
     """Raise EgressError unless items fit the compact class and the spoiler bound."""
-    allowed = {"event", "micro_summary", "digest", "chunk"}
+    allowed = {"event", "micro_summary", "digest", "arc_summary", "chunk"}
     chunks = 0
     total = 0
     for item in items:

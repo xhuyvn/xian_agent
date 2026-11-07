@@ -6,7 +6,7 @@ cloud_provider:
 long_context_model: null
 prompts:
   s1_extract: v4
-  synthesize_compact: v3
+  synthesize_compact: v4
 
 models:
   local_extractor:
