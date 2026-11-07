@@ -26,7 +26,7 @@ from xn.config import load_config
 from xn.graph.deps import GraphDeps
 from xn.graph.nodes.verify import verify
 from xn.graph.workflow import ask, build_graph, open_checkpointer, thread_novel
-from xn.llm import SpendCapError
+from xn.llm import SpendCapError, UpstreamError
 from xn.schemas.state import Answer, ChunkEvidence, EvidenceItem, EvidencePack
 from xn.storage.database import connect, init_schema
 from xn.storage.repository import Repository
@@ -56,12 +56,17 @@ class FakeCloud:
         self.names: list[str] = []
         self.prompts: list[str] = []
         self.systems: list[str] = []
+        self.max_tokens: list[int] = []
+        self.reasoning: list[Any] = []
+        self.finish_reason: Any = None
 
     def __call__(self, name: str) -> FunctionModel:
         self.names.append(name)
 
         def respond(messages: list[Any], info: AgentInfo) -> ModelResponse:
             self.prompts.append(str(messages[-1].parts[-1].content))
+            self.max_tokens.append(info.model_settings["max_tokens"])
+            self.reasoning.append(info.model_settings.get("openrouter_reasoning"))
             self.systems.append(str(messages[0].parts[0].content))
             markdown = self.answers[min(len(self.names), len(self.answers)) - 1]
             args = {"markdown": markdown, "citations": self.citations}
@@ -69,6 +74,7 @@ class FakeCloud:
                 parts=[ToolCallPart(info.output_tools[0].name, args)],
                 usage=RequestUsage(input_tokens=10, output_tokens=5),
                 provider_details={"cost": 0.001},
+                finish_reason=self.finish_reason,
             )
 
         return FunctionModel(respond)
@@ -132,7 +138,8 @@ def run_query(db_conn: sqlite3.Connection, tmp_path: Path):
         until: int | None = None,
         retriever: Any = None,
     ) -> Any:
-        extra = {"retriever_factory": lambda _config: retriever} if retriever else {}
+        # No chunks by default: every intent searches since G-28, and the real retriever must not load.
+        extra = {"retriever_factory": lambda _config: retriever or ChapterRetriever(())}
         deps = GraphDeps(
             repo=Repository(db_conn),
             config=CONFIG,
@@ -603,6 +610,8 @@ def cli_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     def fake_deps(*, config: dict[str, Any], **kwargs: Any) -> GraphDeps:
         config = copy.deepcopy(config)
         config["models"]["local_extractor"]["output_mode"] = "tool"
+        # Every intent searches chunks since G-28; no test here should load the real reranker.
+        kwargs.setdefault("retriever_factory", lambda _config: ChapterRetriever(()))
         return GraphDeps(
             config=config, router_model=env["router"], cloud_factory=env["cloud"], **kwargs
         )
@@ -751,3 +760,31 @@ def test_real_configs_name_both_cloud_models() -> None:
     assert config["models"]["macro_synthesizer"]["name"]
     assert config["models"]["deep_dive_evaluator"]["name"]
     assert config["daily_spend_cap_usd"] == 1.0
+
+
+def test_synthesize_gives_the_answer_8000_output_tokens(run_query: Any, db_conn: Any) -> None:
+    # G-28: the model reasons first, and 2500 tokens ran out before any answer on larger packs.
+    cloud = FakeCloud()
+    state = run_query("Hàn Lập ra sao?", cloud=cloud, until=50)
+    assert state["answer"] is not None
+    assert cloud.max_tokens == [8000]
+
+
+def test_synthesize_passes_the_configured_reasoning_limit(
+    run_query: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # G-28 R-3: reasoning is capped per model key; a key without the setting sends none.
+    models = {**CONFIG["models"], "deep_dive_evaluator": {"name": "deep/model", "reasoning": {"effort": "low"}}}
+    monkeypatch.setitem(CONFIG, "models", models)
+    cloud = FakeCloud()
+    run_query("Hàn Lập ra sao?", cloud=cloud, until=50)
+    assert cloud.reasoning == [{"effort": "low"}]
+
+
+def test_a_cut_off_answer_is_refused(run_query: Any) -> None:
+    # G-28 R-2: a reply stopped at the token cap was shown as a 139-character stub.
+    cloud = FakeCloud()
+    cloud.finish_reason = "length"
+    with pytest.raises(UpstreamError) as err:
+        run_query("Hàn Lập ra sao?", cloud=cloud, until=50)
+    assert err.value.code == "OUTPUT_TRUNCATED"

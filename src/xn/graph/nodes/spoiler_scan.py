@@ -52,7 +52,11 @@ def evidence_words(evidence: EvidencePack | None) -> str:
     """Fold every text in the evidence pack, so a term found there is not called a leak."""
     if evidence is None:
         return " "
-    parts = [i.cloud_text() for i in evidence.items] + [c.text for c in evidence.chunks]
+    parts = (
+        [i.cloud_text() for i in evidence.items]
+        + [c.text for c in evidence.chunks]
+        + [s.text for s in evidence.summaries]
+    )
     return _words("\n".join(parts))
 
 

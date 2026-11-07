@@ -136,6 +136,13 @@ def test_success_logs_compact_egress_chapters_and_cost(repo: Repository, db_conn
     assert fake.settings[0]["max_tokens"] == 2500
     assert fake.settings[0]["temperature"] == 0.3
     assert fake.settings[0]["openrouter_usage"] == {"include": True}
+    assert "openrouter_reasoning" not in fake.settings[0]
+
+
+def test_reasoning_setting_is_passed_to_openrouter(repo: Repository) -> None:
+    fake = FakeCloud(0.002)
+    call(repo, fake, reasoning={"effort": "low"})
+    assert fake.settings[0]["openrouter_reasoning"] == {"effort": "low"}
 
 
 def test_prompt_holds_only_question_and_items_as_escaped_data(repo: Repository) -> None:

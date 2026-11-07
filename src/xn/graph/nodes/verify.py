@@ -45,7 +45,11 @@ def verify(state: QueryState, deps: GraphDeps) -> dict[str, Any]:
     """
     chapter_max = state["chapter_max"]
     evidence = state["evidence"]
-    chapters = {i.chapter_id for i in evidence.items} | {c.chapter_id for c in evidence.chunks}
+    chapters = (
+        {i.chapter_id for i in evidence.items}
+        | {c.chapter_id for c in evidence.chunks}
+        | {s.chapter_id for s in evidence.summaries}
+    )
     allowed = {c for c in chapters if c <= chapter_max}
     answer = state["answer"]
 

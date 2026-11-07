@@ -26,6 +26,9 @@ def _enough(state: QueryState, deps: GraphDeps) -> bool:
         return len(state["entity_ids"]) >= 2 and all(
             counts[entity_id] >= MIN_EVENTS["compare"] for entity_id in state["entity_ids"]
         )
+    if intent == "timeline" and evidence.summaries:
+        # Arc or prefix summaries answer a timeline question without a named entity (G-28).
+        return True
     return bool(state["entity_ids"]) and len(evidence.items) >= MIN_EVENTS[intent]
 
 
