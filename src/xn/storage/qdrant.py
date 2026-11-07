@@ -53,6 +53,18 @@ class ChunkPoint:
     sparse_values: list[float]
 
 
+@dataclass(frozen=True)
+class ArcPoint:
+    """One synthesized arc with the dense vector of its summary."""
+
+    arc_id: int
+    start_chapter: int
+    end_chapter: int
+    title: str
+    summary: str
+    dense: list[float]
+
+
 class QdrantStore:
     """Guarded access to the shared `xn_chunks` and `xn_arcs` collections."""
 
@@ -159,6 +171,42 @@ class QdrantStore:
                         key="chapter_id", range=models.Range(gte=chapter_from, lte=chapter_to)
                     ),
                 ]
+            ),
+            wait=True,
+        )
+
+    def upsert_arc(self, *, novel_id: str, point: ArcPoint) -> None:
+        """Write one arc to `xn_arcs`; the id depends on the arc id only, so a rerun overwrites it."""
+        _validate_novel_id(novel_id)
+        self._client.upsert(
+            collection_name=self._arcs,
+            points=[
+                models.PointStruct(
+                    id=point_id(novel_id, "arc", point.arc_id, 0),
+                    vector={DENSE_VECTOR: point.dense},
+                    payload={
+                        "novel_id": novel_id,
+                        "arc_id": point.arc_id,
+                        "start_chapter": point.start_chapter,
+                        "end_chapter": point.end_chapter,
+                        "title": point.title,
+                        "summary": point.summary,
+                    },
+                )
+            ],
+            wait=True,
+        )
+
+    def delete_arcs_except(self, *, novel_id: str, arc_ids: list[int]) -> None:
+        """Remove this novel's arc points whose arc id is not in arc_ids."""
+        _validate_novel_id(novel_id)
+        self._client.delete(
+            collection_name=self._arcs,
+            points_selector=models.FilterSelector(
+                filter=models.Filter(
+                    must=[models.FieldCondition(key="novel_id", match=models.MatchValue(value=novel_id))],
+                    must_not=[models.FieldCondition(key="arc_id", match=models.MatchAny(any=arc_ids))],
+                )
             ),
             wait=True,
         )

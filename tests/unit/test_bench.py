@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from typing import Any
 import pytest
+import typer
 
 from pydantic_ai import NativeOutput
 from pydantic_ai.messages import ModelResponse, TextPart
@@ -19,11 +21,20 @@ from xn.bench import (
     ModelResult,
     choose_winner,
     pick_chapters,
+    pick_gold_chapters,
+    render_gold,
+    run_parallel,
+    run_worker,
     pooled_recall,
     render_report,
     run_benchmark,
     select_candidates,
+    split_chapter_ids,
+    with_prompt,
 )
+import xn.bench as bench
+from xn.prompts import load_prompt, profile_from_config
+from xn.gold import GoldChapter, GoldEntity, GoldSet
 from xn.llm import extractor_output, extractor_settings
 from xn.schemas.extraction import MicroSummary
 
@@ -165,17 +176,20 @@ def test_extractor_settings_only_sends_think_when_false() -> None:
     assert off == {"temperature": 0.2, "openai_reasoning_effort": "none"}
 
 
-def run_fake(tmp_path: Path, models: dict[str, Any], *, vram: list[int] | None = None) -> tuple[Any, ...]:
+def run_fake(
+    tmp_path: Path, models: dict[str, Any], *, vram: list[int] | None = None, **extra: Any
+) -> tuple[Any, ...]:
     raw_dir = tmp_path / "raw"
     if not raw_dir.exists():
         write_chapters(raw_dir)
     readings = iter(vram or [])
     unloaded: list[str] = []
     candidates = tuple(Candidate(name, name) for name in models)
+    config = extra.pop("config", None) or make_config()
     out = run_benchmark(
-        config=make_config(), raw_dir=raw_dir, out_dir=tmp_path / "out", chapter_max=3, count=3,
+        config=config, raw_dir=raw_dir, out_dir=tmp_path / "out", chapter_max=3, count=3,
         candidates=candidates, models=models, prompts_dir=Path("prompts"),
-        read_vram=lambda: next(readings, 9000), unload=unloaded.append,
+        read_vram=lambda: next(readings, 9000), unload=unloaded.append, **extra,
     )
     return (*out, unloaded)
 
@@ -259,3 +273,212 @@ def test_report_names_each_model_and_the_winner() -> None:
     text = render_report([result("a"), result("b")], [1, 2], "a", "Reason.")
     assert "| Metric | a | b |" in text
     assert "Winner: a. Reason." in text
+
+
+def make_gold(chapter_ids: list[int]) -> GoldSet:
+    """Gold that names Hàn Lập and Trương Thiết in each chapter, with no flags set."""
+    chapters = [
+        GoldChapter(
+            chapter_id=n, location_change=False, realm_breakthrough=False, major_conflict=False,
+            entities=[
+                GoldEntity(name="Hàn Lập", category="nhân vật", event_types=["MENTIONED"]),
+                GoldEntity(name="Trương Thiết", category="địa điểm", event_types=["MENTIONED"]),
+            ],
+        )
+        for n in chapter_ids
+    ]
+    return GoldSet(meta={}, chapters=chapters, aliases=[], qa=[], spoilers=[])
+
+
+def test_qwen25_candidate_runs_at_its_10k_serving_name() -> None:
+    (picked,) = select_candidates(["qwen25-14b-10k"])
+    assert picked.base_name == "qwen2.5:14b-instruct"
+    assert picked.think is None and picked.output_mode == "native"
+    modelfile = Path("ollama/Modelfile.qwen25-14b-10k").read_text(encoding="utf-8")
+    assert "FROM qwen2.5:14b-instruct" in modelfile
+    assert "PARAMETER num_ctx 10240" in modelfile
+
+
+def test_pick_gold_chapters_matches_the_g13_set() -> None:
+    gold_ids = {1, 6, 11, 17, 22, 27, 32, 37, 43, 48, 53, 58, 63, 69, 74, 79, 84, 89, 94, 100}
+    picked = pick_gold_chapters(gold_ids, 100, 30)
+    assert len(picked) == 50 and gold_ids <= set(picked)
+    assert picked == sorted(picked)
+    with pytest.raises(ValueError):
+        pick_gold_chapters({1, 2}, 3, 2)
+
+
+def test_run_benchmark_scores_the_gold_chapters(tmp_path: Path) -> None:
+    results, _, _, _ = run_fake(
+        tmp_path,
+        {"wide": fake_model(["Hàn Lập", "Trương Thiết"]), "extra": fake_model(["Hàn Lập", "Mặc Đại Phu"])},
+        chapters=[1, 3], gold=make_gold([1, 3]),
+    )
+    assert results[0].chapters == 2
+    saved = json.loads((tmp_path / "out" / "report.json").read_text(encoding="utf-8"))
+    assert saved["chapters"] == [1, 3]
+    wide, extra = saved["gold"]["wide"], saved["gold"]["extra"]
+    assert wide["all"]["recall"] == 1.0 and wide["all"]["precision"] == 1.0
+    assert wide["all"]["category_accuracy"] == 0.5
+    assert wide["dev"]["gold_entities"] == 2 and wide["held_out"]["gold_entities"] == 2
+    assert extra["all"]["recall"] == 0.5
+    assert extra["all"]["false_names"] == 2
+    assert extra["all"]["flag_f1"] == {"location_change": 0.0, "realm_breakthrough": 0.0, "major_conflict": 0.0}
+    report = (tmp_path / "out" / "report.md").read_text(encoding="utf-8")
+    assert "| Entity recall | 1.00 (4 of 4) | 0.50 (2 of 4) |" in report
+    assert "| Entity precision | 1.00 (0 false names) | 0.50 (2 false names) |" in report
+
+
+def test_run_benchmark_rejects_gold_chapters_outside_the_run(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match=r"\[2\]"):
+        run_fake(tmp_path, {"m": fake_model(["Hàn Lập"])}, chapters=[1, 3], gold=make_gold([1, 2]))
+
+
+def test_render_gold_marks_missing_splits() -> None:
+    text = render_gold({"m": {"all": None, "dev": None, "held_out": None}})
+    assert "| Entity recall | n/a |" in text
+    assert "| Flag F1, `major_conflict` | n/a |" in text
+
+
+def parallel_fake(
+    tmp_path: Path, model: Any, *, workers: int = 2, chapters: list[int] | None = None
+) -> tuple[Any, ...]:
+    raw_dir = tmp_path / "raw"
+    if not raw_dir.exists():
+        write_chapters(raw_dir)
+    jobs_seen: list[Any] = []
+
+    def spawn(jobs: list[Any]) -> None:
+        jobs_seen.extend(jobs)
+        for job in jobs:
+            run_worker(*job, model=model)
+
+    result, scores = run_parallel(
+        config=make_config(), raw_dir=raw_dir, out_dir=tmp_path / "out", chapter_max=3,
+        candidate=Candidate("m", "m"), chapters=chapters or [1, 2, 3], workers=workers,
+        gold=make_gold([1, 3]), prompts_dir=Path("prompts"),
+        read_vram=lambda: 5000, unload=lambda name: None, spawn=spawn,
+    )
+    return result, scores, jobs_seen
+
+
+def test_run_parallel_deals_chapters_round_robin_and_scores_all_workers(tmp_path: Path) -> None:
+    result, scores, jobs = parallel_fake(tmp_path, fake_model(["Hàn Lập", "Trương Thiết"]))
+    assert [job[2] for job in jobs] == [[1, 3], [2]]
+    assert len({job[0] for job in jobs}) == 2
+    assert result.workers == 2 and result.chapters == 3
+    assert result.schema_success == 1.0
+    assert result.wall_s_per_chapter == pytest.approx(result.wall_seconds / 3)
+    assert result.peak_vram_mib == 5000
+    assert scores is not None and scores["all"]["recall"] == 1.0 and scores["all"]["gold_entities"] == 4
+    saved = json.loads((tmp_path / "out" / "parallel-m-w2.json").read_text(encoding="utf-8"))
+    assert saved["shares"] == [[1, 3], [2]]
+    assert "| Workers | 2 |" in (tmp_path / "out" / "parallel-m-w2.md").read_text(encoding="utf-8")
+
+
+def test_run_parallel_counts_failed_chapters(tmp_path: Path) -> None:
+    result, _, _ = parallel_fake(tmp_path, fake_model([], fail=True), chapters=[1, 3])
+    assert result.schema_success == 0.0
+
+
+def test_run_parallel_refuses_a_resumed_run(tmp_path: Path) -> None:
+    parallel_fake(tmp_path, fake_model(["Hàn Lập"]))
+    with pytest.raises(ValueError, match="fresh"):
+        parallel_fake(tmp_path, fake_model(["Hàn Lập"]))
+
+
+def test_run_parallel_needs_two_workers(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="at least 2"):
+        parallel_fake(tmp_path, fake_model(["Hàn Lập"]), workers=1)
+
+
+def test_qwen25_16k_candidate_runs_at_16384() -> None:
+    (picked,) = select_candidates(["qwen25-14b-16k"])
+    assert picked.base_name == "qwen2.5:14b-instruct" and picked.think is None
+    modelfile = Path("ollama/Modelfile.qwen25-14b-16k").read_text(encoding="utf-8")
+    assert "FROM qwen2.5:14b-instruct" in modelfile
+    assert "PARAMETER num_ctx 16384" in modelfile
+
+
+def test_qwen35_candidate_runs_at_its_10k_serving_name_without_thinking() -> None:
+    (picked,) = select_candidates(["qwen35-9b-udq6-10k"])
+    assert picked.base_name == "qwen3.5:9b_UD_Q6"
+    assert picked.think is False and picked.output_mode == "native"
+    modelfile = Path("ollama/Modelfile.qwen35-9b-udq6-10k").read_text(encoding="utf-8")
+    assert "FROM qwen3.5:9b_UD_Q6" in modelfile
+    assert "PARAMETER num_ctx 10240" in modelfile and "PARAMETER temperature 0.1" in modelfile
+
+
+def test_with_prompt_sets_the_version_on_a_copy() -> None:
+    config = make_config()
+    config["prompts"] = {"s1_resummary": "v1"}
+    changed = with_prompt(config, "v3")
+    assert changed["prompts"] == {"s1_resummary": "v1", "s1_extract": "v3"}
+    assert config["prompts"] == {"s1_resummary": "v1"}
+    with pytest.raises(FileNotFoundError):
+        with_prompt(config, "v999")
+
+
+def test_v3_keeps_v2_and_adds_the_not_an_entity_rules() -> None:
+    v2 = Path("prompts/s1_extract/v2.md").read_text(encoding="utf-8")
+    v3 = Path("prompts/s1_extract/v3.md").read_text(encoding="utf-8")
+    assert "QUY TẮC PHỦ KÍN THỰC THỂ" in v3 and "KHÔNG PHẢI THỰC THỂ" in v3
+    assert "version: v3" in v3
+    v3_lines = set(v3.splitlines())
+    body = v2.split("---", 2)[2].splitlines()
+    missing = [line for line in body if line not in v3_lines and not line.startswith("Trước khi trả lời")]
+    assert missing == []
+
+
+def test_run_benchmark_runs_the_prompt_version_of_its_config(tmp_path: Path) -> None:
+    config = with_prompt(make_config(), "v3")
+    run_fake(tmp_path, {"m": fake_model(["Hàn Lập"])}, config=config, chapters=[1, 3])
+    v3 = load_prompt("s1_extract", "v3", profile_from_config(config), Path("prompts")).prompt_version
+    conn = sqlite3.connect(tmp_path / "out" / "m.db")
+    versions = {row[0] for row in conn.execute("SELECT prompt_version FROM jobs WHERE stage = 's1'")}
+    conn.close()
+    assert versions == {v3}
+    saved = json.loads((tmp_path / "out" / "report.json").read_text(encoding="utf-8"))
+    assert saved["prompt"] == "v3"
+
+
+def test_split_chapter_ids_follows_gold_split() -> None:
+    gold = make_gold([1, 2, 3, 4])
+    assert split_chapter_ids(gold, "all") == {1, 2, 3, 4}
+    assert split_chapter_ids(gold, "dev") == {1, 3}
+    assert split_chapter_ids(gold, "held_out") == {2, 4}
+    with pytest.raises(ValueError):
+        split_chapter_ids(gold, "test")
+
+
+def test_run_benchmark_on_the_dev_split_scores_dev_only(tmp_path: Path) -> None:
+    run_fake(
+        tmp_path, {"m": fake_model(["Hàn Lập", "Trương Thiết"])},
+        chapters=[1, 3], gold=make_gold([1, 2, 3]), gold_split_name="dev",
+    )
+    saved = json.loads((tmp_path / "out" / "report.json").read_text(encoding="utf-8"))
+    assert saved["gold"]["m"]["dev"]["gold_entities"] == 4
+    assert saved["gold"]["m"]["held_out"] is None
+    with pytest.raises(ValueError, match=r"\[3\]"):
+        run_fake(tmp_path, {"m": fake_model(["Hàn Lập"])}, chapters=[1, 2], gold=make_gold([1, 2, 3]), gold_split_name="dev")
+
+
+def test_main_passes_prompt_and_dev_split_to_the_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, Any] = {}
+    monkeypatch.setattr(bench, "run_benchmark", lambda **kw: seen.update(kw))
+    out = tmp_path / "out"
+    out.mkdir()
+    (out / "report.md").write_text("report", encoding="utf-8")
+    bench.main(
+        raw_dir=tmp_path, out_dir=out, chapter_max=100, count=50, novel="pntt1",
+        model=["qwen35-9b-udq6-10k"], gold_set=True, extra_chapters=30, workers=1,
+        prompt="v3", gold_split_name="dev",
+    )
+    assert seen["config"]["prompts"]["s1_extract"] == "v3"
+    assert seen["chapters"] == [1, 11, 22, 32, 43, 53, 64, 74, 84, 95]
+    assert seen["gold_split_name"] == "dev"
+    with pytest.raises(typer.BadParameter):
+        bench.main(
+            raw_dir=tmp_path, out_dir=out, chapter_max=100, count=50, novel="pntt1", model=None,
+            gold_set=False, extra_chapters=30, workers=1, prompt=None, gold_split_name="dev",
+        )

@@ -25,9 +25,152 @@ Sub-goals:
 Changes:
 - 2026-11-01: owner approved the goal and the decisions above
 
+### G-25: benchmark `qwen2.5:14b-instruct` against `qwen3.8:udiq4_hui` on S1 extraction (active)
+Plan: chat plan of 2026-11-05. Follows G-7, G-8, G-10.1 and G-13. Cut from `cld/sprint-3-tasks-60f7ab`.
+Owner decisions: the lead writes the code, with no agy. Chapters are the G-13 set: the 20 gold chapters and 30 others from 1-100. Prompt v2, one chapter at a time, temperature 0.1. `qwen2.5:14b-instruct` runs as a new Ollama model `qwen25-14b-10k` from `ollama/Modelfile.qwen25-14b-10k` at `num_ctx 10240`; it has no thinking mode. The baseline is the G-10.1 run of `qwen38-udiq4-hui-10k` in `data/eval/g101-full.db` (prompt v2, chapters 1-100), read only; it is not run again. Databases go to `data/bench/g25-qwen25/`, never `data/eval/*.db`. No winner rule: the report recommends and the owner decides. Nothing is downloaded. Two rounds: harness, then run and report.
+Done when:
+- `xn.bench` has a `qwen25-14b-10k` candidate, can run the gold chapter set and scores it against the gold, with unit tests on a fake model
+- `qwen25-14b-10k` runs the 50 chapters through the real S0 and S1 code, with the GPU checked free first
+- `docs/S1_T9_EVAL.md` gains a section giving it and the G-10.1 baseline side by side, on the same 50 chapters: schema success, first-try rate, entity recall and precision (all 20, dev and held out apart), category and event-type accuracy, flag F1, s/chapter mean and p95, idle and peak VRAM, the exact commands and caveats
+- `eval/`, the prompt, production config and production S1 are unchanged
+- `qwen25-14b-10k` also runs the same chapters with 2 S1 processes at once (`--workers 2`), and the report compares its wall s/chapter and gold scores with the one-at-a-time run
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-05: deliver the gold chapter set, gold scoring, the qwen2.5 candidate and parallel workers -> PASS, 0 blockers, e1c1373, 0 agy tokens
+- R-2 2026-11-05: run qwen25-14b-10k one at a time and with 2 workers, and report against the G-10.1 baseline -> PASS, 0 blockers, 6223bd6, 0 agy tokens
+- R-3 2026-11-05: run qwen25-14b-16k on the same chapters and report it next to 10k -> PASS, 0 blockers, e6dc5d8, 0 agy tokens
+- R-4 2026-11-05: run qwen35-9b-udq6-10k on the same chapters and report it next to qwen2.5 and production -> PASS, 0 blockers, afef249, 0 agy tokens
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-05: owner approved the goal and the decisions above
+- 2026-11-05: owner added a test of `qwen25-14b-10k` processing 2 chapters in parallel, for speed, as a "Done when" line. Ollama's `OLLAMA_NUM_PARALLEL` is unset and stays so unless the owner says otherwise
+- 2026-11-05: owner: "why you run test with qwen38-udiq4-hui-10k, it already had result test before. run only qwen25-14b-10k and add to benchmark S1_T9_EVAL.md". The fresh baseline run was stopped after about 8 minutes and its database deleted; the G-10.1 run is the baseline and the results go into `docs/S1_T9_EVAL.md` instead of a new report
+- 2026-11-05: owner: "try to run with model qwen2.5:14b-instruct with 16k token." Added `qwen25-14b-16k` (`ollama/Modelfile.qwen25-14b-16k`, `num_ctx 16384`), run one at a time on the same 50 chapters and added to the G-25 section; the 10k results stay
+- 2026-11-05: owner: "let test with for speed and quality with qwen3.5:9b_UD_Q6 add result to S1_T9_EVAL.md". Added `qwen35-9b-udq6-10k` (`ollama/Modelfile.qwen35-9b-udq6-10k`, `num_ctx 10240`, thinking off), run one at a time on the same 50 chapters and reported in the G-25 section
+
+### G-27: make `qwen3.5:9b_UD_Q6` good enough to replace `qwen3.8:udiq4_hui` as the S1 extractor (active)
+Plan: chat plan of 2026-11-06. Follows G-26. Cut from `cld/heuristic-austin-b6a073` (PR xhuyvn/xian_agent#31, not yet merged).
+Owner decisions:
+- The owner did not say who writes code. The default from the plan is that `agy-coder` writes steps 1 and 2. If `agy` is unavailable or blocked, stop and ask the owner. Infrastructure and runs are the lead's.
+- Prompt `v4` is a new file. `v2`, `v3`, `eval/` and production config stay unchanged until the final owner yes.
+- Tuning uses the 10 dev gold chapters only (`xn.gold.gold_split`, first of each pair). Held out is scored once, in the full test. At most 2 prompt attempts.
+- Model: `qwen35-9b-udq6-10k`, num_ctx 10240, thinking off, temperature 0.1.
+- Databases go to new folders under `data/bench/` in the main checkout. Never write to `data/eval/*.db`.
+- No downloads. agy as the extractor and the two-pass/glossary/GLiNER ideas are parked.
+- Switching the production config needs a separate explicit owner yes after the report.
+Steps:
+1. Prompt v4 = v3 plus a one-line definition for each category (pills, potions, talismans and treasures are `weapon_treasure`; arts and methods are `technique`; sects, gangs, valleys, peaks and villages are `dungeon`; beasts and puppets are `puppet_beast`), plus a clearer `realm_breakthrough` rule. Examples come from dev chapters only. Run each attempt with `uv run py -m xn.bench ... --gold --gold-split dev --model qwen35-9b-udq6-10k --prompt v4`.
+2. An S1 clean-up step behind config, off by default (e.g. `s1.postprocess` keys), with unit tests:
+   - the G-26 name filter (`xn.name_filter`, rule `caps-proper+words`);
+   - a category fix by the name's last word (offline on G-26's v3 run, dev only, this lifted category accuracy from 0.83 to 0.96; the lists were drawn from those dev errors, so expect less on held out; draft: "đan/hoàn/tán/thủy/phù" -> `weapon_treasure`, "công/quyết/bộ/thuật/pháp/chú" -> `technique`, "môn/bang/cốc/phong/thôn" -> `dungeon`, never overriding `character`);
+   - removing repeated identical events (the model repeats "Hàn Lập MENTIONED" with alternating quotes).
+   With it off, S1 must behave exactly as now.
+3. Full test: S0-S3 on chapters 1-100 with qwen3.5 + the best prompt + clean-up on, using a config copy, then the full gold report (extraction, aliases, Q&A, spoilers; see `xn.gold.gold_report`, `xn.gold_run`, and the "Reproduce" section of `docs/S1_T9_EVAL.md`), next to the G-10.1 production run (`data/eval/g101-full.db`, read only). Note: `local_model(config)` also drives the S2 adjudicator and the query router, so switching the extractor changes those too.
+4. Report in a "G-27" section of `docs/S1_T9_EVAL.md`. Recommend; the owner decides the switch.
+Done when:
+- S1 can run the clean-up step from config, off by default, with unit tests
+- With qwen3.5 on the 20 gold chapters: entity recall >= 0.90, precision >= 0.88, category accuracy >= 0.90, held out reported apart
+- Alias F1 and Q&A citation hit rate are no worse than G-10.1, and spoiler leaks are 0
+- S1 <= 20 s/chapter mean
+- The "G-27" section of `docs/S1_T9_EVAL.md` has exact commands and caveats, including that the 20 gold chapters have judged every run since G-10.1
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-06: prompt v4 (two dev attempts; attempt 1 kept: dev recall 0.96, category 1.00, realm_breakthrough found, 19.6 s/chapter; with clean-up precision 0.85) and the S1 clean-up step, off by default -> PASS, 0 blockers, fcf8787, 0 agy tokens; the lead wrote the code under CLAUDE.md's owner override; NIT: extra blank lines in s1_postprocess.py (fixed in c0c7367)
+- R-2 2026-11-06: full S0-S3 test on chapters 1-100 (qwen3.5, v4, clean-up on) and the G-27 report: recall 0.96, precision 0.90, category 0.98 (held out 0.94 / 0.91 / 0.98), alias F1 0.67 vs 0.64, leaks 0, S1 17.5 s/chapter; Q&A citation hit rate 0.80 vs 0.93 with the whole local model on qwen3.5 (the router), 0.93 with qwen3.5 as extractor only -> FAIL, 1 blocker (a wrong held-out count in the report), 9873130; fixed in fb53ba3 -> PASS, 0 blockers, 0 agy tokens. The Q&A line is not met with the whole model switched, so the goal stays active for the owner's decision
+Sub-goals:
+- G-27.1 (active): run qwen3.5 for S1 only and keep `qwen3.8:udiq4_hui` as router, S2 adjudicator, S5 review and prefix model. An optional `models.s1_extractor` block (same shape as `local_extractor`) is used by S1 when set; every other stage keeps `local_extractor`; without the block nothing changes. `xn.bench` sets its candidate on `s1_extractor` too. Checked by re-running only the gold report on the G-27 database with a config copy (S1 model qwen3.5, `local_extractor` qwen3.8). The lead writes the code. Production config is out of scope; switching it needs a separate owner yes. One round.
+  Done when:
+  - Without `s1_extractor`, every stage uses `local_extractor` exactly as now, with unit tests
+  - With it set, S1 calls and records the S1 model, and S2, the router, S5 and prefix use `local_extractor`, with unit tests on fake models
+  - The config-copy gold report gives Q&A citation hit rate >= 0.93, alias F1 >= 0.64 and 0 leaks
+  - `py -m compileall -q src` and `uv run pytest tests/unit` pass
+  Rounds:
+  - R-1 2026-11-06: `models.s1_extractor` for S1 only, unit tests, S2 rebuild + S3 + gold report on a copy of the G-27 database with a split config copy: Q&A citation hit rate 0.93, alias F1 0.644, 0 leaks, extraction unchanged -> FAIL, 1 blocker (an uncommitted CLAUDE.md edit from the working tree was swept into 037ef04), 46c0a00; taken out in ca1a4ad -> PASS, 0 blockers, 0 agy tokens; NIT: S2, S5 and prefix are covered by a source scan, only the router by a fake-model test
+Changes:
+- 2026-11-06: owner approved the goal and the decisions above ("go")
+- 2026-11-06: owner approved sub-goal G-27.1, the S1-only model split ("Go")
+- 2026-11-06: owner approved the production switch ("Yes, switch it"): `configs/config.yaml` gains `models.s1_extractor` = `qwen3.5:9b_UD_Q6` (`qwen35-9b-udq6-10k`), `prompts.s1_extract: v4` and the `s1.postprocess` block (all three fixes on); `local_extractor` stays `qwen3.8:udiq4_hui` for the router, S2, S5 and prefix. `xn run --stage s1 --stale-only` now compares jobs against the clean-up-aware hash, and the runner tests' fixture names the protagonist mid-sentence so the name filter keeps him. The existing ingests are not re-run here: v4 makes S1 redo every chapter (about 12 h for 2,468), then S2 needs `--rebuild`
+
 ## Parked
 
 ## Archive
+
+### G-23: S3-T3 pipeline stage S7, entity×arc digests and prefix digests (done)
+Plan: `docs/IMPLEMENTATION_PLAN.md` S3-T3, blueprint §3.2 S7 and §3.4 L3, chat plan of 2026-11-04. Cut from `cld/sprint-3-tasks-60f7ab`. Runs beside S3-T2 and S3-T4; S3-T5 waits for it.
+Owner decisions: the lead writes the code, with no agy. D1: for each (entity, arc) with >= 3 `entity_events` in the arc, the local model writes an 80-150 word digest with `upto_chapter` = the arc's end chapter and `event_count` = events used; the word count is checked in code and sent back to the model, up to 3 tries. D2: prefix digests at every multiple of 10 inside an arc before its end (S3-T4's grid), written only when the entity has >= 3 events up to that chapter and more than at its last checkpoint. D3: each digest's events are read with `chapter_max = upto_chapter`; the entity is named by `canonical_name`, its first surface form. D4: one `jobs` row per arc, `chapter_id` = the arc's end chapter, `stage = 's7'` (OQ-05), whose input hash covers every digest's events, the checkpoint rule, prompt and model; any change redoes the arc. D5: an arc's digests replace its old rows in one transaction; a failed call marks that arc failed and keeps its old rows, other arcs go on; only arcs ending <= `--to` run, and an arc needs S3 done on all its chapters. D6: over ~5k input tokens, MENTIONED events go first. D7: `runner.py`, `cli/main.py`, `repository.py` and `test_repository_guards.py` change only additively. The live run uses `data/eval/g23-s7.db`, a copy of `g21-s5.db` with S2 rebuilt and S3 run on 1-600.
+Done when:
+- `xn run --novel pntt1 --stage s7 --to 600` writes full and prefix digests for the 17 arcs, and a rerun on unchanged input skips every arc with no model call
+- unit tests with a fake model cover the >= 3 threshold, the checkpoint rule and the word-count retry, and a spoiler test shows a prefix digest's prompt and row ignore events after its `upto_chapter`
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+- the live run reports digest counts (full and prefix), failures and time
+Rounds:
+- R-1 2026-11-04: deliver the S7 stage code, prompt, runner and CLI registration and fake-model tests -> PASS, 0 blockers, 34ec789, 0 agy tokens; NITs: `STAGES += ("s7",)` on its own line (for D7); past MENTIONED, the budget cuts the latest events; a failure building the model leaves the arc's job `running`
+- R-2 2026-11-07: live run over the 17 arcs of chapters 1-600 on g23-s7.db, with a length-retry fix (directional retry note, ~100-word target, then a warmer second round of 3 retries at temperature 0.7) -> PASS, 0 blockers, 7653c46, 0 agy tokens; 1,521 digests (659 full, 862 prefix, 468 entities), every one 80-150 words; restarted run processed=14 skipped=3 failed=0 in 5h14m (1,362 calls, avg 13.8 s, 13 digests needed the second round); rerun skipped all 17 in 4 s with no model call; NITs: R-1 NITs still open; `raise AssertionError("unreachable")` is dead code
+- R-3 2026-11-07: merge `cld/sprint-3-tasks-60f7ab` (S6, prefix summaries, G-25, G-27) into the S7 branch, both sides kept -> PASS (delta), 0 blockers, 2adddd0, 0 agy tokens; 661 unit tests pass, S7 rerun on g23-s7.db still skips all 17 arcs; NIT: S7 imports sit before the S6 and prefix imports
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-04: owner approved the goal and the decisions above
+- 2026-11-07: owner marked G-23 done ("Yes, mark done") after PASS on R-2 (live run) and R-3 (merged branch), PR xhuyvn/xian_agent#33
+
+### G-26: cut the false names of `qwen3.5:9b_UD_Q6` on S1 extraction (done)
+Plan: chat plan of 2026-11-05. Follows G-25. Cut from `cld/bench-qwen25-14b-872abd`.
+Owner decisions: the lead writes the code, with no agy. Prompt `v3` is a new file. `v2`, production config, production S1 and `eval/` stay unchanged. Tuning uses only the 10 dev gold chapters (`xn.gold.gold_split`, the first of each pair). The 10 held-out chapters are scored once, in the last round. Any name filter is measured in this goal only, and putting it into production S1 is a later owner decision. No downloads. The model is `qwen35-9b-udq6-10k`, num_ctx 10240, thinking off, temperature 0.1, on the G-13 50-chapter set. At most 3 prompt attempts; if the targets are not reached, stop and report what each attempt reached. Databases go to new folders under `data/bench/` in the main checkout. The two-pass/scratchpad, dynamic glossary and GLiNER ideas are parked. Three rounds: offline filter study, prompt v3, full run.
+Done when:
+- The 26 false names of the G-25 qwen3.5 run are sorted by type, and filter rules (capitalization outside sentence starts, category, a list of kinship and address words) are scored offline on the G-25 qwen3.5 database and on `g101-full.db`, tuned on dev chapters only
+- `prompts/s1_extract/v3.md` exists, and `xn.bench` can run a chosen prompt version (for example `--prompt v3`, applied to a config copy), with a unit test
+- On the 20 gold chapters, qwen3.5 9B with the best setup (prompt v3, with or without a filter) reaches recall >= 0.90 and precision >= 0.88, with held out reported apart, at <= 20 s/chapter mean
+- The results are in a "G-26" section of `docs/S1_T9_EVAL.md`, next to qwen3.5 on v2 and production, with exact commands and caveats, including that these 20 gold chapters have been used to judge every run since G-10.1
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-05: sort the 26 false names by type and score filter rules offline on dev -> PASS, 0 blockers, 9f65355, 0 agy tokens
+- R-2 2026-11-05: prompt v3, bench --prompt and --gold-split, two v3 attempts on dev (precision unchanged by the prompt; v3 kept at attempt 1) -> PASS, 0 blockers, 7b4a205, 0 agy tokens
+- R-3 2026-11-05: run prompt v3 on all 50 chapters, score the filters on all 20 gold chapters with held out apart -> PASS, 0 blockers, 5d03c1b, 0 agy tokens
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-05: owner approved the goal and the decisions above ("Go")
+- 2026-11-05: owner set `OLLAMA_NUM_PARALLEL=4` on the host during R-3; S1 sends one request at a time, so it is noted as a caveat only
+- 2026-11-05: done after R-3 PASS: v3 + caps-proper+words filter, recall 0.95, precision 0.88, 16.3 s/chapter; the filter stays offline
+- 2026-11-05: owner: "Yes, run it" (a 2-worker test with `OLLAMA_NUM_PARALLEL` raised). Ran after the goal closed and added to the G-26 section: no speed-up, because Ollama runs the qwen35 architecture with one slot (`n_seq_max = 1`)
+
+### G-24: S3-T4 arc prefix summaries for L2 spoiler safety (done)
+Plan: `docs/IMPLEMENTATION_PLAN.md` S3-T4; blueprint §3.4 L2, §3.9. Chat plan of 2026-11-04. Cut from `cld/sprint-3-tasks-60f7ab`. Runs beside S3-T2 and S3-T3; S3-T5 waits for it.
+Owner decisions: the lead writes the code, with no agy. D1: a checkpoint is every chapter `c` with `c % 10 == 0` and `start < c ≤ end` of its arc; a reader at N snaps down to the greatest stored checkpoint ≤ N in N's arc. D2: each checkpoint's summary comes from the S1 micro-summaries of `start..c` only, not from the previous checkpoint. D3: stage id `prefix`; one `jobs` row per checkpoint with `chapter_id = upto_chapter`, the end chapter of the span it covers (OQ-05); the input hash covers the arc id and span, the micro-summaries up to `c`, the prompt version and the model; rows and jobs of checkpoints that no longer exist are pruned. D4: prompt `prompts/arc_prefix_summary/v1.md`, output schema kept in `prefix_summaries.py`. D5: `arc_prefix_view(repo, novel_id, chapter_max)` in `prefix_summaries.py` returns the checkpoint summary plus the raw micro-summaries after it up to N, and never the arc's end chapter; the query graph is untouched. D6: `repository.py`, its guard tests, `runner.py` and `cli/main.py` change only additively. The live run uses `data/eval/g24-prefix.db`, a backup-API copy of `g21-s5.db`. One round.
+Done when:
+- `xn run --novel pntt1 --stage prefix --to 600` writes one `arc_prefix_summaries` row per D1 checkpoint for the 17 arcs, and a rerun on unchanged input skips every checkpoint with no model call
+- A unit test with a fake model shows that no stored summary's input, and no `arc_prefix_view` result at any N in 1..end, carries a chapter after its `upto_chapter` or N
+- Unit tests cover snap-down at, below and between checkpoints and before the first one, pruning after re-segmentation, and per-checkpoint failure isolation
+- The live run on `data/eval/g24-prefix.db` reports row counts, time per checkpoint and total time; the original database is never written
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-04: deliver the prefix stage, prompt, snap-down view and unit tests -> PASS, 0 blockers, 7c02ce4, 0 agy tokens; the live run is judged apart; NITs: `_arc_spans` docstring overstates the min(), CLI import order
+- 2026-11-04: verifier delta pass after merging `cld/sprint-3-tasks-60f7ab` at cb95034 (S6, PR #27) into the branch at bba237a -> PASS, 0 blockers, 592 tests; conflicts in the runner, CLI, repository and guard test kept both sides; NIT: `prefix_summaries` imports sit after `s6_synthesize`
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-04: owner approved the goal and the decisions above
+- 2026-11-04: live run at 7c02ce4 on `data/eval/g24-prefix.db` (backup-API copy of `g21-s5.db`, which still has 0 prefix rows and jobs), `qwen38-udiq4-hui-10k` sharing the GPU with S3-T3: `xn run --stage prefix --to 600` wrote 58 rows for the 17 arcs, exactly the D1 checkpoint set, 0 failed, 0 retries, 876 s in total; per checkpoint 15.0 s mean and median, 19.4 s max; input up to 5,089 tokens; summaries 643-1,581 characters (mean 1,056). The rerun skipped all 58 in 6 s with no new `llm_runs` row. `arc_prefix_view` at chapter 157 gives arc 5 (start 128), checkpoint 150 plus the raw tail 151-157
+- 2026-11-04: owner approved marking the goal done, recorded with PR #28
+
+### G-22: S3-T2 pipeline stage S6, macro StoryArc synthesis (done)
+Plan: `docs/IMPLEMENTATION_PLAN.md` S3-T2, chat plan of 2026-11-04. Cut from `cld/sprint-3-tasks-60f7ab`; S3-T3 and S3-T4 run in parallel sessions, S3-T5 waits for all three.
+Owner decisions: the lead writes the code, with no agy. Each arc's S1 micro-summaries go to `models.macro_synthesizer` through `run_compact` (compact egress, spoiler bound = the arc's end chapter, spend cap checked). The model writes the story fields only; `arc_id`, start and end chapter come from the `arcs` row. The `xn_arcs` point embeds title plus summary with BGE-M3, id uuid5 of `novel:arc:<arc_id>`; points of arc ids that no longer exist are deleted. Jobs are keyed by the arc's end chapter (OQ-05), with an input hash over span, micro-summaries, prompt, model and embedding model. One failed arc does not stop the others. The legacy `src/schemas/arc.py` stays. The live run uses `data/eval/g22-s6.db`, a copy of `g21-s5.db`, with `daily_spend_cap_usd` raised to 1.50 for that run only (the copy already holds $1.24 of today's S1 spend); `configs/config.yaml` keeps 1.00.
+Done when:
+- `StoryArc` is in `xn.schemas.arc` next to `BoundaryReview`, and `prompts/s6_arc_synthesize/v1.md` exists
+- `xn run --novel pntt1 --stage s6 --to 600` fills `payload`, `prompt_version` and `model` on all 17 arcs and upserts 17 points into `xn_arcs`, with the spend reported from `llm_runs`
+- a rerun on unchanged input makes 0 cloud calls and changes no rows; an arc whose input changed is synthesized again
+- unit tests with a fake model and in-memory Qdrant cover skip and rerun, the egress and spoiler bound, a refused spend cap, one failed arc and the repository guard
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- R-1 2026-11-04: deliver the S6 stage code and unit tests -> PASS, 0 blockers, 745eb9d, 0 agy tokens; NIT fixed after: `written` was printed twice by `xn run`; the live run stays open for R-2
+- R-2 2026-11-04: live run of S6 on 1-600 in `data/eval/g22-s6.db` -> 1st run 11 of 17 (2 connection drops, 2 hits on the 2500-token output cap since the model reasons first, 2 output-validation failures at the 20-name `key_entities` limit), $0.105; fixed in 998ca84 (S6 caps output at 8000 tokens via a new optional `run_compact` `max_tokens`, 2 output retries, lists up to 15/30 with 8/15 asked in the prompt); 2nd run wrote 17 of 17 and 17 `xn_arcs` points, $0.133; a 3rd run skipped 17 with 0 cloud calls and identical rows. S6 spend $0.238 over 64 attempts (28 ok, the rest instant connection drops); the copy's cloud spend today is $1.479 against the one-off $1.50 cap. Summaries run 436-626 words against the 250-400 asked; 4 of 383 names are descriptions not found verbatim in the arc's summaries -> PASS, 0 blockers, cd93473, 0 agy tokens
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-04: owner approved the goal and the decisions above, with the one-off $1.50 cap for the live run
+- 2026-11-04: owner approved marking the goal done, recorded with PR #27
 
 ### G-21: S3-T1 pipeline stage S5, arc segmentation (done)
 Plan: `docs/IMPLEMENTATION_PLAN.md` S3-T1, chat plan of 2026-11-04. Cut from `cld/sprint-3-tasks-60f7ab` as `cld/s3-t1-s5-segment`. First of Sprint 3; S3-T2, S3-T3 and S3-T4 wait for it, S3-T5 waits for those.
