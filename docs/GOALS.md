@@ -109,6 +109,7 @@ Sub-goals:
 Changes:
 - 2026-11-07: owner approved the goal and the decisions above ("Go")
 - 2026-11-07: owner chose "Raise cap to 8000": synthesize calls `run_compact` with `max_tokens=8000`, as S6 does, instead of the blueprint's 2500. The first live answer probes failed 11 of 12, mostly because the model's reasoning filled 2500 tokens before any answer
+- 2026-11-07: owner chose "Limit reasoning" for the two failed timeline probes (R-3): `run_compact` gains an optional `reasoning` argument (OpenRouter `openrouter_reasoning`, additive), `models.macro_synthesizer` and `models.deep_dive_evaluator` set `reasoning: {effort: low}` (S6 does not pass it, so S6 is unchanged), synthesize refuses a reply stopped at the cap (`OUTPUT_TRUNCATED`), and the probe counts an answer under 300 characters or without citations as unusable
 
 ## Parked
 

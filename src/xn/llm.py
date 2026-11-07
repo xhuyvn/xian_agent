@@ -320,6 +320,7 @@ def run_compact(
     model_factory: Callable[[str], Any] = cloud_model,
     sleep: Callable[[float], None] = time.sleep,
     max_tokens: int = CLOUD_MAX_TOKENS,
+    reasoning: dict[str, Any] | None = None,
 ) -> Any:
     """Send compact evidence to OpenRouter and write one llm_runs row per attempt.
 
@@ -328,6 +329,7 @@ def run_compact(
     fallback_model once if it is configured. A connection that drops at once is retried
     after a short pause instead. cloud_provider in config, if set, is OpenRouter's
     provider routing (for example {sort: latency}). max_tokens caps the output, reasoning included.
+    reasoning, if given, is OpenRouter's reasoning setting (for example {effort: low}).
 
     Raises:
         EgressError: If the class is not compact or items break the compact rule.
@@ -346,6 +348,8 @@ def run_compact(
     }
     if config.get("cloud_provider"):
         settings["openrouter_provider"] = dict(config["cloud_provider"])
+    if reasoning:
+        settings["openrouter_reasoning"] = dict(reasoning)
 
     attempts = [(model_name, retry) for retry in range(CLOUD_RETRIES + 1)]
     fallback = config.get("fallback_model")

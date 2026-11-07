@@ -5,9 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 from pydantic_ai import Agent
+from pydantic_ai.messages import ModelResponse
 
 from xn.graph.deps import GraphDeps, prompt_version
-from xn.llm import CompactItem, run_compact
+from xn.llm import CompactItem, UpstreamError, run_compact
 from xn.prompts import load_prompt, profile_from_config
 from xn.schemas.state import Answer, EvidencePack, QueryState
 
@@ -74,5 +75,18 @@ def synthesize(state: QueryState, deps: GraphDeps) -> dict[str, Any]:
         model_factory=deps.cloud_factory,
         sleep=deps.sleep,
         max_tokens=MAX_OUTPUT_TOKENS,
+        # G-28 R-3: large timeline packs made the model reason past the cap before answering.
+        reasoning=model_cfg.get("reasoning"),
     )
+    _refuse_cut_off(result)
     return {"answer": result.output}
+
+
+def _refuse_cut_off(result: Any) -> None:
+    """Raise when the model stopped at the token cap, so a cut-off answer is never shown.
+
+    A provider can mark a reply complete while the text ends mid-word (G-28 R-2, N=585).
+    """
+    responses = [m for m in result.all_messages() if isinstance(m, ModelResponse)]
+    if responses and responses[-1].finish_reason == "length":
+        raise UpstreamError("OUTPUT_TRUNCATED", f"Answer cut off at the {MAX_OUTPUT_TOKENS}-token cap")

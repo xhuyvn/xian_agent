@@ -26,7 +26,7 @@ from xn.config import load_config
 from xn.graph.deps import GraphDeps
 from xn.graph.nodes.verify import verify
 from xn.graph.workflow import ask, build_graph, open_checkpointer, thread_novel
-from xn.llm import SpendCapError
+from xn.llm import SpendCapError, UpstreamError
 from xn.schemas.state import Answer, ChunkEvidence, EvidenceItem, EvidencePack
 from xn.storage.database import connect, init_schema
 from xn.storage.repository import Repository
@@ -57,6 +57,8 @@ class FakeCloud:
         self.prompts: list[str] = []
         self.systems: list[str] = []
         self.max_tokens: list[int] = []
+        self.reasoning: list[Any] = []
+        self.finish_reason: Any = None
 
     def __call__(self, name: str) -> FunctionModel:
         self.names.append(name)
@@ -64,6 +66,7 @@ class FakeCloud:
         def respond(messages: list[Any], info: AgentInfo) -> ModelResponse:
             self.prompts.append(str(messages[-1].parts[-1].content))
             self.max_tokens.append(info.model_settings["max_tokens"])
+            self.reasoning.append(info.model_settings.get("openrouter_reasoning"))
             self.systems.append(str(messages[0].parts[0].content))
             markdown = self.answers[min(len(self.names), len(self.answers)) - 1]
             args = {"markdown": markdown, "citations": self.citations}
@@ -71,6 +74,7 @@ class FakeCloud:
                 parts=[ToolCallPart(info.output_tools[0].name, args)],
                 usage=RequestUsage(input_tokens=10, output_tokens=5),
                 provider_details={"cost": 0.001},
+                finish_reason=self.finish_reason,
             )
 
         return FunctionModel(respond)
@@ -764,3 +768,23 @@ def test_synthesize_gives_the_answer_8000_output_tokens(run_query: Any, db_conn:
     state = run_query("Hàn Lập ra sao?", cloud=cloud, until=50)
     assert state["answer"] is not None
     assert cloud.max_tokens == [8000]
+
+
+def test_synthesize_passes_the_configured_reasoning_limit(
+    run_query: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # G-28 R-3: reasoning is capped per model key; a key without the setting sends none.
+    models = {**CONFIG["models"], "deep_dive_evaluator": {"name": "deep/model", "reasoning": {"effort": "low"}}}
+    monkeypatch.setitem(CONFIG, "models", models)
+    cloud = FakeCloud()
+    run_query("Hàn Lập ra sao?", cloud=cloud, until=50)
+    assert cloud.reasoning == [{"effort": "low"}]
+
+
+def test_a_cut_off_answer_is_refused(run_query: Any) -> None:
+    # G-28 R-2: a reply stopped at the token cap was shown as a 139-character stub.
+    cloud = FakeCloud()
+    cloud.finish_reason = "length"
+    with pytest.raises(UpstreamError) as err:
+        run_query("Hàn Lập ra sao?", cloud=cloud, until=50)
+    assert err.value.code == "OUTPUT_TRUNCATED"

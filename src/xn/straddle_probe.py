@@ -40,6 +40,7 @@ TIMELINE_QUERY = "Tóm tắt các diễn biến chính của câu chuyện cho �
 DEEP_DIVE_QUERY = "Phân tích chi tiết nhân vật Hàn Lập: tu vi, bảo vật và những sự kiện quan trọng."
 # N inside six arcs for the answer probes: at, between and before checkpoints.
 ANSWER_NS = (75, 157, 263, 385, 477, 585)
+MIN_ANSWER_CHARS = 300
 _HEADER = re.compile(r"^(?:.*?chương \d+–\d+[^:]*|Chương \d+): (?:\(phần \d+/\d+\) )?", re.DOTALL)
 
 
@@ -291,18 +292,22 @@ def run_answers(db: Path, novel_id: str, configs_dir: Path, prompts_dir: Path, c
                 "errors": state.get("errors", []),
                 "grounding_ratio": state.get("grounding_ratio"),
                 "seconds": round(time.perf_counter() - start, 1),
+                # A stub or an uncited answer is a failure too, not a pass with nothing to check.
+                "usable": len(markdown) >= MIN_ANSWER_CHARS and bool(answer and answer.citations),
                 "markdown": markdown,
             }
             results.append(result)
             print(
                 f"N={n} {result['intent']:9s} tokens={result['tokens']} cites>N={result['citations_after_n']} "
                 f"retries={result['spoiler_retries']} terms={result['future_terms_in_answer']} "
-                f"refusal={result['refusal']} {result['seconds']}s",
+                f"refusal={result['refusal']} usable={result['usable']} {result['seconds']}s",
                 flush=True,
             )
     conn.close()
     saver.conn.close()
-    return {"answers": len(results), "results": results}
+    usable = sum(bool(r.get("usable")) for r in results)
+    print(f"answers={len(results)} usable={usable}")
+    return {"answers": len(results), "usable": usable, "results": results}
 
 
 def main(argv: Optional[list[str]] = None) -> int:
