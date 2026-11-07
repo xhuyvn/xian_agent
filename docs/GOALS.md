@@ -104,6 +104,7 @@ Rounds:
 - R-1 2026-11-07: candidate `qwen3.5_12k:q8_mtp` in `xn.bench` (file-safe DB names, dotted-name report fix), 50 chapters with production setup next to a same-run production control, plus 4-worker runs of both: recall 0.95 / 0.95, precision 0.94 / 0.92, category 0.98 / 0.98, 10.7 vs 16.7 s/chapter (about 7.3 vs 11.5 h for 2,468), MTP acceptance 0.88, Ollama 0.40.15 gives both models 4 slots, 4 workers 5.7 vs 8.4 s/chapter; G-30 report -> PASS, 0 blockers, 061f765, 0 agy tokens; NITs: "within run-to-run variation" is not measured (one run each), older table cells copied from earlier sections, a warm-up MTP call at 23:30 excluded from the count but not mentioned
 Changes:
 - 2026-11-07: owner approved the goal and the plan ("Go")
+- 2026-11-08: owner approved the production switch ("Yes, switch S1"): `configs/config.yaml` `models.s1_extractor` `name` and `serving_name` become `qwen3.5_12k:q8_mtp`; prompt v4, the `s1.postprocess` block and `local_extractor` (`qwen3.8:udiq4_hui`) stay. S1 skips done chapters by input hash and prompt version, not by model, so the switch must land before S4-T1's S1 run
 
 ## Parked
 

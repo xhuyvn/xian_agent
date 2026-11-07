@@ -17,9 +17,10 @@ models:
     output_mode: "native"
     think: false
   # G-27.1: S1 runs on qwen3.5; the router, S2, S5 and prefix keep local_extractor.
+  # G-30 (owner yes, 2026-11-08): the owner-built Q8_0 MTP model, 10.7 s/chapter vs 16.7.
   s1_extractor:
-    name: "qwen3.5:9b_UD_Q6"
-    serving_name: "qwen35-9b-udq6-10k"
+    name: "qwen3.5_12k:q8_mtp"
+    serving_name: "qwen3.5_12k:q8_mtp"
     base_url: "http://localhost:11434/v1"
     temperature: 0.1
     output_mode: "native"
