@@ -6,6 +6,7 @@ import copy
 from dataclasses import asdict, dataclass
 import json
 import multiprocessing
+import re
 from pathlib import Path
 import sqlite3
 import statistics
@@ -48,6 +49,8 @@ CANDIDATES = (
     Candidate("qwen25-14b-10k", "qwen2.5:14b-instruct"),
     Candidate("qwen25-14b-16k", "qwen2.5:14b-instruct"),
     Candidate("qwen35-9b-udq6-10k", "qwen3.5:9b_UD_Q6", think=False),
+    # G-30: the owner built this model in Ollama (Q8_0, MTP draft 2, num_ctx 12240); no Modelfile here.
+    Candidate("qwen3.5_12k:q8_mtp", "qwen3.5_12k:q8_mtp", think=False),
 )
 GOLD_SPLITS = ("all", "dev", "held_out")
 
@@ -68,6 +71,16 @@ class ModelResult:
     baseline_vram_mib: int | None
     peak_vram_mib: int | None
     chars_per_token: float | None
+
+
+def db_stem(serving_name: str) -> str:
+    """Return the serving name as a file name stem: characters Windows forbids become '-'."""
+    return re.sub(r'[<>:"/\|?*]', "-", serving_name)
+
+
+def parallel_report_path(out_dir: Path, serving_name: str, workers: int, suffix: str) -> Path:
+    """Return the parallel report path; built by name, since a dot in the model name breaks with_suffix."""
+    return out_dir / f"parallel-{db_stem(serving_name)}-w{workers}{suffix}"
 
 
 def select_candidates(names: list[str] | None) -> tuple[Candidate, ...]:
@@ -433,7 +446,7 @@ def run_benchmark(
     scored: dict[str, dict[str, Any]] = {}
     for candidate in candidates:
         name = candidate.serving_name
-        conn = connect(out_dir / f"{name}.db")
+        conn = connect(out_dir / f"{db_stem(name)}.db")
         try:
             init_schema(conn)
             repo = Repository(conn)
@@ -601,7 +614,7 @@ def run_parallel(
     chapters = sorted(chapters)
     shares = [chapters[i::workers] for i in range(workers)]
     out_dir.mkdir(parents=True, exist_ok=True)
-    paths = [out_dir / f"{name}-w{workers}-{i + 1}.db" for i in range(workers)]
+    paths = [out_dir / f"{db_stem(name)}-w{workers}-{i + 1}.db" for i in range(workers)]
     for path in paths:
         conn = connect(path)
         try:
@@ -642,12 +655,11 @@ def run_parallel(
         baseline_vram_mib=baseline, peak_vram_mib=peak.peak,
     )
     scores = score_gold(gold, payloads) if gold is not None else None
-    stem = out_dir / f"parallel-{name}-w{workers}"
     report = render_parallel(result)
     if scores is not None:
         report += "\n" + render_gold({name: scores})
-    stem.with_suffix(".md").write_text(report, encoding="utf-8")
-    stem.with_suffix(".json").write_text(
+    parallel_report_path(out_dir, name, workers, ".md").write_text(report, encoding="utf-8")
+    parallel_report_path(out_dir, name, workers, ".json").write_text(
         json.dumps(
             {"chapters": chapters, "shares": shares, "result": asdict(result), "gold": scores},
             ensure_ascii=False, indent=2,
@@ -703,8 +715,8 @@ def main(
             config=config, raw_dir=raw_dir, out_dir=out_dir, chapter_max=chapter_max, candidate=candidates[0],
             chapters=chapters or pick_chapters(chapter_max, count), workers=workers, gold=gold,
         )
-        stem = out_dir / f"parallel-{result.serving_name}-w{workers}"
-        typer.echo(stem.with_suffix(".md").read_text(encoding="utf-8"))
+        report_path = parallel_report_path(out_dir, result.serving_name, workers, ".md")
+        typer.echo(report_path.read_text(encoding="utf-8"))
         return
     run_benchmark(
         config=config, raw_dir=raw_dir, out_dir=out_dir, chapter_max=chapter_max, count=count,
