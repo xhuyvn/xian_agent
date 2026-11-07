@@ -92,7 +92,11 @@ Changes:
 - 2026-11-06: owner approved sub-goal G-27.1, the S1-only model split ("Go")
 - 2026-11-06: owner approved the production switch ("Yes, switch it"): `configs/config.yaml` gains `models.s1_extractor` = `qwen3.5:9b_UD_Q6` (`qwen35-9b-udq6-10k`), `prompts.s1_extract: v4` and the `s1.postprocess` block (all three fixes on); `local_extractor` stays `qwen3.8:udiq4_hui` for the router, S2, S5 and prefix. `xn run --stage s1 --stale-only` now compares jobs against the clean-up-aware hash, and the runner tests' fixture names the protagonist mid-sentence so the name filter keeps him. The existing ingests are not re-run here: v4 makes S1 redo every chapter (about 12 h for 2,468), then S2 needs `--rebuild`
 
-### G-30: benchmark `qwen3.5_12k:q8_mtp` against production S1 (`qwen35-9b-udq6-10k`) on S1 extraction (active)
+## Parked
+
+## Archive
+
+### G-30: benchmark `qwen3.5_12k:q8_mtp` against production S1 (`qwen35-9b-udq6-10k`) on S1 extraction (done)
 Plan: chat plan of 2026-11-07, from the S4-T1 planning session, to decide which model runs the 12 h S1 of S4-T1. Follows G-25, G-26, G-27 and G-27.1. Cut from `main` at 1551d08.
 Owner decisions: the lead writes the code, no agy in Sprint 4 (2026-11-07). The model already exists in Ollama as the owner built it (Q8_0, MTP draft 2, `num_ctx 12240`); nothing is created, pulled or downloaded. Same 50 chapters as G-25 (20 gold + 30 others from 1-100), production setup: prompt v4, `s1.postprocess` on, temperature 0.1, thinking off, one chapter at a time, GPU checked free first. Databases go to new folders under `data/bench/`, never `data/eval/*.db`. `configs/config.yaml`, `eval/`, the prompts and production S1 stay unchanged; any switch is the owner's decision.
 Done when:
@@ -105,10 +109,7 @@ Rounds:
 Changes:
 - 2026-11-07: owner approved the goal and the plan ("Go")
 - 2026-11-08: owner approved the production switch ("Yes, switch S1"): `configs/config.yaml` `models.s1_extractor` `name` and `serving_name` become `qwen3.5_12k:q8_mtp`; prompt v4, the `s1.postprocess` block and `local_extractor` (`qwen3.8:udiq4_hui`) stay. S1 skips done chapters by input hash and prompt version, not by model, so the switch must land before S4-T1's S1 run
-
-## Parked
-
-## Archive
+- 2026-11-08: owner marked G-30 done ("Yes, mark done") after PASS on R-1 and the delta PASS on the switch, with every Done-when line met, PR xhuyvn/xian_agent#36
 
 ### G-28: S3-T5 timeline and deep-dive evidence under the 20k cap (done)
 Plan: `docs/IMPLEMENTATION_PLAN.md` S3-T5, blueprint §3.3 `retrieve`, §3.4 L2/L3, chat plan of 2026-11-07. Cut from `cld/sprint-3-tasks-60f7ab` (after G-22, G-23, G-24). PR into that branch while PR #34 is open.
