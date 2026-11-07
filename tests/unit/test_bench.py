@@ -20,6 +20,7 @@ from xn.bench import (
     Candidate,
     ModelResult,
     choose_winner,
+    db_stem,
     pick_chapters,
     pick_gold_chapters,
     render_gold,
@@ -341,7 +342,7 @@ def test_render_gold_marks_missing_splits() -> None:
 
 
 def parallel_fake(
-    tmp_path: Path, model: Any, *, workers: int = 2, chapters: list[int] | None = None
+    tmp_path: Path, model: Any, *, workers: int = 2, chapters: list[int] | None = None, name: str = "m"
 ) -> tuple[Any, ...]:
     raw_dir = tmp_path / "raw"
     if not raw_dir.exists():
@@ -355,7 +356,7 @@ def parallel_fake(
 
     result, scores = run_parallel(
         config=make_config(), raw_dir=raw_dir, out_dir=tmp_path / "out", chapter_max=3,
-        candidate=Candidate("m", "m"), chapters=chapters or [1, 2, 3], workers=workers,
+        candidate=Candidate(name, name), chapters=chapters or [1, 2, 3], workers=workers,
         gold=make_gold([1, 3]), prompts_dir=Path("prompts"),
         read_vram=lambda: 5000, unload=lambda name: None, spawn=spawn,
     )
@@ -482,3 +483,36 @@ def test_main_passes_prompt_and_dev_split_to_the_run(tmp_path: Path, monkeypatch
             raw_dir=tmp_path, out_dir=out, chapter_max=100, count=50, novel="pntt1", model=None,
             gold_set=False, extra_chapters=30, workers=1, prompt=None, gold_split_name="dev",
         )
+
+
+def test_qwen35_q8_mtp_candidate_runs_the_owner_built_model_without_thinking() -> None:
+    (picked,) = select_candidates(["qwen3.5_12k:q8_mtp"])
+    assert picked.base_name == picked.serving_name == "qwen3.5_12k:q8_mtp"
+    assert picked.think is False and picked.output_mode == "native"
+    config = make_config()
+    config["models"]["s1_extractor"] = {"name": "s1", "serving_name": "s1-10k", "think": True}
+    cfg = bench._candidate_config(config, picked)
+    for key in ("local_extractor", "s1_extractor"):
+        assert cfg["models"][key]["serving_name"] == "qwen3.5_12k:q8_mtp"
+        assert cfg["models"][key]["think"] is False
+
+
+def test_db_stem_makes_serving_names_safe_file_names() -> None:
+    assert db_stem("qwen3.5_12k:q8_mtp") == "qwen3.5_12k-q8_mtp"
+    assert db_stem("hf.co/a/b:Q8_0") == "hf.co-a-b-Q8_0"
+    assert db_stem("qwen35-9b-udq6-10k") == "qwen35-9b-udq6-10k"
+
+
+def test_run_benchmark_saves_a_colon_name_under_a_safe_file_name(tmp_path: Path) -> None:
+    results, winner, _, _ = run_fake(tmp_path, {"tag:q8": fake_model(["Hàn Lập"])})
+    assert [r.serving_name for r in results] == ["tag:q8"] and winner == "tag:q8"
+    assert (tmp_path / "out" / "tag-q8.db").exists()
+    saved = json.loads((tmp_path / "out" / "report.json").read_text(encoding="utf-8"))
+    assert saved["results"][0]["serving_name"] == "tag:q8"
+
+
+def test_run_parallel_saves_a_colon_name_under_safe_file_names(tmp_path: Path) -> None:
+    parallel_fake(tmp_path, fake_model(["Hàn Lập"]), name="tag:q8")
+    out = tmp_path / "out"
+    assert (out / "tag-q8-w2-1.db").exists() and (out / "tag-q8-w2-2.db").exists()
+    assert (out / "parallel-tag-q8-w2.md").exists()
