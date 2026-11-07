@@ -124,7 +124,7 @@ Open items it found, none blocking. G-11 has since fixed the first five; the las
 
 Date: 2026-11-05. Goal: G-25.
 
-**`qwen2.5:14b-instruct` is 3.4 times faster, but its recall of 0.70 fails Sprint 1's 0.80 bar.** The production extractor stays `qwen3.8:udiq4_hui`. Nothing in config, the prompt or S1 changed. Running 2 chapters at once gave no speed-up, and a 16k context changed nothing but VRAM. A later run of `qwen3.5:9b_UD_Q6` did pass the recall bar, at 0.93, and is 2.1 times faster than production, but its precision is 0.79; see "`qwen3.5:9b_UD_Q6`" below.
+**`qwen2.5:14b-instruct` is 3.4 times faster, but its recall of 0.70 fails Sprint 1's 0.80 bar.** The production extractor stayed `qwen3.8:udiq4_hui` at the time (G-27 later switched it to `qwen3.5:9b_UD_Q6`). Nothing in config, the prompt or S1 changed. Running 2 chapters at once gave no speed-up, and a 16k context changed nothing but VRAM. A later run of `qwen3.5:9b_UD_Q6` did pass the recall bar, at 0.93, and is 2.1 times faster than production, but its precision is 0.79; see "`qwen3.5:9b_UD_Q6`" below.
 
 Both models ran prompt v2 (`6f35c798`) on the G-13 set: 50 chapters from 1-100, the 20 gold chapters plus 30 others. Gold scores cover the 20 gold chapters. `qwen2.5:14b-instruct` ran as `qwen25-14b-10k` (`ollama/Modelfile.qwen25-14b-10k`: `num_ctx 10240`, temperature 0.1), with native JSON-schema output, one chapter at a time, on an RTX 5070 Ti 16 GB with nothing else on the GPU. The production column is the G-10.1 full run in `data/eval/g101-full.db`, read only and restricted to the same 50 chapters. The owner chose not to run it again.
 
@@ -214,7 +214,7 @@ The owner asked for speed and quality of `qwen3.5:9b_UD_Q6` (8.95B, Q6_K, alread
 - **Category accuracy is lower**, at 0.82 against 0.91 for the others, so more events are filed under the wrong category.
 - **One run**, on 2026-11-05 in the evening. The vision projector of this model was not used. G-7's warning about `qwen3.5:Q8` writing event descriptions as names shows here too, in a milder form: 5 names were not in the chapter text. `qwen3.5:Q8` had 222 in G-7, but on a different chapter set and prompt v1, so the two are not like for like.
 
-**Recommendation:** production stays `qwen3.8:udiq4_hui`. `qwen3.5:9b_UD_Q6` passes the recall bar at about half production's time, about 11 hours for the book against 24. Whether to switch depends on whether a prompt change can cut its kinship and description names without losing recall, which would need its own goal and the owner's yes.
+**Recommendation (2026-11-05, superseded by G-27, which made `qwen3.5:9b_UD_Q6` with prompt v4 the production extractor):** production stays `qwen3.8:udiq4_hui`. `qwen3.5:9b_UD_Q6` passes the recall bar at about half production's time, about 11 hours for the book against 24. Whether to switch depends on whether a prompt change can cut its kinship and description names without losing recall, which would need its own goal and the owner's yes.
 
 ### How to read this
 
