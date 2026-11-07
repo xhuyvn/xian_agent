@@ -184,10 +184,17 @@ def build_digester(
     @agent.output_validator
     def check_words(output: EntityDigest) -> EntityDigest:
         words = len(output.digest.split())
-        if not settings.min_words <= words <= settings.max_words:
+        target = (settings.min_words + settings.max_words) // 2 - 15
+        # at a low temperature a bare "out of range" note gets the same text back, so say which way and how far
+        if words > settings.max_words:
             raise ModelRetry(
-                f"Đoạn digest có {words} từ; hãy viết lại thành một đoạn từ "
-                f"{settings.min_words} đến {settings.max_words} từ."
+                f"Đoạn digest có {words} từ, dài hơn giới hạn {settings.max_words} từ. Hãy viết lại NGẮN HƠN, "
+                f"khoảng {target} từ: bỏ chi tiết phụ, gộp các sự kiện giống nhau."
+            )
+        if words < settings.min_words:
+            raise ModelRetry(
+                f"Đoạn digest có {words} từ, ngắn hơn mức tối thiểu {settings.min_words} từ. Hãy viết lại DÀI HƠN, "
+                f"khoảng {target} từ, nêu rõ từng sự kiện."
             )
         return output
 
