@@ -102,7 +102,7 @@ Done when:
 - 12 `xn ask` answer probes (6 timeline, 6 Hàn Lập deep-dive, N inside 6 arcs) give 0 citations after N and 0 leaks, answers logged
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
-- none yet
+- R-1 2026-11-07: timeline and deep-dive packs, budget packer, synthesize v4, gate/verify/scan wiring and unit tests -> PASS, 0 blockers, 7b3c9ee, 0 agy tokens; NITs: the prefix view is never trimmed (a very long micro-summary tail could exceed the cap alone), chunks over 450 tokens are not split (as before), unit suite takes ~137 s
 Sub-goals:
 - none yet
 Changes:
