@@ -101,6 +101,7 @@ Done when:
 - A "G-30" section of `docs/S1_T9_EVAL.md` puts it next to production S1 and the earlier rows, with schema success, first-try rate, recall and precision (all 20, dev and held out apart), category, event type, flag F1, s/chapter mean and p95, idle and peak VRAM, estimated hours for 2,468 chapters, whether MTP changes speed, whether Ollama runs it with more than one slot, exact commands and caveats
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
+- R-1 2026-11-07: candidate `qwen3.5_12k:q8_mtp` in `xn.bench` (file-safe DB names, dotted-name report fix), 50 chapters with production setup next to a same-run production control, plus 4-worker runs of both: recall 0.95 / 0.95, precision 0.94 / 0.92, category 0.98 / 0.98, 10.7 vs 16.7 s/chapter (about 7.3 vs 11.5 h for 2,468), MTP acceptance 0.88, Ollama 0.40.15 gives both models 4 slots, 4 workers 5.7 vs 8.4 s/chapter; G-30 report -> PASS, 0 blockers, 061f765, 0 agy tokens; NITs: "within run-to-run variation" is not measured (one run each), older table cells copied from earlier sections, a warm-up MTP call at 23:30 excluded from the count but not mentioned
 Changes:
 - 2026-11-07: owner approved the goal and the plan ("Go")
 
