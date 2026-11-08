@@ -92,6 +92,18 @@ Changes:
 - 2026-11-06: owner approved sub-goal G-27.1, the S1-only model split ("Go")
 - 2026-11-06: owner approved the production switch ("Yes, switch it"): `configs/config.yaml` gains `models.s1_extractor` = `qwen3.5:9b_UD_Q6` (`qwen35-9b-udq6-10k`), `prompts.s1_extract: v4` and the `s1.postprocess` block (all three fixes on); `local_extractor` stays `qwen3.8:udiq4_hui` for the router, S2, S5 and prefix. `xn run --stage s1 --stale-only` now compares jobs against the clean-up-aware hash, and the runner tests' fixture names the protagonist mid-sentence so the name filter keeps him. The existing ingests are not re-run here: v4 makes S1 redo every chapter (about 12 h for 2,468), then S2 needs `--rebuild`
 
+### G-31: benchmark `qwen3.5_12k:q8_mtp` against `qwen3.8:udiq4_hui` as the S2 adjudicator (active)
+Plan: chat plan of 2026-11-08, from the S4-T1 run. S2 on pntt1 ran at about 13 s/chapter (664 chapters in 2.4 h) and gets slower as aliases grow, so the remaining 1,804 chapters would take 6.5 h or more. S2 runs chapters in order, so it cannot be split across workers; a faster model is the lever. Cut from this branch at 35d52e8.
+Owner decisions: the lead writes the code, no agy in Sprint 4. The G-29 run is stopped first (S2 at chapter 664) and resumed later, maybe with qwen3.5 on S2. Benchmarks use copies of `data/xn.db` under `data/bench/`; the live database is not written. The production config changes only on a separate owner yes.
+Done when:
+- An optional `models.s2_adjudicator` block (same shape as `local_extractor`) is used by the S2 adjudicator when set, and S2 records that model; without it nothing changes; the router, S5 and prefix keep `local_extractor`; unit tests on fake models
+- S2 is rebuilt on chapters 1-200 of a pntt1 database copy twice, once per model, with S3 and the gold report on each, and the router kept on `qwen3.8:udiq4_hui` for both
+- `docs/S2_BENCHMARK.md` gives s/chapter (mean, and for chapters 1-100 and 101-200), adjudicator calls, alias F1, Q&A citation hit rate, spoiler leaks, VRAM, a projected time for the remaining S2 of pntt1, exact commands and caveats, and its numbers match the databases
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+Changes:
+- 2026-11-08: owner approved the goal and asked to stop the G-29 run for it ("Approve the S2 qwen3.5 benchmark plan (new goal G-31) to run stop this run, we can resume it later maybe with qwen3.5")
+
 ### G-29: S4-T1 full ingestion of `pntt1`, chapters 1-2,468, with stop and resume (active)
 Plan: chat plan of 2026-11-07, approved with changes on 2026-11-08. `docs/IMPLEMENTATION_PLAN.md` S4-T1. Cut from `main` at f256455.
 Owner decisions:
@@ -111,6 +123,7 @@ Done when:
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
 - R-1 2026-11-08: `xn ingest`, `xn stop`, `xn status` and the `pipeline_runs` table, with unit tests on fake stages -> PASS, 0 blockers, f5d11df; NITs 1-2 (a chunk with stopped_at did not end s3/s4; a boundary stop resumed the finished stage) fixed in 1ce46d1 -> PASS (delta), 0 agy tokens; open NITs: the single-flight check and the run insert are not atomic (needs a unique live-run index for S4-T5), `pid_alive` has no ctypes argtypes and PID reuse can make a dead run look alive
+Pause 2026-11-08: S1 finished all 2,468 chapters (79.4 min on one worker, then about 4.8 h on four after the resume at about 02:07 UTC, ending about 06:54 UTC), 0 failed. S2 ran 664 chapters from about 06:54 to 09:18 UTC (about 13 s/chapter). The owner asked to stop for G-31. `xn stop` only lands between stages for S2, so the process was ended (taskkill) after chapter 664 was saved; chapter 665 is left `running` and is redone on resume, since S2 resumes at the first chapter that is not done. The S1 time of the resumed part and the S2 time so far were only in memory, so they come from the log and status checks above, not from `pipeline_runs`.
 Sub-goals:
 - G-29.1 (done): parallel S1 in `xn ingest`. G-30 found Ollama 0.40.15 gives `qwen3.5_12k:q8_mtp` 4 slots, and 4 workers ran at 5.7 s/chapter against 10.7 (about 3.9 h against 7.3 h for 2,468). `xn ingest --workers N` runs S1 chunks in N threads, each with its own SQLite connection on the same database (WAL); other stages stay one at a time. A stop lands after each worker's current chunk; resume works as before. The live run is stopped and resumed with 4 workers. The lead writes the code. One round.
   Done when:
@@ -125,6 +138,7 @@ Changes:
 - 2026-11-08: owner approved the plan with decisions 1-3, replaced decision 4 with stop and resume for later use in the web UI, and asked to check the S1 model
 - 2026-11-08: owner approved sub-goal G-29.1, parallel S1 workers ("yes, add it as sub-goal G-29.1")
 - 2026-11-08: owner marked G-29.1 done ("Yes") after the delta PASS at e19e52a and the live check at 7.00 s/chapter, every Done-when line met
+- 2026-11-08: owner asked to stop the run for G-31 and resume it later, maybe with qwen3.5 on S2
 
 ## Parked
 
