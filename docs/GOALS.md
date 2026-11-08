@@ -119,6 +119,7 @@ Changes:
 - 2026-11-08: owner approved sub-goal G-31.1, better S2 merges on qwen3.5, including title forms ("Go")
 - 2026-11-08: owner approved the cost of prompt v2: all of S2 becomes stale and the G-29 resume rebuilds S2 from chapter 1 on qwen3.5 (about 1-1.5 h)
 - 2026-11-08: owner chose "Keep working, deep dive and researching improve wrong merges" after the R-1 FAIL; R-2 keeps the Done-when lines, takes fresh held-out pairs from chapters 201-400 labelled blind (without model decisions), and the R-1 dev and held-out pairs become dev
+- 2026-11-08: after R-2 stopped at the two-round limit, owner chose "Test the hybrid": R-3 adds an optional confirmer model (qwen3.5 with the rules decides, qwen3.8 confirms its "same" answers) and checks it on fresh blind held-out pairs from chapters 401-600. The hybrid is expected to miss the "<= 1.5 s/call" line (about 2 s/call); changing that line needs a separate owner yes
 
 ### G-29: S4-T1 full ingestion of `pntt1`, chapters 1-2,468, with stop and resume (active)
 Plan: chat plan of 2026-11-07, approved with changes on 2026-11-08. `docs/IMPLEMENTATION_PLAN.md` S4-T1. Cut from `main` at f256455.
