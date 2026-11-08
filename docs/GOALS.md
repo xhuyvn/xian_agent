@@ -112,7 +112,7 @@ Done when:
 Rounds:
 - R-1 2026-11-08: `xn ingest`, `xn stop`, `xn status` and the `pipeline_runs` table, with unit tests on fake stages -> PASS, 0 blockers, f5d11df; NITs 1-2 (a chunk with stopped_at did not end s3/s4; a boundary stop resumed the finished stage) fixed in 1ce46d1 -> PASS (delta), 0 agy tokens; open NITs: the single-flight check and the run insert are not atomic (needs a unique live-run index for S4-T5), `pid_alive` has no ctypes argtypes and PID reuse can make a dead run look alive
 Sub-goals:
-- G-29.1 (active): parallel S1 in `xn ingest`. G-30 found Ollama 0.40.15 gives `qwen3.5_12k:q8_mtp` 4 slots, and 4 workers ran at 5.7 s/chapter against 10.7 (about 3.9 h against 7.3 h for 2,468). `xn ingest --workers N` runs S1 chunks in N threads, each with its own SQLite connection on the same database (WAL); other stages stay one at a time. A stop lands after each worker's current chunk; resume works as before. The live run is stopped and resumed with 4 workers. The lead writes the code. One round.
+- G-29.1 (done): parallel S1 in `xn ingest`. G-30 found Ollama 0.40.15 gives `qwen3.5_12k:q8_mtp` 4 slots, and 4 workers ran at 5.7 s/chapter against 10.7 (about 3.9 h against 7.3 h for 2,468). `xn ingest --workers N` runs S1 chunks in N threads, each with its own SQLite connection on the same database (WAL); other stages stay one at a time. A stop lands after each worker's current chunk; resume works as before. The live run is stopped and resumed with 4 workers. The lead writes the code. One round.
   Done when:
   - With `--workers 1` (the default) ingest behaves exactly as in R-1, with the R-1 tests unchanged
   - With `--workers N`, S1 chunks run in N threads on their own connections, every chunk runs once, failures and exceptions are counted, a stop ends the stage after the running chunks, and unit tests cover it on a file database
@@ -124,6 +124,7 @@ Sub-goals:
 Changes:
 - 2026-11-08: owner approved the plan with decisions 1-3, replaced decision 4 with stop and resume for later use in the web UI, and asked to check the S1 model
 - 2026-11-08: owner approved sub-goal G-29.1, parallel S1 workers ("yes, add it as sub-goal G-29.1")
+- 2026-11-08: owner marked G-29.1 done ("Yes") after the delta PASS at e19e52a and the live check at 7.00 s/chapter, every Done-when line met
 
 ## Parked
 
