@@ -92,6 +92,30 @@ Changes:
 - 2026-11-06: owner approved sub-goal G-27.1, the S1-only model split ("Go")
 - 2026-11-06: owner approved the production switch ("Yes, switch it"): `configs/config.yaml` gains `models.s1_extractor` = `qwen3.5:9b_UD_Q6` (`qwen35-9b-udq6-10k`), `prompts.s1_extract: v4` and the `s1.postprocess` block (all three fixes on); `local_extractor` stays `qwen3.8:udiq4_hui` for the router, S2, S5 and prefix. `xn run --stage s1 --stale-only` now compares jobs against the clean-up-aware hash, and the runner tests' fixture names the protagonist mid-sentence so the name filter keeps him. The existing ingests are not re-run here: v4 makes S1 redo every chapter (about 12 h for 2,468), then S2 needs `--rebuild`
 
+### G-29: S4-T1 full ingestion of `pntt1`, chapters 1-2,468, with stop and resume (active)
+Plan: chat plan of 2026-11-07, approved with changes on 2026-11-08. `docs/IMPLEMENTATION_PLAN.md` S4-T1. Cut from `main` at f256455.
+Owner decisions:
+- The lead writes the code, no agy in Sprint 4 (2026-11-07).
+- Database `data/xn.db` in the main checkout. The pntt1 points in Qdrant `xn_chunks` and `xn_arcs` (704 old chunk points) are deleted before the run.
+- `daily_spend_cap_usd` is raised to 2.00 for this run only, then set back to 1.00.
+- Over 20 h: the run goes on and the time is reported. It must be stoppable and resumable: `xn stop` asks a running ingest to stop at the next safe point, and `xn ingest --resume` continues it, skipping finished work. Run state lives in a new `pipeline_runs` table (status, current stage, progress, stage times, stop request) so the S4-T5 `/v1/pipeline/runs` endpoints and the S4-T7 web UI can show and manage long runs later.
+- S1 runs on `qwen3.5_12k:q8_mtp` (G-30 switch, PR xhuyvn/xian_agent#36); the run checks this before starting.
+- Two rounds: R-1 code and unit tests, R-2 the live run and `docs/S4_T1_RUN.md`.
+Done when:
+- `xn ingest --novel pntt1` runs s0, s1, s2, s3, s4, s5, s6, prefix, s7 in order, records the run in `pipeline_runs`, stops at the first stage with failures, and refuses a second run while one is live
+- `xn stop --novel pntt1` stops a running ingest within one chunk (50 chapters) on s1, s3 and s4, and at the next stage boundary on the others; `xn ingest --novel pntt1 --resume` continues from the stopped stage; unit tests with fake stages cover order, stop, resume, failure and single-flight
+- `xn status --novel pntt1` prints the run's state and stage times, done and failed jobs per stage, failed chapters, and cloud spend today and in total
+- All 2,468 chapters are `done` for s0-s4, every arc has s6, prefix and s7 output, and 0 jobs are `failed`
+- Cloud spend for the run is <= $5; wall time is reported, a miss of 20 h is stated as a miss
+- `docs/S4_T1_RUN.md` gives stage times, spend, failures and how they were cleared, row counts, commands and caveats, and its numbers match the database
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+- none yet
+Sub-goals:
+- none yet
+Changes:
+- 2026-11-08: owner approved the plan with decisions 1-3, replaced decision 4 with stop and resume for later use in the web UI, and asked to check the S1 model
+
 ## Parked
 
 ## Archive
