@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -237,9 +238,20 @@ def test_workers_one_matches_the_sequential_path(file_repo) -> None:
 
 def test_a_stop_ends_the_parallel_stage_after_running_chunks(file_repo) -> None:
     repo, open_repo = file_repo
-    fake = FakeStages(repo, stop_after=("s1", 1))
+    stop_sent = threading.Event()
+    inner = FakeStages(repo, stop_after=("s1", 1))
+
+    def fake(wrepo: Repository, *, stage: str, chapter_from: int = 1, **kw: Any) -> Any:
+        if stage == "s1" and chapter_from != 1:
+            assert stop_sent.wait(5)
+        result = inner(wrepo, stage=stage, chapter_from=chapter_from, **kw)
+        if stage == "s1" and chapter_from == 1:
+            stop_sent.set()
+        return result
+
     result = run_ingest(repo, novel_id="n", config=CONFIG, run_stage_fn=fake, chunk=10, workers=2,
                         open_repo=open_repo, pid=1)
+    fake.calls = inner.calls  # type: ignore[attr-defined]
     assert result.status == "stopped" and result.stage == "s1"
     assert len([c for c in fake.calls if c[0] == "s1"]) < 12
     assert "s2" not in [c[0] for c in fake.calls]
@@ -257,3 +269,16 @@ def test_workers_need_a_connection_factory(repo: Repository) -> None:
         run_ingest(repo, novel_id="n", config=CONFIG, run_stage_fn=FakeStages(repo), workers=2)
     with pytest.raises(IngestError, match="workers must be"):
         run_ingest(repo, novel_id="n", config=CONFIG, run_stage_fn=FakeStages(repo), workers=0)
+
+
+def test_each_thread_gets_its_own_local_model() -> None:
+    from xn.llm import local_model
+
+    cfg = {"models": {"local_extractor": {"serving_name": "m", "base_url": "http://x/v1"}}}
+    here = local_model(cfg)
+    assert local_model(cfg) is here  # cached within a thread
+    other: list[Any] = []
+    t = threading.Thread(target=lambda: other.extend([local_model(cfg), local_model(cfg)]))
+    t.start()
+    t.join()
+    assert other[0] is other[1] and other[0] is not here

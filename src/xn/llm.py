@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from html import escape
 import logging
+import threading
 import time
 from typing import Any, Callable, Literal
 import uuid
@@ -24,7 +25,9 @@ from xn.text import estimate_tokens
 
 logger = logging.getLogger(__name__)
 
-_MODEL_CACHE: dict[tuple[str, str], OpenAIChatModel] = {}
+# One cache per thread (G-29.1): a model's HTTP client is bound to the event loop of the thread
+# that first used it, so S1 worker threads must not share one.
+_MODEL_CACHE = threading.local()
 
 CLOUD_TIMEOUT_S = 90.0
 CLOUD_RETRIES = 3
@@ -132,11 +135,12 @@ def local_model(config: dict[str, Any], key: str = LOCAL_KEY) -> OpenAIChatModel
         raise ValueError(f"Missing required config key: models.{key}.serving_name")
     base_url = models_cfg.get("base_url") or "http://localhost:11434/v1"
 
+    cache: dict[tuple[str, str], OpenAIChatModel] = _MODEL_CACHE.__dict__.setdefault("models", {})
     cache_key = (serving_name, base_url)
-    if cache_key not in _MODEL_CACHE:
+    if cache_key not in cache:
         provider = OpenAIProvider(base_url=base_url, api_key="ollama")
-        _MODEL_CACHE[cache_key] = OpenAIChatModel(serving_name, provider=provider)
-    return _MODEL_CACHE[cache_key]
+        cache[cache_key] = OpenAIChatModel(serving_name, provider=provider)
+    return cache[cache_key]
 
 
 def cloud_model(model_name: str) -> OpenRouterModel:
