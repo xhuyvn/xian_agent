@@ -149,7 +149,7 @@ S2 rebuilt on chapters 1-200 of a fresh copy (`data/bench/g311-final/`) with the
 | Spoiler leaks | 0 of 10 | 0 of 10 | 0 of 10 |
 | S2 adjudication calls, s/call | 201, 0.71 | 176, 0.80 | 178, 6.36 |
 
-S2 took 2.5 min (10:55:15 to 10:57:42 UTC). The title rule adds the gold matches "Lệ Phi Vũ / Lệ sư huynh", "Lệ Phi Vũ / Lệ đại đường chủ", "Cổ Thiên Long / Cổ bang chủ", "Hàn Lập / Hàn sư huynh", "Hàn Lập / Hàn đại phu", "Hàn Lập / Hàn tiểu đại phu" and "Hắc Hùng / Hắc gia", with no gold false merge. Still missed: forms whose candidate is itself a title form ("Mặc đại phu / Mặc lão"), nicknames ("Anh ngố", "cự hán") and hidden identities.
+S2 took 2.5 min (10:55:15 to 10:57:42 UTC). The title rule adds the gold matches "Lệ Phi Vũ / Lệ sư huynh", "Lệ Phi Vũ / Lệ đại đường chủ", "Cổ Thiên Long / Cổ bang chủ", "Hàn Lập / Hàn sư huynh", "Hàn Lập / Hàn đại phu", "Hàn Lập / Hàn tiểu đại phu" and "Hắc Hùng / Hắc gia", with no gold false merge. Still missed: title forms the adjudicator judged different ("Hàn sư đệ", "Hàn thần y", "Vương môn chủ", "Vương đại môn chủ", "Cổ đại bang chủ", "Trương cô nương"), forms whose candidate is itself a title form ("Mặc đại phu / Mặc lão"), nicknames ("Anh ngố", "cự hán", "cái bình") and hidden identities ("Kim Quang thượng nhân / Chu Nho", "Mặc Cư Nhân").
 
 ### Caveats
 

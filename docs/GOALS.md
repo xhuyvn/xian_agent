@@ -112,6 +112,7 @@ Sub-goals:
   - Without the new settings, S2 runs as before (unit tests); new rules and candidates have unit tests on fake models
   - `py -m compileall -q src` and `uv run pytest tests/unit` pass
   Rounds:
+  - R-1 2026-11-08: labelled pair set (ac92302, e119f5d), opt-in `s2_rules` (generic words on the mention, title forms merged on exactly one "same"), prompt v2 tried and dropped, replays on dev, one held-out run, full rebuild 1-200 + S3 + S4 + gold (6e3f4b8): gold alias F1 0.806 (precision 1.00), Q&A 1.00, 0 leaks, 0.71 s/call; held-out accuracy 0.866 against 0.817 for qwen3.8, but 6 false merges against 4, so the held-out false-merge line is not met -> verifier pending
 Changes:
 - 2026-11-08: owner approved the goal and asked to stop the G-29 run for it ("Approve the S2 qwen3.5 benchmark plan (new goal G-31) to run stop this run, we can resume it later maybe with qwen3.5")
 - 2026-11-08: owner approved sub-goal G-31.1, better S2 merges on qwen3.5, including title forms ("Go")
