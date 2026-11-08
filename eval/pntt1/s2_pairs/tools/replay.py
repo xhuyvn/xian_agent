@@ -35,7 +35,7 @@ out, t0 = [], time.monotonic()
 for p in pairs:
     m = Mention(name=p["name"], category=p["category"], chapter_id=p["chapter_id"], context=p["context"])
     c = Candidate(entity_id=p["cand_entity"], aliases=p["cand_aliases"], contexts=p["cand_contexts"])
-    ruled = rules is not None and (rules.is_generic(normalize_alias(p["name"])) or (not a.mention_only and all(rules.is_generic(x) for x in p["cand_aliases"])))
+    ruled = rules is not None and (rules.is_generic(normalize_alias(p["name"])) or rules.blocks(normalize_alias(p["name"]), p["cand_aliases"], p["category"]) or (not a.mention_only and all(rules.is_generic(x) for x in p["cand_aliases"])))
     calls, t = 0, time.monotonic()
     if ruled:
         d = False
