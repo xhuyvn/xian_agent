@@ -27,6 +27,41 @@ AUTO_MATCH_SCORE = 92
 ADJUDICATE_MIN_SCORE = 80
 MAX_ADJUDICATIONS = 3
 CONTEXTS_PER_ENTITY = 3
+MAX_TITLE_CANDIDATES = 3
+
+
+@dataclass(frozen=True)
+class S2Rules:
+    r"""Optional S2 matching rules from the config's s2_rules block (G-31.1).
+
+    generic_terms: normalized common nouns (e.g. "phù lục", "chưởng môn") that never merge into
+    another entity and that no entity is merged into when it has only such aliases.
+    titles: normalized title words; a character mention "<surname> <title>" is sent to the
+    adjudicator with the named characters of that surname.
+    """
+
+    generic_terms: frozenset[str] = frozenset()
+    titles: frozenset[str] = frozenset()
+
+    def is_generic(self, norm: str) -> bool:
+        return norm in self.generic_terms
+
+    def title_surname(self, norm: str) -> str | None:
+        r"""Return the surname of a "<surname> <title>" name, else None."""
+        tokens = norm.split()
+        if len(tokens) >= 2 and " ".join(tokens[1:]) in self.titles:
+            return tokens[0]
+        return None
+
+
+def s2_rules_from_config(config: dict[str, Any]) -> S2Rules | None:
+    r"""Build S2Rules from config["s2_rules"], or None when the block is absent or empty."""
+    block = config.get("s2_rules") or {}
+    generic = frozenset(n for n in (normalize_alias(t) for t in block.get("generic_terms") or []) if n)
+    titles = frozenset(n for n in (normalize_alias(t) for t in block.get("titles") or []) if n)
+    if not generic and not titles:
+        return None
+    return S2Rules(generic_terms=generic, titles=titles)
 
 
 def _fuzzy_score(a: str, b: str) -> float:
@@ -93,8 +128,10 @@ class Resolver:
         first_entity_id: int = 1,
         seed_aliases: list[dict[str, Any]] | None = None,
         adjudicate: Callable[[Mention, Candidate], bool] | None = None,
+        rules: S2Rules | None = None,
     ) -> None:
         self._first_entity_id = first_entity_id
+        self._rules = rules
         self._next_entity_id = first_entity_id
         self._adjudicate = adjudicate
 
@@ -273,6 +310,36 @@ class Resolver:
                 self._entity_aliases[entity_id].append(norm)
             self._entity_category[entity_id] = category
 
+    def _apply_rules(
+        self,
+        *,
+        norm: str,
+        category: str,
+        exclude: frozenset[int],
+        candidates: list[tuple[int, float]],
+    ) -> tuple[list[tuple[int, float]], list[int]]:
+        r"""Drop generic matches and add title-form candidates (G-31.1)."""
+        rules = self._rules
+        assert rules is not None
+        if rules.is_generic(norm):
+            return [], []
+        kept = [
+            (eid, sc) for eid, sc in candidates
+            if not all(rules.is_generic(al) for al in self._entity_aliases.get(eid, []))
+        ]
+        surname = rules.title_surname(norm) if category == "character" else None
+        if surname is None:
+            return kept, []
+        named: set[int] = set()
+        for (cat, alias), eid in self._aliases.items():
+            if cat != category or eid in exclude:
+                continue
+            tokens = alias.split()
+            if len(tokens) >= 2 and tokens[0] == surname and rules.title_surname(alias) is None:
+                named.add(eid)
+        ranked = sorted(named, key=lambda eid: (-self._last_chapter_seen.get(eid, 0), eid))
+        return kept, ranked[:MAX_TITLE_CANDIDATES]
+
     def resolve(
         self,
         *,
@@ -410,10 +477,19 @@ class Resolver:
                 if best_sc >= ADJUDICATE_MIN_SCORE:
                     candidates_for_adjudication.append((eid, best_sc))
 
+        # Step 4b: optional rules (G-31.1)
+        title_candidates: list[int] = []
+        if self._rules is not None:
+            candidates_for_adjudication, title_candidates = self._apply_rules(
+                norm=norm, category=category, exclude=exclude, candidates=candidates_for_adjudication
+            )
+
         # Step 5: Adjudication
-        if candidates_for_adjudication:
+        if candidates_for_adjudication or title_candidates:
             candidates_for_adjudication.sort(key=lambda item: (-item[1], item[0]))
             top_candidates = candidates_for_adjudication[:MAX_ADJUDICATIONS]
+            top_ids = {eid for eid, _ in top_candidates}
+            top_candidates += [(eid, 0.0) for eid in title_candidates if eid not in top_ids]
 
             mention_obj = Mention(
                 name=name,
@@ -681,9 +757,10 @@ def run_s2(
         repo, novel_id=novel_id, config=config, model=model, prompt=prompt
     )
 
-    # 2. Seed aliases and identity links
+    # 2. Seed aliases, identity links and optional rules
     seed_aliases = config.get("seed_aliases") or []
     identity_links = config.get("identity_links") or []
+    rules = s2_rules_from_config(config)
 
     # 3. If rebuild, clear resolution
     if rebuild:
@@ -695,11 +772,10 @@ def run_s2(
     extractions_by_id = {row["chapter_id"]: row for row in extractions}
 
     # 5. input_hash computation
-    meta_json = json.dumps(
-        {"seed_aliases": seed_aliases, "identity_links": identity_links},
-        sort_keys=True,
-        ensure_ascii=False,
-    )
+    meta: dict[str, Any] = {"seed_aliases": seed_aliases, "identity_links": identity_links}
+    if rules is not None:  # only when set, so hashes without rules stay as before
+        meta["s2_rules"] = {"generic_terms": sorted(rules.generic_terms), "titles": sorted(rules.titles)}
+    meta_json = json.dumps(meta, sort_keys=True, ensure_ascii=False)
 
     def compute_input_hash(payload_str: str) -> str:
         return hashlib.sha256((payload_str + "\0" + meta_json).encode("utf-8")).hexdigest()
@@ -764,6 +840,7 @@ def run_s2(
         first_entity_id=repo.next_entity_id(novel_id=novel_id),
         seed_aliases=seed_aliases,
         adjudicate=adjudicator,
+        rules=rules,
     )
 
     stored_aliases = repo.list_aliases(novel_id=novel_id, chapter_max=k - 1)
