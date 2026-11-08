@@ -117,6 +117,7 @@ Changes:
 - 2026-11-08: owner approved the goal and asked to stop the G-29 run for it ("Approve the S2 qwen3.5 benchmark plan (new goal G-31) to run stop this run, we can resume it later maybe with qwen3.5")
 - 2026-11-08: owner approved sub-goal G-31.1, better S2 merges on qwen3.5, including title forms ("Go")
 - 2026-11-08: owner approved the cost of prompt v2: all of S2 becomes stale and the G-29 resume rebuilds S2 from chapter 1 on qwen3.5 (about 1-1.5 h)
+- 2026-11-08: owner chose "Keep working, deep dive and researching improve wrong merges" after the R-1 FAIL; R-2 keeps the Done-when lines, takes fresh held-out pairs from chapters 201-400 labelled blind (without model decisions), and the R-1 dev and held-out pairs become dev
 
 ### G-29: S4-T1 full ingestion of `pntt1`, chapters 1-2,468, with stop and resume (active)
 Plan: chat plan of 2026-11-07, approved with changes on 2026-11-08. `docs/IMPLEMENTATION_PLAN.md` S4-T1. Cut from `main` at f256455.
