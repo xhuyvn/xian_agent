@@ -175,3 +175,26 @@ uv run py -I eval/pntt1/s2_pairs/tools/replay.py --configs <data>/bench/g31-q38/
 ```
 
 Title pairs are scored per mention: the merge counts only when exactly one candidate is "same". The full rebuild is `tools/final_rebuild.sh` (S2, S3, S4 and the gold report, as in G-31). All replay outputs are in `<data>/bench/g311/replay/`.
+
+### G-31.1 R-2: guards against false merges, blind held-out
+
+Date: 2026-11-08. The owner asked to keep working on false merges after R-1.
+
+**Result: R-2 fails the held-out line, and the held-out reverses R-1's picture. On 148 blind-labelled pairs from chapters 201-400, qwen3.5 with all rules makes 15 false merges against 7 for production qwen3.8 (accuracy 0.878 against 0.919). The guards that removed 7 of 10 false merges on dev did not carry over: chapters 201-400 bring other error shapes.**
+
+What was tried, on dev (all 195 R-1 pairs):
+- **Confidence threshold.** Token logprobs give P(same) for every call (`tools/replay_prob.py`). qwen3.5's false merges sit at 0.72-0.998, mostly above 0.96 like its true matches, so a threshold that removes them removes many true matches first (0.98: 5 false merges, 32 missed, against 9 and 14 at 0.5). Not used.
+- **Guards** (config `s2_rules`, code `S2Rules.blocks`, 16 unit tests), each ruling a candidate out before the adjudicator: a type clash (place against event, talisman against technique, by the name's type word or a marker word such as "phù"); a distinct name word (same type word and length, a differing word at edit distance >= 4 without diacritics); a place inside the candidate place (two or more extra words); and for characters, the same surname with titles of different ranks. On dev with the generic and title rules: false merges 10 -> 3, missed 14 -> 16, accuracy 0.877 -> 0.903.
+
+Held-out 2 (`eval/pntt1/s2_pairs/heldout2_pairs.jsonl`): a fixed random sample of 160 of the 481 pairs S2 sent to the adjudicator on chapters 201-400 (seed 31), labelled without seeing any model decision; 22 same, 126 different, 12 unclear. One run each:
+
+| Held-out 2 (148 pairs) | Accuracy | False merges | Missed |
+|---|---|---|---|
+| qwen3.8, v1, no rules (production) | 0.919 | 7 | 5 |
+| qwen3.5, v1, all rules | 0.878 | 15 | 3 |
+
+(qwen3.8 counts title-rule pairs as "different", since without rules they never reach it; counted as answered, it has 9 false merges and 4 missed, accuracy 0.912.) Most qwen3.5 false merges on held-out 2 are a name that extends or shortens a generic or near-generic candidate: "đan dược màu phấn hồng" / "đan dược", "phù lục màu xanh" / "phù lục", "Khôi lỗi thú" / "đôi khôi lỗi thú", "Huyết Thị" / "Huyết Thị đại nhân", "Tứ đại huyết thị" / "huyết thị", "Linh thuật" / "Tụ linh thuật", "Hoa Phương" / "phương". qwen3.8 is more conservative on these.
+
+**Exploratory, computed after the held-out was scored (not a tuned or confirmed result):** a hybrid where qwen3.5 with the rules decides first and only its "same" answers go to qwen3.8 for confirmation would have made 5 false merges and 6 missed on held-out 2 (accuracy 0.926), calling qwen3.8 on 34 of 148 pairs; on the R-1 pairs (no rules) it gives 5 false merges but 25 missed (accuracy 0.821). With qwen3.8 on about a quarter of calls, mean latency would be about 2.3 s/call against 6.4. Confirming it needs fresh held-out pairs.
+
+Commands: `tools/record_heldout2.py` (S2 rebuild 1-400 with the R-1 setup, records pairs from chapter 201), `tools/replay.py --configs <data>/bench/g311r2/configs --prompt v1 --rules --mention-only --pairs eval/pntt1/s2_pairs/heldout2_pairs.jsonl` and the same with `--configs <data>/bench/g31-q38/configs` and no `--rules` for qwen3.8. Outputs in `<data>/bench/g311r2/`.
