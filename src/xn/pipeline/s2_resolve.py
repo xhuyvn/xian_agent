@@ -30,6 +30,17 @@ CONTEXTS_PER_ENTITY = 3
 MAX_TITLE_CANDIDATES = 3
 
 
+def _edit_distance(a: str, b: str) -> int:
+    r"""Levenshtein distance between two words, compared without diacritics."""
+    a, b = strip_diacritics(a), strip_diacritics(b)
+    row = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        prev, row[0] = row[0], i
+        for j, cb in enumerate(b, 1):
+            prev, row[j] = row[j], min(row[j] + 1, row[j - 1] + 1, prev + (ca != cb))
+    return row[-1]
+
+
 @dataclass(frozen=True)
 class S2Rules:
     r"""Optional S2 matching rules from the config's s2_rules block (G-31.1).
@@ -39,10 +50,19 @@ class S2Rules:
     titles: normalized title words; a character mention "<surname> <title>" is sent to the
     adjudicator with up to MAX_TITLE_CANDIDATES named characters of that surname, and it merges
     only when exactly one of them is judged the same.
+    type_classes / marker_classes: words that give a non-character name a class ("place", "event",
+    "technique", ...): a marker class when a marker word appears anywhere in the name, else a type
+    class from its last one or two words. title_ranks: groups of equivalent titles.
+    distinct_min_edit: the edit distance at which two words count as different words, not a typo.
+    These drive blocks(), which rules a candidate out before the adjudicator (G-31.1 R-2).
     """
 
     generic_terms: frozenset[str] = frozenset()
     titles: frozenset[str] = frozenset()
+    type_classes: tuple[tuple[str, frozenset[str]], ...] = ()
+    marker_classes: tuple[tuple[str, frozenset[str]], ...] = ()
+    title_ranks: tuple[frozenset[str], ...] = ()
+    distinct_min_edit: int | None = None
 
     def is_generic(self, norm: str) -> bool:
         return norm in self.generic_terms
@@ -54,15 +74,113 @@ class S2Rules:
             return tokens[0]
         return None
 
+    def name_class(self, norm: str) -> str | None:
+        r"""Class of a normalized name: a marker word anywhere, else its last one or two words."""
+        tokens = norm.split()
+        padded = f" {norm} "
+        for cls, words in self.marker_classes:
+            if any(f" {w} " in padded for w in words):
+                return cls
+        for n in (2, 1):
+            tail = " ".join(tokens[-n:])
+            for cls, words in self.type_classes:
+                if tail in words:
+                    return cls
+        return None
+
+    def _rank(self, title: str) -> int | None:
+        for i, group in enumerate(self.title_ranks):
+            if title in group:
+                return i
+        return None
+
+    def blocks(self, norm: str, aliases: list[str], category: str) -> bool:
+        r"""True when the rules show the mention and the candidate (by its aliases) are different."""
+        if not aliases:
+            return False
+        if category == "character":
+            return self._rank_clash(norm, aliases)
+        return self._class_clash(norm, aliases) or self._distinct_name(norm, aliases) or self._part_of(norm, aliases)
+
+    def _class_clash(self, norm: str, aliases: list[str]) -> bool:
+        cls = self.name_class(norm)
+        if cls is None:
+            return False
+        others = {self.name_class(a) for a in aliases}
+        return None not in others and cls not in others
+
+    def _distinct_name(self, norm: str, aliases: list[str]) -> bool:
+        if self.distinct_min_edit is None:
+            return False
+        tokens = norm.split()
+        if len(tokens) < 2 or self.name_class(norm) is None:
+            return False
+        shaped = [a.split() for a in aliases]
+        if any(len(u) != len(tokens) or u[-1] != tokens[-1] for u in shaped):
+            return False
+        limit = self.distinct_min_edit
+        return all(any(_edit_distance(x, y) >= limit for x, y in zip(tokens, u) if x != y) for u in shaped)
+
+    def _part_of(self, norm: str, aliases: list[str]) -> bool:
+        if self.name_class(norm) != "place":
+            return False
+        for alias in aliases:
+            if not norm.startswith(alias + " ") or self.name_class(alias) not in ("place", "org"):
+                return False
+            if len(norm.split()) - len(alias.split()) < 2:
+                return False
+        return True
+
+    def _rank_clash(self, norm: str, aliases: list[str]) -> bool:
+        tokens = norm.split()
+        if len(tokens) < 2 or not self.title_ranks:
+            return False
+        rank = self._rank(" ".join(tokens[1:]))
+        if rank is None:
+            return False
+        for alias in aliases:
+            u = alias.split()
+            if len(u) < 2 or u[0] != tokens[0]:
+                return False
+            other = self._rank(" ".join(u[1:]))
+            if other is None or other == rank:
+                return False
+        return True
+
+    def as_hash_meta(self) -> dict[str, Any]:
+        r"""The rule settings that change S2 results, for the S2 input hash."""
+        meta: dict[str, Any] = {"generic_terms": sorted(self.generic_terms), "titles": sorted(self.titles)}
+        if self.type_classes or self.marker_classes or self.title_ranks or self.distinct_min_edit is not None:
+            meta["type_classes"] = {c: sorted(w) for c, w in self.type_classes}
+            meta["marker_classes"] = {c: sorted(w) for c, w in self.marker_classes}
+            meta["title_ranks"] = [sorted(g) for g in self.title_ranks]
+            meta["distinct_min_edit"] = self.distinct_min_edit
+        return meta
+
+
+def _norm_words(items: Any) -> frozenset[str]:
+    return frozenset(n for n in (normalize_alias(t) for t in items or []) if n)
+
 
 def s2_rules_from_config(config: dict[str, Any]) -> S2Rules | None:
     r"""Build S2Rules from config["s2_rules"], or None when the block is absent or empty."""
     block = config.get("s2_rules") or {}
-    generic = frozenset(n for n in (normalize_alias(t) for t in block.get("generic_terms") or []) if n)
-    titles = frozenset(n for n in (normalize_alias(t) for t in block.get("titles") or []) if n)
-    if not generic and not titles:
+    generic = _norm_words(block.get("generic_terms"))
+    titles = _norm_words(block.get("titles"))
+    type_classes = tuple((str(c), _norm_words(w)) for c, w in (block.get("type_classes") or {}).items())
+    marker_classes = tuple((str(c), _norm_words(w)) for c, w in (block.get("marker_classes") or {}).items())
+    title_ranks = tuple(g for g in (_norm_words(group) for group in block.get("title_ranks") or []) if g)
+    distinct = block.get("distinct_min_edit")
+    if not (generic or titles or type_classes or marker_classes or title_ranks or distinct is not None):
         return None
-    return S2Rules(generic_terms=generic, titles=titles)
+    return S2Rules(
+        generic_terms=generic,
+        titles=titles,
+        type_classes=type_classes,
+        marker_classes=marker_classes,
+        title_ranks=title_ranks,
+        distinct_min_edit=int(distinct) if distinct is not None else None,
+    )
 
 
 def _fuzzy_score(a: str, b: str) -> float:
@@ -319,12 +437,15 @@ class Resolver:
         exclude: frozenset[int],
         candidates: list[tuple[int, float]],
     ) -> tuple[list[tuple[int, float]], list[int]]:
-        r"""Drop every candidate of a generic mention and find title-form candidates (G-31.1)."""
+        r"""Drop every candidate of a generic mention or one the rules block; find title-form candidates."""
         rules = self._rules
         assert rules is not None
         if rules.is_generic(norm):
             return [], []
-        kept = candidates
+        kept = [
+            (eid, sc) for eid, sc in candidates
+            if not rules.blocks(norm, self._entity_aliases.get(eid, []), category)
+        ]
         surname = rules.title_surname(norm) if category == "character" else None
         if surname is None:
             return kept, []
@@ -797,7 +918,7 @@ def run_s2(
     # 5. input_hash computation
     meta: dict[str, Any] = {"seed_aliases": seed_aliases, "identity_links": identity_links}
     if rules is not None:  # only when set, so hashes without rules stay as before
-        meta["s2_rules"] = {"generic_terms": sorted(rules.generic_terms), "titles": sorted(rules.titles)}
+        meta["s2_rules"] = rules.as_hash_meta()
     meta_json = json.dumps(meta, sort_keys=True, ensure_ascii=False)
 
     def compute_input_hash(payload_str: str) -> str:

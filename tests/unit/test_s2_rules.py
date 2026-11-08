@@ -201,3 +201,66 @@ def test_gold_resolver_merges_applies_rules() -> None:
     rec = Recorder(answer=True)
     assert resolver_merges(pair, texts, rec, RULES) is True
     assert resolver_merges(pair, texts, Recorder(answer=True)) is False
+
+
+GUARDS = S2Rules(
+    generic_terms=frozenset({"phù lục"}),
+    type_classes=(
+        ("place", frozenset({"đài", "châu", "lĩnh", "sơn", "sơn mạch"})),
+        ("event", frozenset({"đại hội"})),
+        ("technique", frozenset({"thuật"})),
+        ("pill", frozenset({"hoàn"})),
+    ),
+    marker_classes=(("talisman", frozenset({"phù", "phù lục"})),),
+    title_ranks=(frozenset({"trưởng lão"}), frozenset({"đạo trưởng"}), frozenset({"môn chủ", "đại môn chủ"})),
+    distinct_min_edit=4,
+)
+
+
+@pytest.mark.parametrize(
+    ("name", "aliases", "category", "blocked"),
+    [
+        ("thiên vụ đài", ["thăng tiên đại hội"], "dungeon", True),  # place against event
+        ("phù lục hỏa xà thuật", ["hỏa xà thuật"], "technique", True),  # talisman against technique
+        ("thiên vụ đài", ["thiên vụ đài cũ", "thăng tiên đại hội"], "dungeon", False),  # one alias has no class
+        ("băng trùy thuật", ["băng đống thuật"], "technique", True),  # distinct name word
+        ("trát nhãn kiếp thuật", ["trát nhãn kiếm thuật"], "technique", False),  # one-letter typo
+        ("khu vật thuật", ["khống vật thuật"], "technique", False),  # edit distance 3 < 4
+        ("kim tủy hoàn", ["trừu tủy hoàn", "kim tủy hoàn x"], "weapon_treasure", False),  # not every alias has the shape
+        ("lam châu mỗ sơn lĩnh", ["lam châu"], "dungeon", True),  # a place inside the candidate place
+        ("thái nhạc sơn mạch", ["thái nhạc sơn"], "dungeon", False),  # only one extra word
+        ("lý đạo trưởng", ["lý trưởng lão"], "character", True),  # same surname, other rank
+        ("vương đại môn chủ", ["vương môn chủ"], "character", False),  # same rank
+        ("lý đạo trưởng", ["lý thanh"], "character", False),  # candidate is not a title form
+        ("thiên vụ đài", ["thăng tiên đại hội"], "character", False),  # class rules skip characters
+    ],
+)
+def test_guards(name: str, aliases: list[str], category: str, blocked: bool) -> None:
+    assert GUARDS.blocks(name, aliases, category) is blocked
+
+
+def test_guards_off_without_their_settings() -> None:
+    assert RULES.blocks("băng trùy thuật", ["băng đống thuật"], "technique") is False
+    assert RULES.blocks("lý đạo trưởng", ["lý trưởng lão"], "character") is False
+
+
+def test_resolver_never_asks_about_a_blocked_candidate() -> None:
+    rec = Recorder(answer=True)
+    resolver = Resolver(adjudicate=rec, rules=GUARDS)
+    spell = resolve(resolver, "Băng đống thuật", "technique")
+    other = resolve(resolver, "Băng trùy thuật", "technique", chapter_id=2)
+    assert rec.asked == []
+    assert other != spell
+
+
+def test_guard_settings_build_from_config_and_enter_the_hash() -> None:
+    cfg = {"s2_rules": {
+        "type_classes": {"place": ["Đài"]}, "marker_classes": {"talisman": ["phù"]},
+        "title_ranks": [["trưởng lão"], []], "distinct_min_edit": 4,
+    }}
+    rules = s2_rules_from_config(cfg)
+    assert rules is not None
+    assert rules.type_classes == (("place", frozenset({"đài"})),)
+    assert rules.title_ranks == (frozenset({"trưởng lão"}),)
+    assert rules.as_hash_meta()["distinct_min_edit"] == 4
+    assert "type_classes" not in RULES.as_hash_meta()  # R-1 style blocks keep their R-1 hash
