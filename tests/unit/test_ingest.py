@@ -107,6 +107,25 @@ def test_failures_stop_the_run_and_resume_retries_that_stage(repo: Repository) -
     assert again.calls[0][0] == "s1"
 
 
+def test_a_stopped_at_chunk_ends_the_stage(repo: Repository) -> None:
+    def stages(repo: Repository, *, stage: str, chapter_from: int = 1, **_: Any) -> Any:
+        calls.append((stage, chapter_from))
+        return SimpleNamespace(failed=0, stopped_at=30 if stage == "s3" else None)
+
+    calls: list[tuple[str, int]] = []
+    result = run_ingest(repo, novel_id="n", config=CONFIG, run_stage_fn=stages, chunk=50, pid=1)
+    assert result.status == "failed" and result.stage == "s3"
+    assert [c for c in calls if c[0] == "s3"] == [("s3", 1)]
+
+
+def test_resume_after_a_stage_boundary_stop_skips_the_finished_stage(repo: Repository) -> None:
+    run_ingest(repo, novel_id="n", config=CONFIG, run_stage_fn=FakeStages(repo, stop_after=("s2", 1)), pid=1)
+    assert repo.get_pipeline_run(novel_id="n")["current_stage"] == "s3"
+    again = FakeStages(repo)
+    run_ingest(repo, novel_id="n", config=CONFIG, resume=True, run_stage_fn=again, pid=1)
+    assert again.calls[0][0] == "s3"
+
+
 def test_an_exception_is_recorded_on_the_run(repo: Repository) -> None:
     result = run_ingest(repo, novel_id="n", config=CONFIG, run_stage_fn=FakeStages(repo, boom="s6"), pid=1)
     assert result.status == "failed" and result.stage == "s6"

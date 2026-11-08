@@ -138,6 +138,7 @@ def run_ingest(
     kwargs = stage_kwargs or {}
     for stage in stages[start:]:
         if stop_asked():
+            repo.update_pipeline_run(novel_id=novel_id, run_id=run_id, current_stage=stage)  # resume starts here
             return finish("stopped", stage)
         repo.update_pipeline_run(novel_id=novel_id, run_id=run_id, current_stage=stage, progress={"stage": stage})
         began = clock()
@@ -155,10 +156,14 @@ def run_ingest(
                         repo, stage=stage, novel_id=novel_id, config=config, chapter_from=lo, chapter_to=hi, **kwargs
                     )
                     failed += getattr(result, "failed", 0) or 0
+                    stopped_at = getattr(result, "stopped_at", None)
                     repo.update_pipeline_run(
                         novel_id=novel_id, run_id=run_id,
                         progress={"stage": stage, "done_to": hi, "to": chapter_to, "failed": failed},
                     )
+                    if stopped_at is not None:  # s3 and s4 stop at a failure; later chunks would leave a gap
+                        failed = max(failed, 1)
+                        break
             else:
                 result = run_stage_fn(repo, stage=stage, novel_id=novel_id, config=config, chapter_to=chapter_to, **kwargs)
                 failed = getattr(result, "failed", 0) or 0
