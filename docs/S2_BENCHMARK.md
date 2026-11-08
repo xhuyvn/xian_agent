@@ -2,7 +2,7 @@
 
 Date: 2026-11-08. Goal: G-31.
 
-**qwen3.5 runs the S2 adjudicator 8 times faster per call (0.80 s against 6.39 s) with the same gold scores: alias F1 0.667, Q&A citation hit rate 1.00, 0 spoiler leaks. S2 on chapters 1-200 took 2.4 min against 19.0 min. The two models resolve 33 of 655 aliases differently, and neither is clearly better on those.** The production config is unchanged; a switch is the owner's decision.
+**qwen3.5 runs the S2 adjudicator 8 times faster per call (0.80 s against 6.36 s) with the same gold scores: alias F1 0.667, Q&A citation hit rate 1.00, 0 spoiler leaks. S2 on chapters 1-200 took 2.4 min against 19.0 min. The two models resolve 33 of 616 distinct aliases differently, and neither is clearly better on those.** The production config is unchanged; a switch is the owner's decision.
 
 ## Why S2 was measured
 
@@ -16,23 +16,23 @@ The G-29 full run of pntt1 reached S2 at about 06:54 UTC on 2026-11-08 and was s
 
 ## Speed
 
-From `llm_runs` (stage `s2`) and the S2 job times in each benchmark database:
+From `llm_runs` (stage `s2`, limited to each S2 run's time window, since the gold report that ran afterwards also logs adjudication calls under stage `s2`) and the S2 job times in each benchmark database:
 
 | S2, chapters 1-200 | qwen3.8 (`qwen38-udiq4-hui-10k`) | qwen3.5 (`qwen3.5_12k:q8_mtp`) |
 |---|---|---|
 | Wall time | 19.0 min (09:23:25 to 09:42:23 UTC) | **2.4 min** (09:45:29 to 09:47:54 UTC) |
-| Adjudication calls | 188 | 186 |
-| Model time | 1,201.5 s | 148.5 s |
-| Mean latency per call | 6.39 s | **0.80 s** |
-| Calls / model time, chapters 1-100 | 50 / 273.0 s | 49 / 50.8 s |
+| Adjudication calls | 178 | 176 |
+| Model time | 1,132.2 s | 140.9 s |
+| Mean latency per call | 6.36 s | **0.80 s** |
+| Calls / model time, chapters 1-100 | 40 / 203.7 s | 39 / 43.2 s |
 | Calls / model time, chapters 101-200 | 138 / 928.5 s | 137 / 97.7 s |
 | Wall time, chapter 1 to 100 and 100 to 200 (job times) | 204 s and 931 s | 43 s and 98 s |
-| Mean output tokens per call | 66.7 | 60.7 |
+| Mean output tokens per call | 67.0 | 60.8 |
 | Failed calls, retries | 0, 0 | 0, 0 |
 
 qwen3.8 is a 27.3B model of 16.8 GB, and Ollama held 12.9 GB of it in VRAM after the run, so part of it runs on the CPU. That explains most of the gap. qwen3.5 is the model S1 ran on in G-29 at about 14.1 GB.
 
-**Projection for the rest of pntt1 S2 (chapters 665-2,468, 1,804 chapters).** On qwen3.8 the live run spent 5,262 s of model time on chapters 401-664, about 19.9 s/chapter, and the rate was still rising. At that rate, the rest takes at least 10 h on qwen3.8. At the measured 8.0 times per-call speed-up, the same calls take at least 1.25 h on qwen3.5. Both are lower bounds, since calls per chapter keep growing.
+**Projection for the rest of pntt1 S2 (chapters 665-2,468, 1,804 chapters).** On qwen3.8 the live run spent 5,262 s of model time on chapters 401-664, about 19.9 s/chapter, and the rate was still rising. At that rate, the rest takes at least 10 h on qwen3.8. At the measured 7.9 times per-call speed-up (6.36 s / 0.80 s), the same calls take at least 1.25 h on qwen3.5. Both are lower bounds, since calls per chapter keep growing.
 
 ## Quality
 
@@ -47,7 +47,7 @@ Gold report (`tests/eval -m gold`, 20 gold chapters in 1-100, 15 Q&A questions, 
 
 The one alias difference is "Ngự phong quyết / Ngự phong thuật", missed by qwen3.8 in this run. In the first gold run of the same qwen3.8 database (before S4), qwen3.8 scored 0.667 too, so alias F1 moves by one pair between runs, as G-27.1 also found. Every remaining alias miss is a recall miss of a title form: for example "Hàn sư đệ", "Lệ sư huynh", "Vương môn chủ" and "Cổ bang chủ" are not linked to the person in either run. Neither model makes a false merge on the gold pairs.
 
-**Resolution differences beyond the gold set.** Comparing alias to canonical entity on all 655 aliases of chapters 1-200: 33 aliases resolve to a different entity (qwen3.8 has 575 entities, qwen3.5 568). The lead's reading of the 33, not checked against a gold set:
+**Resolution differences beyond the gold set.** Comparing alias to canonical entity on all 616 distinct aliases of chapters 1-200 (655 alias rows): 33 aliases resolve to a different entity (qwen3.8 has 575 entities, qwen3.5 568). The lead's reading of the 33, not checked against a gold set:
 
 - qwen3.8 better, about 10: qwen3.5 merges "Kim tủy hoàn" into "Trừu tủy hoàn", "Băng trùy thuật" into "Băng đống thuật", "Thanh Văn đạo sĩ" into "Tùng Văn", the place "Thiên vụ đài" into the event "Thăng Tiên đại hội", generic "phù lục" into "Kim Quang Tráo", "kim quang" and "phù bảo kim quang chuyên" into generic "phù bảo", "Trường Xuân công khẩu quyết" into generic "khẩu quyết", and "Đại hỏa cầu phù lục" into "hỏa cầu".
 - qwen3.5 better, about 6: it links "bình tử" to "Thần bí bình tử", "kim nhận" to "Kim phù tử mẫu nhận", "phệ hồn đại pháp" to "Thất quỷ phệ hồn", "chưởng môn" (chapter 150) to "Chung Chưởng môn", and it keeps "Ngũ phu nhân" apart from "Nghiêm phu nhân" and "Thái Nam tiểu hội" apart from "Thái Nam cốc".
@@ -87,4 +87,4 @@ uv run xn run --novel pntt1 --stage s4 --to 100 --db <data>/bench/g31-<m>/g31.db
 uv run pytest tests/eval -m gold --novel pntt1 --gold-db=<data>/bench/g31-<m>/g31.db --gold-report=<data>/bench/g31-<m>/g31-report-qa.json --gold-configs-dir=<data>/bench/g31-<m>/configs
 ```
 
-Before S4, all other Ollama models were unloaded (`keep_alive: 0`). Logs: `g31.log`, `gold.log` and `gold2.log` in each `<data>/bench/g31-<m>/`. The first gold reports (before S4) are `g31-report.json`; their Q&A refused 14 of 15 questions because the bench had no chunks yet, and only their alias and spoiler numbers are used above.
+Speed figures: `llm_runs` rows with `stage = 's2'` and `created_at` from 2026-11-08T09:23 to 09:42:24 UTC (qwen3.8) and from 09:45 to 09:47:55 UTC (qwen3.5); the database copies also hold the live run's older rows, and the gold report's 10 adjudication calls per run come after the window. Before S4, all other Ollama models were unloaded (`keep_alive: 0`). Logs: `g31.log`, `gold.log` and `gold2.log` in each `<data>/bench/g31-<m>/`. The first gold reports (before S4) are `g31-report.json`; their Q&A refused 14 of 15 questions because the bench had no chunks yet, and only their alias and spoiler numbers are used above.
