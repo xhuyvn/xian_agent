@@ -181,3 +181,63 @@ def test_only_s2_gold_and_llm_read_the_s2_model_key() -> None:
         if re.search(r"s2_adjudicator|s2_model_key|S2_KEY", path.read_text(encoding="utf-8"))
     }
     assert readers == {"xn/llm.py", "xn/pipeline/s2_resolve.py", "xn/gold.py"}
+
+
+# --- confirmer (G-31.1 R-3) ---------------------------------------------------------------------
+
+
+def with_confirmer(config: dict[str, Any]) -> dict[str, Any]:
+    cfg = with_s2(config)
+    cfg["models"]["s2_confirmer"] = {"name": "qwen3.8", "serving_name": "confirm-model", "base_url": "http://x/v1",
+                                     "temperature": 0.1, "output_mode": "tool", "think": False}
+    return cfg
+
+
+def _mention_candidate() -> tuple[Any, Any]:
+    from xn.pipeline.s2_resolve import Candidate, Mention
+    return Mention(name="Hàn sư đệ", category="character", chapter_id=3, context="ctx"), \
+        Candidate(entity_id=1, aliases=["hàn lập"], contexts=["c"])
+
+
+@pytest.mark.parametrize(("first", "second", "merged", "confirm_calls"),
+                         [(True, True, True, 1), (True, False, False, 1), (False, True, False, 0)])
+def test_confirmer_is_asked_only_after_a_same_and_both_must_agree(
+    repo: Any, db_conn: sqlite3.Connection, first: bool, second: bool, merged: bool, confirm_calls: int
+) -> None:
+    from xn.pipeline.s2_resolve import build_adjudicator, load_adjudicate_prompt
+    cfg = with_confirmer(make_config())
+    a, b = FakeAdjudicator(default_decision=first), FakeAdjudicator(default_decision=second)
+    adj = build_adjudicator(repo, novel_id="pntt1", config=cfg, model=FunctionModel(a),
+                            prompt=load_adjudicate_prompt(cfg, PROMPTS_DIR), confirmer_model=FunctionModel(b))
+    m, c = _mention_candidate()
+    assert adj(m, c) is merged
+    assert (a.calls, b.calls) == (1, confirm_calls)
+    models = [r["model"] for r in db_conn.execute("SELECT model FROM llm_runs WHERE stage = 's2' ORDER BY rowid")]
+    assert models == ["s2-model"] + ["confirm-model"] * confirm_calls
+
+
+def test_without_confirmer_block_one_model_decides(repo: Any, db_conn: sqlite3.Connection) -> None:
+    from xn.pipeline.s2_resolve import build_adjudicator, load_adjudicate_prompt
+    cfg = with_s2(make_config())
+    a = FakeAdjudicator(default_decision=True)
+    adj = build_adjudicator(repo, novel_id="pntt1", config=cfg, model=FunctionModel(a),
+                            prompt=load_adjudicate_prompt(cfg, PROMPTS_DIR), confirmer_model=FunctionModel(FakeAdjudicator()))
+    m, c = _mention_candidate()
+    assert adj(m, c) is True
+    assert a.calls == 1
+    assert [r["model"] for r in db_conn.execute("SELECT model FROM llm_runs WHERE stage = 's2'")] == ["s2-model"]
+
+
+def test_confirmer_model_is_built_from_its_block(monkeypatch: pytest.MonkeyPatch, repo: Any) -> None:
+    from xn.pipeline.s2_resolve import build_adjudicator, load_adjudicate_prompt
+    asked: list[str] = []
+
+    def fake_local_model(config: dict[str, Any], key: str = "local_extractor") -> FunctionModel:
+        asked.append(key)
+        return FunctionModel(FakeAdjudicator())
+
+    monkeypatch.setattr(s2_resolve, "local_model", fake_local_model)
+    cfg = with_confirmer(make_config())
+    build_adjudicator(repo, novel_id="pntt1", config=cfg, model=FunctionModel(FakeAdjudicator()),
+                      prompt=load_adjudicate_prompt(cfg, PROMPTS_DIR))
+    assert asked == ["s2_confirmer"]

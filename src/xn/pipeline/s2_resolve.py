@@ -817,6 +817,9 @@ def load_adjudicate_prompt(config: dict[str, Any], prompts_dir: Path) -> Any:
     )
 
 
+CONFIRMER_KEY = "s2_confirmer"
+
+
 def build_adjudicator(
     repo: Repository,
     *,
@@ -824,26 +827,42 @@ def build_adjudicator(
     config: dict[str, Any],
     model: Any,
     prompt: Any,
+    confirmer_model: Any = None,
 ) -> Callable[[Mention, Candidate], bool]:
     r"""Construct the configured adjudicator on the given model and prompt.
 
     Settings and the recorded model come from models.s2_adjudicator when set (G-31), else local_extractor.
+    When models.s2_confirmer is set (G-31.1 R-3), a "same" answer is asked again on that model with the
+    same prompt, and the pair merges only when both say "same"; confirmer_model overrides the model
+    built from that block (tests).
     """
     key = s2_model_key(config)
-    agent = Agent(
-        model,
-        output_type=extractor_output(AdjudicationDecision, config, key),
-        system_prompt=prompt.text,
-        retries=3,
-        model_settings=extractor_settings(config, key),
-    )
-    return make_adjudicator(
-        agent,
-        repo=repo,
-        novel_id=novel_id,
-        serving_name=config["models"][key]["serving_name"],
-        prompt_version=prompt.prompt_version,
-    )
+
+    def one(k: str, m: Any) -> Callable[[Mention, Candidate], bool]:
+        agent = Agent(
+            m,
+            output_type=extractor_output(AdjudicationDecision, config, k),
+            system_prompt=prompt.text,
+            retries=3,
+            model_settings=extractor_settings(config, k),
+        )
+        return make_adjudicator(
+            agent,
+            repo=repo,
+            novel_id=novel_id,
+            serving_name=config["models"][k]["serving_name"],
+            prompt_version=prompt.prompt_version,
+        )
+
+    first = one(key, model)
+    if not (config.get("models") or {}).get(CONFIRMER_KEY):
+        return first
+    second = one(CONFIRMER_KEY, confirmer_model if confirmer_model is not None else local_model(config, CONFIRMER_KEY))
+
+    def adjudicate(mention: Mention, candidate: Candidate) -> bool:
+        return first(mention, candidate) and second(mention, candidate)
+
+    return adjudicate
 
 
 @dataclass(frozen=True)
