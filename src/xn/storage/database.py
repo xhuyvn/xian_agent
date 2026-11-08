@@ -45,6 +45,11 @@ CREATE TABLE IF NOT EXISTS lc_map_cache (novel_id TEXT, entity_id INTEGER, arc_i
   prompt_version TEXT, model TEXT, payload JSON, input_tokens INTEGER,
   PRIMARY KEY(novel_id, entity_id, arc_id, upto_chapter, prompt_version, model));
 CREATE TABLE IF NOT EXISTS feedback (novel_id TEXT NOT NULL, run_id TEXT, rating INTEGER, note TEXT, created_at TEXT);
+CREATE TABLE IF NOT EXISTS pipeline_runs (run_id TEXT PRIMARY KEY, novel_id TEXT NOT NULL, status TEXT NOT NULL
+  CHECK (status IN ('running','stopping','stopped','done','failed')), stages JSON NOT NULL, chapter_to INTEGER,
+  current_stage TEXT, progress JSON, stage_times JSON, models JSON, pid INTEGER, error TEXT,
+  started_at TEXT, updated_at TEXT, finished_at TEXT);
+CREATE INDEX IF NOT EXISTS ix_pipeline_runs_novel ON pipeline_runs(novel_id, started_at);
 """
 
 

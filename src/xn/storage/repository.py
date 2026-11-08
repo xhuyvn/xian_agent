@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from enum import Enum
 import functools
 import inspect
+import json
 import sqlite3
 from typing import Any, Callable, TypeVar
 
@@ -818,6 +819,97 @@ class Repository:
             ),
         )
         self._conn.commit()
+
+    # --- Pipeline runs (G-29): state an API or UI can show and manage ---
+
+    def start_pipeline_run(
+        self,
+        *,
+        novel_id: str,
+        run_id: str,
+        stages: list[str],
+        chapter_to: int,
+        models: dict[str, Any],
+        pid: int,
+    ) -> None:
+        _validate_novel_id(novel_id)
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            "INSERT INTO pipeline_runs (run_id, novel_id, status, stages, chapter_to, stage_times, models, pid, "
+            "started_at, updated_at) VALUES (?, ?, 'running', ?, ?, '{}', ?, ?, ?, ?)",
+            (run_id, novel_id, json.dumps(stages), chapter_to, json.dumps(models), pid, now, now),
+        )
+        self._conn.commit()
+
+    def get_pipeline_run(self, *, novel_id: str, run_id: str | None = None) -> sqlite3.Row | None:
+        """Return one run, or the novel's latest when run_id is None."""
+        _validate_novel_id(novel_id)
+        if run_id is not None:
+            cur = self._conn.execute(
+                "SELECT * FROM pipeline_runs WHERE novel_id = ? AND run_id = ?", (novel_id, run_id)
+            )
+        else:
+            cur = self._conn.execute(
+                "SELECT * FROM pipeline_runs WHERE novel_id = ? ORDER BY started_at DESC, rowid DESC LIMIT 1",
+                (novel_id,),
+            )
+        return cur.fetchone()
+
+    def update_pipeline_run(self, *, novel_id: str, run_id: str, **fields: Any) -> None:
+        """Set some of status, current_stage, progress, stage_times, pid, error; a final status sets finished_at."""
+        _validate_novel_id(novel_id)
+        allowed = {"status", "current_stage", "progress", "stage_times", "pid", "error"}
+        unknown = set(fields) - allowed
+        if unknown:
+            raise ValueError(f"unknown pipeline_runs fields: {sorted(unknown)}")
+        values = {k: json.dumps(v) if k in ("progress", "stage_times") else v for k, v in fields.items()}
+        now = datetime.now(timezone.utc).isoformat()
+        values["updated_at"] = now
+        if fields.get("status") in ("stopped", "done", "failed"):
+            values["finished_at"] = now
+        elif fields.get("status") == "running":
+            values["finished_at"] = None
+        assignments = ", ".join(f"{k} = ?" for k in values)
+        self._conn.execute(
+            f"UPDATE pipeline_runs SET {assignments} WHERE novel_id = ? AND run_id = ?",
+            (*values.values(), novel_id, run_id),
+        )
+        self._conn.commit()
+
+    def request_pipeline_stop(self, *, novel_id: str) -> int:
+        """Mark the novel's running runs as stopping; returns how many were marked."""
+        _validate_novel_id(novel_id)
+        cur = self._conn.execute(
+            "UPDATE pipeline_runs SET status = 'stopping', updated_at = ? WHERE novel_id = ? AND status = 'running'",
+            (datetime.now(timezone.utc).isoformat(), novel_id),
+        )
+        self._conn.commit()
+        return cur.rowcount
+
+    def job_summary(self, *, novel_id: str, failed_limit: int = 20) -> tuple[list[sqlite3.Row], list[sqlite3.Row]]:
+        """Return (job counts per stage and status, the first failed jobs)."""
+        _validate_novel_id(novel_id)
+        counts = self._conn.execute(
+            "SELECT stage, status, COUNT(*) AS n FROM jobs WHERE novel_id = ? GROUP BY stage, status "
+            "ORDER BY stage, status",
+            (novel_id,),
+        ).fetchall()
+        failed = self._conn.execute(
+            "SELECT stage, chapter_id, attempts, error FROM jobs WHERE novel_id = ? AND status = 'failed' "
+            "ORDER BY stage, chapter_id LIMIT ?",
+            (novel_id, failed_limit),
+        ).fetchall()
+        return counts, failed
+
+    def novel_cloud_spend(self, *, novel_id: str, since: str | None = None) -> float:
+        """Return the novel's cloud spend in USD, all time or since an ISO time."""
+        _validate_novel_id(novel_id)
+        cur = self._conn.execute(
+            "SELECT COALESCE(SUM(cost_usd), 0.0) FROM llm_runs WHERE novel_id = ? AND egress_class != 'local' "
+            "AND created_at >= ?",
+            (novel_id, since or ""),
+        )
+        return float(cur.fetchone()[0])
 
     # --- Exempt ---
 

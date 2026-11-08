@@ -12,7 +12,12 @@ import typer
 
 from pydantic_ai.exceptions import ModelAPIError
 
+from datetime import datetime, timezone
+import json
+
 from xn.config import load_config
+from xn.embed import OllamaEmbedder
+from xn.pipeline.ingest import DEFAULT_CHUNK, IngestError, pid_alive, request_stop, run_ingest
 from xn.graph.deps import GraphDeps, QueryError
 from xn.graph.workflow import ask as ask_graph, build_graph, open_checkpointer, thread_novel
 from xn.llm import EgressError, SpendCapError, UpstreamError
@@ -119,6 +124,118 @@ def run(
     stopped_at = getattr(result, "stopped_at", None)
     if failed > 0 or stopped_at is not None:
         raise typer.Exit(code=1)
+
+
+def _open_repo(db: Path) -> tuple[Any, Repository]:
+    db_path = Path(db)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = connect(db_path)
+    init_schema(conn)
+    return conn, Repository(conn)
+
+
+@app.command("ingest")
+def ingest(
+    novel: str = typer.Option(..., "--novel", help="Novel ID"),
+    chapter_to: int | None = typer.Option(None, "--to", help="Last chapter (default: total_chapters)"),
+    resume: bool = typer.Option(False, "--resume", help="Continue the novel's last stopped or failed run"),
+    chunk: int = typer.Option(DEFAULT_CHUNK, "--chunk", help="Chapters per chunk on s1, s3 and s4"),
+    db: Path = typer.Option(Path("data/xn.db"), "--db", help="Path to SQLite database file"),
+    raw_dir: Path | None = typer.Option(None, "--raw-dir", help="Raw chapters (default: raw_dir in the novel config)"),
+    configs_dir: Path = typer.Option(Path("configs"), "--configs-dir", help="Path to configs directory"),
+    prompts_dir: Path = typer.Option(Path("prompts"), "--prompts-dir", help="Path to prompts directory"),
+) -> None:
+    """Run s0 to s7 in order as one run that `xn stop` can stop and `--resume` continues."""
+    logging.basicConfig(level=logging.INFO)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    try:
+        config = load_config(novel, configs_dir=configs_dir)
+    except FileNotFoundError as err:
+        raise _fail("NOVEL_NOT_FOUND", err)
+    if raw_dir is None:
+        raw_dir = Path(config.get("raw_dir") or Path("data/novels") / novel / "raw")
+
+    def before_stage(stage: str) -> None:
+        if stage == "s4":  # S4 refuses while another model holds the GPU
+            unloaded = OllamaEmbedder.from_config(config).unload_others()
+            if unloaded:
+                typer.echo(f"unloaded before s4: {', '.join(unloaded)}")
+        typer.echo(f"stage {stage} starting")
+
+    conn, repo = _open_repo(db)
+    try:
+        result = run_ingest(
+            repo, novel_id=novel, config=config, chapter_to=chapter_to, resume=resume, chunk=chunk,
+            stage_kwargs={"raw_dir": raw_dir, "prompts_dir": prompts_dir}, before_stage=before_stage,
+        )
+    except IngestError as err:
+        raise _fail("VALIDATION_FAILED", err)
+    finally:
+        conn.close()
+    times = " ".join(f"{s}={t / 60:.1f}m" for s, t in result.stage_times.items())
+    typer.echo(f"run {result.run_id}: {result.status}" + (f" at {result.stage}" if result.stage else ""))
+    typer.echo(f"stage times: {times or 'none'}")
+    if result.error:
+        typer.echo(f"Error: {result.error}")
+    if result.status != "done":
+        raise typer.Exit(code=1)
+
+
+@app.command("stop")
+def stop(
+    novel: str = typer.Option(..., "--novel", help="Novel ID"),
+    db: Path = typer.Option(Path("data/xn.db"), "--db", help="Path to SQLite database file"),
+) -> None:
+    """Ask a running ingest to stop after its current chunk or stage."""
+    conn, repo = _open_repo(db)
+    try:
+        marked = request_stop(repo, novel_id=novel)
+    finally:
+        conn.close()
+    if not marked:
+        raise _fail("NOT_RUNNING", f"no running ingest for {novel}")
+    typer.echo(f"stop requested for {novel}; it stops after the current chunk or stage")
+
+
+@app.command("status")
+def status(
+    novel: str = typer.Option(..., "--novel", help="Novel ID"),
+    db: Path = typer.Option(Path("data/xn.db"), "--db", help="Path to SQLite database file"),
+) -> None:
+    """Show the novel's last ingest run, jobs per stage, failed chapters and cloud spend."""
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    conn, repo = _open_repo(db)
+    try:
+        run = repo.get_pipeline_run(novel_id=novel)
+        counts, failed = repo.job_summary(novel_id=novel)
+        today = datetime.now(timezone.utc).date().isoformat()
+        spend_today = repo.novel_cloud_spend(novel_id=novel, since=today)
+        spend_total = repo.novel_cloud_spend(novel_id=novel)
+    finally:
+        conn.close()
+    if run is None:
+        typer.echo(f"{novel}: no ingest run yet")
+    else:
+        state = run["status"]
+        if state in ("running", "stopping") and not pid_alive(run["pid"]):
+            state += " (process gone; resume with --resume)"
+        typer.echo(f"run {run['run_id']}: {state}, stage {run['current_stage']}, to chapter {run['chapter_to']}")
+        typer.echo(f"progress: {run['progress']}  models: {run['models']}")
+        times = json.loads(run["stage_times"] or "{}")
+        typer.echo("stage times: " + (" ".join(f"{s}={t / 60:.1f}m" for s, t in times.items()) or "none"))
+        typer.echo(f"started {run['started_at']}, updated {run['updated_at']}, finished {run['finished_at']}")
+        if run["error"]:
+            typer.echo(f"error: {run['error']}")
+    by_stage: dict[str, dict[str, int]] = {}
+    for row in counts:
+        by_stage.setdefault(row["stage"], {})[row["status"]] = row["n"]
+    for stage, states in by_stage.items():
+        typer.echo(f"jobs {stage}: " + " ".join(f"{k}={v}" for k, v in sorted(states.items())))
+    for row in failed:
+        typer.echo(f"failed {row['stage']} ch{row['chapter_id']} attempts={row['attempts']}: {row['error']}")
+    typer.echo(f"cloud spend: today ${spend_today:.3f}, total ${spend_total:.3f}")
 
 
 def format_answer(state: dict[str, Any]) -> str:
