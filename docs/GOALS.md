@@ -97,7 +97,7 @@ Plan: chat plan of 2026-11-07, approved with changes on 2026-11-08. `docs/IMPLEM
 Owner decisions:
 - The lead writes the code, no agy in Sprint 4 (2026-11-07).
 - Database `data/xn.db` in the main checkout. The pntt1 points in Qdrant `xn_chunks` and `xn_arcs` (704 old chunk points) are deleted before the run.
-- `daily_spend_cap_usd` is raised to 2.00 for this run only, then set back to 1.00.
+- `daily_spend_cap_usd` is raised to 2.00 for this run only, then set back to 1.00. Done with a run-only config copy (`data/runs/g29-configs/`, `--configs-dir`), because a unit test pins `configs/config.yaml` at 1.00; the repo config never changes.
 - Over 20 h: the run goes on and the time is reported. It must be stoppable and resumable: `xn stop` asks a running ingest to stop at the next safe point, and `xn ingest --resume` continues it, skipping finished work. Run state lives in a new `pipeline_runs` table (status, current stage, progress, stage times, stop request) so the S4-T5 `/v1/pipeline/runs` endpoints and the S4-T7 web UI can show and manage long runs later.
 - S1 runs on `qwen3.5_12k:q8_mtp` (G-30 switch, PR xhuyvn/xian_agent#36); the run checks this before starting.
 - Two rounds: R-1 code and unit tests, R-2 the live run and `docs/S4_T1_RUN.md`.
@@ -112,9 +112,17 @@ Done when:
 Rounds:
 - R-1 2026-11-08: `xn ingest`, `xn stop`, `xn status` and the `pipeline_runs` table, with unit tests on fake stages -> PASS, 0 blockers, f5d11df; NITs 1-2 (a chunk with stopped_at did not end s3/s4; a boundary stop resumed the finished stage) fixed in 1ce46d1 -> PASS (delta), 0 agy tokens; open NITs: the single-flight check and the run insert are not atomic (needs a unique live-run index for S4-T5), `pid_alive` has no ctypes argtypes and PID reuse can make a dead run look alive
 Sub-goals:
-- none yet
+- G-29.1 (active): parallel S1 in `xn ingest`. G-30 found Ollama 0.40.15 gives `qwen3.5_12k:q8_mtp` 4 slots, and 4 workers ran at 5.7 s/chapter against 10.7 (about 3.9 h against 7.3 h for 2,468). `xn ingest --workers N` runs S1 chunks in N threads, each with its own SQLite connection on the same database (WAL); other stages stay one at a time. A stop lands after each worker's current chunk; resume works as before. The live run is stopped and resumed with 4 workers. The lead writes the code. One round.
+  Done when:
+  - With `--workers 1` (the default) ingest behaves exactly as in R-1, with the R-1 tests unchanged
+  - With `--workers N`, S1 chunks run in N threads on their own connections, every chunk runs once, failures and exceptions are counted, a stop ends the stage after the running chunks, and unit tests cover it on a file database
+  - The resumed live run shows S1 at <= 7 s/chapter wall over at least 200 chapters, with 0 `database is locked` errors
+  - `py -m compileall -q src` and `uv run pytest tests/unit` pass
+  Rounds:
+  - none yet
 Changes:
 - 2026-11-08: owner approved the plan with decisions 1-3, replaced decision 4 with stop and resume for later use in the web UI, and asked to check the S1 model
+- 2026-11-08: owner approved sub-goal G-29.1, parallel S1 workers ("yes, add it as sub-goal G-29.1")
 
 ## Parked
 

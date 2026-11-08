@@ -41,10 +41,10 @@ class FakeStages:
     def __call__(self, repo: Repository, *, stage: str, novel_id: str, config: dict[str, Any],
                  chapter_from: int = 1, chapter_to: int | None = None, **_: Any) -> Any:
         self.calls.append((stage, chapter_from, chapter_to))
-        if stage == self.boom:
+        if stage == self.boom or (self.boom and self.boom == f"{stage}:{chapter_from}"):
             raise RuntimeError("model down")
         if self.stop_after and stage == self.stop_after[0] and chapter_from == self.stop_after[1]:
-            request_stop(self.repo, novel_id=novel_id)
+            request_stop(repo, novel_id=novel_id)
         return SimpleNamespace(failed=2 if stage == self.fail else 0)
 
 
@@ -188,3 +188,72 @@ def test_status_and_stop_commands(tmp_path: Path) -> None:
     assert runner.invoke(app, ["stop", "--novel", "n", "--db", str(db)]).exit_code == 0
     assert "stopping" in runner.invoke(app, ["status", "--novel", "n", "--db", str(db)]).output
     assert runner.invoke(app, ["stop", "--novel", "n", "--db", str(db)]).exit_code == 1
+
+
+def opener(path: Path):
+    def open_repo():
+        conn = connect(path)
+        init_schema(conn)
+        return conn, Repository(conn)
+
+    return open_repo
+
+
+@pytest.fixture
+def file_repo(tmp_path: Path):
+    conn = connect(tmp_path / "xn.db")
+    init_schema(conn)
+    try:
+        yield Repository(conn), opener(tmp_path / "xn.db")
+    finally:
+        conn.close()
+
+
+def test_workers_run_every_s1_chunk_once_on_their_own_connections(file_repo) -> None:
+    repo, open_repo = file_repo
+    seen: list[int] = []
+
+    def stages(wrepo: Repository, *, stage: str, chapter_from: int = 1, chapter_to: int | None = None, **_: Any) -> Any:
+        if stage == "s1":
+            assert wrepo is not repo
+            seen.append(chapter_from)
+            wrepo.upsert_job(novel_id="n", chapter_id=chapter_from, stage="s1", status="done")  # a real write
+        return SimpleNamespace(failed=1 if (stage, chapter_from) == ("s1", 41) else 0)
+
+    result = run_ingest(repo, novel_id="n", config=CONFIG, run_stage_fn=stages, chunk=10, workers=4,
+                        open_repo=open_repo, pid=1)
+    assert sorted(seen) == list(range(1, 121, 10))
+    assert result.status == "failed" and result.error == "s1: 1 failed"
+    progress = json.loads(repo.get_pipeline_run(novel_id="n")["progress"])
+    assert progress["chunks"] == 12 and progress["workers"] == 4
+
+
+def test_workers_one_matches_the_sequential_path(file_repo) -> None:
+    repo, open_repo = file_repo
+    fake = FakeStages(repo)
+    run_ingest(repo, novel_id="n", config=CONFIG, run_stage_fn=fake, chunk=50, workers=1, open_repo=open_repo, pid=1)
+    assert [c for c in fake.calls if c[0] == "s1"] == [("s1", 1, 50), ("s1", 51, 100), ("s1", 101, 120)]
+
+
+def test_a_stop_ends_the_parallel_stage_after_running_chunks(file_repo) -> None:
+    repo, open_repo = file_repo
+    fake = FakeStages(repo, stop_after=("s1", 1))
+    result = run_ingest(repo, novel_id="n", config=CONFIG, run_stage_fn=fake, chunk=10, workers=2,
+                        open_repo=open_repo, pid=1)
+    assert result.status == "stopped" and result.stage == "s1"
+    assert len([c for c in fake.calls if c[0] == "s1"]) < 12
+    assert "s2" not in [c[0] for c in fake.calls]
+
+
+def test_a_worker_exception_fails_the_run(file_repo) -> None:
+    repo, open_repo = file_repo
+    result = run_ingest(repo, novel_id="n", config=CONFIG, run_stage_fn=FakeStages(repo, boom="s1:31"), chunk=10,
+                        workers=3, open_repo=open_repo, pid=1)
+    assert result.status == "failed" and result.error == "s1: RuntimeError: model down"
+
+
+def test_workers_need_a_connection_factory(repo: Repository) -> None:
+    with pytest.raises(IngestError, match="open_repo"):
+        run_ingest(repo, novel_id="n", config=CONFIG, run_stage_fn=FakeStages(repo), workers=2)
+    with pytest.raises(IngestError, match="workers must be"):
+        run_ingest(repo, novel_id="n", config=CONFIG, run_stage_fn=FakeStages(repo), workers=0)

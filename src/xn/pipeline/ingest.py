@@ -8,10 +8,12 @@ that before every chunk of s1, s3 and s4 and before every other stage, then mark
 from __future__ import annotations
 
 import ctypes
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 import json
 import os
 import sys
+import threading
 import time
 from typing import Any, Callable
 import uuid
@@ -83,6 +85,59 @@ def _models(config: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _parallel_chunks(
+    *,
+    ranges: list[tuple[int, int]],
+    workers: int,
+    open_repo: Callable[[], tuple[Any, Repository]],
+    work: Callable[[Repository, int, int], Any],
+    stop_asked: Callable[[Repository], bool],
+    progress: Callable[[Repository, int, int], None],
+) -> tuple[int, bool, str | None]:
+    """Run chunks in worker threads, each on its own connection; returns (failed, stopped, error).
+
+    A worker takes the next chunk only while no stop was asked and no worker raised, so a stop
+    or an error ends the stage after the chunks already running.
+    """
+    lock = threading.Lock()
+    pending = list(ranges)
+    state = {"failed": 0, "done": 0, "stopped": False, "error": None}
+
+    def worker() -> None:
+        conn, wrepo = open_repo()
+        try:
+            while True:
+                with lock:
+                    if state["error"] or state["stopped"] or not pending:
+                        return
+                if stop_asked(wrepo):
+                    with lock:
+                        state["stopped"] = bool(pending)
+                    return
+                with lock:
+                    if not pending:
+                        return
+                    lo, hi = pending.pop(0)
+                try:
+                    result = work(wrepo, lo, hi)
+                except Exception as err:  # the first error is kept; the others finish their chunk
+                    with lock:
+                        state["error"] = state["error"] or f"{type(err).__name__}: {err}"
+                    return
+                with lock:
+                    state["failed"] += getattr(result, "failed", 0) or 0
+                    state["done"] += 1
+                    done, failed = state["done"], state["failed"]
+                progress(wrepo, done, failed)
+        finally:
+            conn.close()
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for future in [pool.submit(worker) for _ in range(min(workers, len(ranges)))]:
+            future.result()
+    return state["failed"], state["stopped"], state["error"]
+
+
 def run_ingest(
     repo: Repository,
     *,
@@ -91,6 +146,8 @@ def run_ingest(
     chapter_to: int | None = None,
     resume: bool = False,
     chunk: int = DEFAULT_CHUNK,
+    workers: int = 1,
+    open_repo: Callable[[], tuple[Any, Repository]] | None = None,
     stage_kwargs: dict[str, Any] | None = None,
     run_stage_fn: Callable[..., Any] = run_stage,
     before_stage: Callable[[str], None] | None = None,
@@ -101,6 +158,10 @@ def run_ingest(
     """Run s0 to s7 for a novel, or resume its last unfinished run."""
     if chunk < 1:
         raise IngestError(f"chunk must be at least 1, got {chunk}")
+    if workers < 1:
+        raise IngestError(f"workers must be at least 1, got {workers}")
+    if workers > 1 and open_repo is None:
+        raise IngestError("workers > 1 needs open_repo, one connection per worker")
     pid = os.getpid() if pid is None else pid
     current = live_run(repo, novel_id=novel_id, alive=alive)
     if current is not None:
@@ -146,7 +207,29 @@ def run_ingest(
         try:
             if before_stage is not None:
                 before_stage(stage)
-            if stage in CHUNKED:
+            if stage == "s1" and workers > 1:
+                ranges = [(lo, min(lo + chunk - 1, chapter_to)) for lo in range(1, chapter_to + 1, chunk)]
+                failed, stopped, error = _parallel_chunks(
+                    ranges=ranges, workers=workers, open_repo=open_repo,  # type: ignore[arg-type]
+                    work=lambda wrepo, lo, hi: run_stage_fn(
+                        wrepo, stage=stage, novel_id=novel_id, config=config, chapter_from=lo, chapter_to=hi, **kwargs
+                    ),
+                    stop_asked=lambda wrepo: (
+                        (row := wrepo.get_pipeline_run(novel_id=novel_id, run_id=run_id)) is not None
+                        and row["status"] == "stopping"
+                    ),
+                    progress=lambda wrepo, done, nfailed: wrepo.update_pipeline_run(
+                        novel_id=novel_id, run_id=run_id,
+                        progress={"stage": stage, "chunks_done": done, "chunks": len(ranges), "failed": nfailed,
+                                  "workers": workers},
+                    ),
+                )
+                if error is not None or stopped:
+                    stage_times[stage] = stage_times.get(stage, 0.0) + clock() - began
+                    if error is not None:
+                        return finish("failed", stage, f"{stage}: {error}")
+                    return finish("stopped", stage)
+            elif stage in CHUNKED:
                 for lo in range(1, chapter_to + 1, chunk):
                     hi = min(lo + chunk - 1, chapter_to)
                     if lo > 1 and stop_asked():

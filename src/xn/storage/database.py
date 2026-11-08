@@ -55,7 +55,7 @@ CREATE INDEX IF NOT EXISTS ix_pipeline_runs_novel ON pipeline_runs(novel_id, sta
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
     """Connect to SQLite database, configure WAL mode, foreign keys, and Row factory."""
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30.0)  # G-29.1: S1 workers share the file
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row

@@ -1,5 +1,5 @@
 fallback_model: null
-daily_spend_cap_usd: 2.0  # G-29: raised for the S4-T1 full run only; back to 1.0 after
+daily_spend_cap_usd: 1.0
 # OpenRouter provider routing for cloud calls (G-20.1): the fastest provider first.
 cloud_provider:
   sort: latency

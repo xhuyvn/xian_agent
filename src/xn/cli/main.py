@@ -140,6 +140,7 @@ def ingest(
     chapter_to: int | None = typer.Option(None, "--to", help="Last chapter (default: total_chapters)"),
     resume: bool = typer.Option(False, "--resume", help="Continue the novel's last stopped or failed run"),
     chunk: int = typer.Option(DEFAULT_CHUNK, "--chunk", help="Chapters per chunk on s1, s3 and s4"),
+    workers: int = typer.Option(1, "--workers", help="S1 chunks at once, one connection each (match Ollama's slots)"),
     db: Path = typer.Option(Path("data/xn.db"), "--db", help="Path to SQLite database file"),
     raw_dir: Path | None = typer.Option(None, "--raw-dir", help="Raw chapters (default: raw_dir in the novel config)"),
     configs_dir: Path = typer.Option(Path("configs"), "--configs-dir", help="Path to configs directory"),
@@ -167,6 +168,7 @@ def ingest(
     try:
         result = run_ingest(
             repo, novel_id=novel, config=config, chapter_to=chapter_to, resume=resume, chunk=chunk,
+            workers=workers, open_repo=lambda: _open_repo(db),
             stage_kwargs={"raw_dir": raw_dir, "prompts_dir": prompts_dir}, before_stage=before_stage,
         )
     except IngestError as err:
