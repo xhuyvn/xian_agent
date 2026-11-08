@@ -101,6 +101,8 @@ Done when:
 - `docs/S2_BENCHMARK.md` gives s/chapter (mean, and for chapters 1-100 and 101-200), adjudicator calls, alias F1, Q&A citation hit rate, spoiler leaks, VRAM, a projected time for the remaining S2 of pntt1, exact commands and caveats, and its numbers match the databases
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
+Rounds:
+- R-1 2026-11-08: optional `models.s2_adjudicator` (edafad6), S2 rebuild of chapters 1-200 on two copies with S3, S4 (1-100) and the gold report, `docs/S2_BENCHMARK.md`: qwen3.5 2.4 min against 19.0 min, 0.80 against 6.36 s/call, alias F1 0.667 against 0.644 (one pair, run-to-run), Q&A 1.00 both, 0 leaks -> FAIL, 1 blocker (speed counted the gold report's 10 adjudication calls per run as S2), fixed in e28ee82 -> PASS (delta), 0 agy tokens; NIT: 7.95 shown as 7.9
 Sub-goals:
 - G-31.1 (active): better S2 merges on qwen3.5. G-31 found qwen3.5 8 times faster with the same gold scores, but in chapters 1-200 it merged some generic words into named things ("phù lục" into "Kim Quang Tráo") and some names that share only the type word ("Kim tủy hoàn" into "Trừu tủy hoàn"), and both models miss every title form of a person ("Hàn sư đệ", "Vương môn chủ"), which the fuzzy matcher never sends to the adjudicator. The lead writes the code. Work: (a) record every pair S2 adjudicates on chapters 1-200 of a pntt1 copy, plus title-form pairs, labelled by the lead from the chapter text before any scoring and split into dev and held-out halves; (b) rule checks before the model (generic words never merge into a named entity; names that share only the type word are different); (c) title-form candidates (surname + title sent to the adjudicator with the matching person); (d) adjudicate prompt v2 with naming rules and short examples; optional second vote on "same". Changes are tuned on dev only. The production config changes only on a separate owner yes; a new prompt version makes S2 stale, so the G-29 resume then rebuilds S2.
   Done when:
@@ -113,6 +115,7 @@ Sub-goals:
 Changes:
 - 2026-11-08: owner approved the goal and asked to stop the G-29 run for it ("Approve the S2 qwen3.5 benchmark plan (new goal G-31) to run stop this run, we can resume it later maybe with qwen3.5")
 - 2026-11-08: owner approved sub-goal G-31.1, better S2 merges on qwen3.5, including title forms ("Go")
+- 2026-11-08: owner approved the cost of prompt v2: all of S2 becomes stale and the G-29 resume rebuilds S2 from chapter 1 on qwen3.5 (about 1-1.5 h)
 
 ### G-29: S4-T1 full ingestion of `pntt1`, chapters 1-2,468, with stop and resume (active)
 Plan: chat plan of 2026-11-07, approved with changes on 2026-11-08. `docs/IMPLEMENTATION_PLAN.md` S4-T1. Cut from `main` at f256455.
