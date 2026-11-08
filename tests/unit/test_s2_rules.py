@@ -81,13 +81,14 @@ def test_without_rules_the_generic_mention_is_adjudicated() -> None:
     assert generic == named
 
 
-def test_candidate_with_only_generic_aliases_is_dropped() -> None:
+def test_named_mention_may_still_merge_into_an_entity_known_by_a_generic_word() -> None:
+    """The rule is on the mention only: "phù lục hình kiếm" can name the talisman first seen as "phù lục"."""
     rec = Recorder(answer=True)
     resolver = Resolver(adjudicate=rec, rules=RULES)
-    generic = resolve(resolver, "chưởng môn")
-    named = resolve(resolver, "Chung chưởng môn")
-    assert rec.asked == []
-    assert named != generic
+    generic = resolve(resolver, "phù lục", "weapon_treasure")
+    named = resolve(resolver, "phù lục hình kiếm", "weapon_treasure")
+    assert rec.asked == [("phù lục hình kiếm", ["phù lục"])]
+    assert named == generic
 
 
 def test_title_form_is_sent_with_the_named_person_of_that_surname() -> None:
@@ -116,6 +117,35 @@ def test_title_form_without_rules_is_not_sent() -> None:
     title = resolve(resolver, "Hàn sư đệ", chapter_id=2)
     assert rec.asked == []
     assert title != han
+
+
+class AnswerFor:
+    """Say "same" only for candidates whose first alias is in `yes`."""
+
+    def __init__(self, yes: set[str]) -> None:
+        self.yes = yes
+        self.asked: list[str] = []
+
+    def __call__(self, mention: Mention, candidate: Candidate) -> bool:
+        self.asked.append(candidate.aliases[0])
+        return candidate.aliases[0] in self.yes
+
+
+def test_title_form_merges_when_exactly_one_candidate_is_same() -> None:
+    ans = AnswerFor({"ngô phong"})
+    resolver = Resolver(adjudicate=ans, rules=RULES)
+    ids = {n: resolve(resolver, n, chapter_id=ch) for ch, n in enumerate(["Ngô Minh", "Ngô Phong", "Ngô Kiếm"], 1)}
+    title = resolve(resolver, "Ngô sư huynh", chapter_id=9)
+    assert sorted(ans.asked) == ["ngô kiếm", "ngô minh", "ngô phong"]  # every candidate is asked
+    assert title == ids["Ngô Phong"]
+
+
+def test_title_form_is_new_when_two_candidates_are_same() -> None:
+    ans = AnswerFor({"ngô phong", "ngô minh"})
+    resolver = Resolver(adjudicate=ans, rules=RULES)
+    known = {resolve(resolver, n, chapter_id=ch) for ch, n in enumerate(["Ngô Minh", "Ngô Phong"], 1)}
+    title = resolve(resolver, "Ngô sư huynh", chapter_id=9)
+    assert title not in known
 
 
 def test_title_candidates_skip_other_title_forms_and_categories_and_cap_at_three() -> None:

@@ -34,10 +34,11 @@ MAX_TITLE_CANDIDATES = 3
 class S2Rules:
     r"""Optional S2 matching rules from the config's s2_rules block (G-31.1).
 
-    generic_terms: normalized common nouns (e.g. "phù lục", "chưởng môn") that never merge into
-    another entity and that no entity is merged into when it has only such aliases.
+    generic_terms: normalized common nouns (e.g. "phù lục", "chưởng môn"); a mention that is only
+    such a word is never merged into another entity, so it never becomes a named entity's alias.
     titles: normalized title words; a character mention "<surname> <title>" is sent to the
-    adjudicator with the named characters of that surname.
+    adjudicator with up to MAX_TITLE_CANDIDATES named characters of that surname, and it merges
+    only when exactly one of them is judged the same.
     """
 
     generic_terms: frozenset[str] = frozenset()
@@ -318,15 +319,12 @@ class Resolver:
         exclude: frozenset[int],
         candidates: list[tuple[int, float]],
     ) -> tuple[list[tuple[int, float]], list[int]]:
-        r"""Drop generic matches and add title-form candidates (G-31.1)."""
+        r"""Drop every candidate of a generic mention and find title-form candidates (G-31.1)."""
         rules = self._rules
         assert rules is not None
         if rules.is_generic(norm):
             return [], []
-        kept = [
-            (eid, sc) for eid, sc in candidates
-            if not all(rules.is_generic(al) for al in self._entity_aliases.get(eid, []))
-        ]
+        kept = candidates
         surname = rules.title_surname(norm) if category == "character" else None
         if surname is None:
             return kept, []
@@ -489,7 +487,7 @@ class Resolver:
             candidates_for_adjudication.sort(key=lambda item: (-item[1], item[0]))
             top_candidates = candidates_for_adjudication[:MAX_ADJUDICATIONS]
             top_ids = {eid for eid, _ in top_candidates}
-            top_candidates += [(eid, 0.0) for eid in title_candidates if eid not in top_ids]
+            title_only = [eid for eid in title_candidates if eid not in top_ids]
 
             mention_obj = Mention(
                 name=name,
@@ -516,6 +514,31 @@ class Resolver:
                         is_new_alias=True,
                     )
                     return resolved_id
+
+            # Title forms (G-31.1): ask about every same-surname candidate, merge only on exactly one yes.
+            if title_only and self._adjudicate is not None:
+                said_same = [
+                    eid for eid in title_only
+                    if self._adjudicate(
+                        mention_obj,
+                        Candidate(
+                            entity_id=eid,
+                            aliases=list(self._entity_aliases.get(eid, [])),
+                            contexts=list(self._contexts.get(eid, [])),
+                        ),
+                    )
+                ]
+                if len(said_same) == 1:
+                    self._record_resolution(
+                        entity_id=said_same[0],
+                        norm=norm,
+                        category=category,
+                        chapter_id=chapter_id,
+                        context=context,
+                        source="llm",
+                        is_new_alias=True,
+                    )
+                    return said_same[0]
 
         # Step 6: New entity
         resolved_id = self._create_entity(
