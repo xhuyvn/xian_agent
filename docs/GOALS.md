@@ -110,7 +110,7 @@ Done when:
 - `docs/S4_T1_RUN.md` gives stage times, spend, failures and how they were cleared, row counts, commands and caveats, and its numbers match the database
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
-- none yet
+- R-1 2026-11-08: `xn ingest`, `xn stop`, `xn status` and the `pipeline_runs` table, with unit tests on fake stages -> PASS, 0 blockers, f5d11df; NITs 1-2 (a chunk with stopped_at did not end s3/s4; a boundary stop resumed the finished stage) fixed in 1ce46d1 -> PASS (delta), 0 agy tokens; open NITs: the single-flight check and the run insert are not atomic (needs a unique live-run index for S4-T5), `pid_alive` has no ctypes argtypes and PID reuse can make a dead run look alive
 Sub-goals:
 - none yet
 Changes:
