@@ -15,7 +15,7 @@ from xn.graph.nodes.gate import gate
 from xn.graph.nodes.resolve import resolve_entities
 from xn.graph.nodes.retrieve import retrieve
 from xn.graph.nodes.route import route
-from xn.llm import local_model
+from xn.llm import local_model, s2_model_key
 from xn.pipeline.s2_resolve import (
     Candidate,
     Mention,
@@ -413,12 +413,13 @@ def gold_report(
         row["chapter_id"]: json.loads(row["payload"])
         for row in repo.list_extractions(novel_id=novel_id, chapter_max=scope)
     }
+    adjudicator_model = model or local_model(config, s2_model_key(config))
     model = model or local_model(config)
     adjudicate = build_adjudicator(
         repo,
         novel_id=novel_id,
         config=config,
-        model=model,
+        model=adjudicator_model,
         prompt=load_adjudicate_prompt(config, prompts_dir),
     )
     deps = GraphDeps(repo=repo, config=config, prompts_dir=prompts_dir, router_model=model)

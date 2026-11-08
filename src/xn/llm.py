@@ -109,6 +109,7 @@ def render_compact_prompt(question: str, items: list[CompactItem]) -> str:
 
 LOCAL_KEY = "local_extractor"
 S1_KEY = "s1_extractor"
+S2_KEY = "s2_adjudicator"
 
 
 def s1_model_key(config: dict[str, Any]) -> str:
@@ -118,6 +119,11 @@ def s1_model_key(config: dict[str, Any]) -> str:
     always uses local_extractor.
     """
     return S1_KEY if (config.get("models") or {}).get(S1_KEY) else LOCAL_KEY
+
+
+def s2_model_key(config: dict[str, Any]) -> str:
+    """Return the models key the S2 adjudicator runs on: s2_adjudicator when set (G-31), else local_extractor."""
+    return S2_KEY if (config.get("models") or {}).get(S2_KEY) else LOCAL_KEY
 
 
 def local_model(config: dict[str, Any], key: str = LOCAL_KEY) -> OpenAIChatModel:

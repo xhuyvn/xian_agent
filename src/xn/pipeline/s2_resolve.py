@@ -12,7 +12,7 @@ from typing import Any, Callable
 from pydantic_ai import Agent
 import rapidfuzz
 
-from xn.llm import extractor_output, extractor_settings, local_model, run_logged
+from xn.llm import extractor_output, extractor_settings, local_model, run_logged, s2_model_key
 from xn.prompts import load_prompt, profile_from_config
 from xn.schemas.extraction import ChapterExtraction, EntityEvent
 from xn.schemas.lifecycle import LifecycleEventType
@@ -605,19 +605,23 @@ def build_adjudicator(
     model: Any,
     prompt: Any,
 ) -> Callable[[Mention, Candidate], bool]:
-    r"""Construct the configured adjudicator on the given model and prompt."""
+    r"""Construct the configured adjudicator on the given model and prompt.
+
+    Settings and the recorded model come from models.s2_adjudicator when set (G-31), else local_extractor.
+    """
+    key = s2_model_key(config)
     agent = Agent(
         model,
-        output_type=extractor_output(AdjudicationDecision, config),
+        output_type=extractor_output(AdjudicationDecision, config, key),
         system_prompt=prompt.text,
         retries=3,
-        model_settings=extractor_settings(config),
+        model_settings=extractor_settings(config, key),
     )
     return make_adjudicator(
         agent,
         repo=repo,
         novel_id=novel_id,
-        serving_name=config["models"]["local_extractor"]["serving_name"],
+        serving_name=config["models"][key]["serving_name"],
         prompt_version=prompt.prompt_version,
     )
 
@@ -663,10 +667,11 @@ def run_s2(
     if chapter_to is None:
         chapter_to = config["total_chapters"]
 
+    key = s2_model_key(config)
     if model is None:
-        model = local_model(config)
+        model = local_model(config, key)
 
-    serving_name = config["models"]["local_extractor"]["serving_name"]
+    serving_name = config["models"][key]["serving_name"]
 
     profile = profile_from_config(config)
 
