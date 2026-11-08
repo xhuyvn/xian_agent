@@ -1,0 +1,8 @@
+cd /e/Workspace/projects/xian_agent/.claude/worktrees/sprint-4-setup-cleanup-017e31
+export PYTHONIOENCODING=utf-8; L=/e/Workspace/projects/xian_agent/data/bench/g311-final/g311.log
+echo "s2 start $(date -u +%FT%TZ)" | tee -a $L
+uv run xn run --novel pntt1 --stage s2 --to 200 --rebuild --db /e/Workspace/projects/xian_agent/data/bench/g311-final/g311.db --configs-dir /e/Workspace/projects/xian_agent/data/bench/g311-final/configs >> $L 2>&1; echo "s2 exit $? $(date -u +%FT%TZ)" | tee -a $L
+uv run xn run --novel pntt1 --stage s3 --to 200 --db /e/Workspace/projects/xian_agent/data/bench/g311-final/g311.db --configs-dir /e/Workspace/projects/xian_agent/data/bench/g311-final/configs >> $L 2>&1; echo "s3 exit $?" | tee -a $L
+for n in $(curl -s localhost:11434/api/ps | py -c "import json,sys;print(' '.join(m['name'] for m in json.load(sys.stdin)['models'] if not m['name'].startswith('bge-m3')))"); do curl -s localhost:11434/api/generate -d "{\"model\":\"$n\",\"keep_alive\":0}" >/dev/null; done; sleep 5
+uv run xn run --novel pntt1 --stage s4 --to 100 --db /e/Workspace/projects/xian_agent/data/bench/g311-final/g311.db --configs-dir /e/Workspace/projects/xian_agent/data/bench/g311-final/configs >> $L 2>&1; echo "s4 exit $?" | tee -a $L
+uv run pytest tests/eval -m gold --novel pntt1 --gold-db=/e/Workspace/projects/xian_agent/data/bench/g311-final/g311.db --gold-report=/e/Workspace/projects/xian_agent/data/bench/g311-final/g311-report.json --gold-configs-dir=/e/Workspace/projects/xian_agent/data/bench/g311-final/configs -q -p no:cacheprovider >> /e/Workspace/projects/xian_agent/data/bench/g311-final/gold.log 2>&1; echo "gold exit $? $(date -u +%FT%TZ)" | tee -a $L

@@ -88,3 +88,90 @@ uv run pytest tests/eval -m gold --novel pntt1 --gold-db=<data>/bench/g31-<m>/g3
 ```
 
 Speed figures: `llm_runs` rows with `stage = 's2'` and `created_at` from 2026-11-08T09:23 to 09:42:24 UTC (qwen3.8) and from 09:45 to 09:47:55 UTC (qwen3.5); the database copies also hold the live run's older rows, and the gold report's 10 adjudication calls per run come after the window. Before S4, all other Ollama models were unloaded (`keep_alive: 0`). Logs: `g31.log`, `gold.log` and `gold2.log` in each `<data>/bench/g31-<m>/`. The first gold reports (before S4) are `g31-report.json`; their Q&A refused 14 of 15 questions because the bench had no chunks yet, and only their alias and spoiler numbers are used above.
+
+## G-31.1: better S2 merges on qwen3.5
+
+Date: 2026-11-08. Goal: G-31.1.
+
+**qwen3.5 with two new opt-in rules and the unchanged prompt v1 raises gold alias F1 from 0.667 to 0.806 (precision 1.00, recall 0.675), keeps Q&A at 1.00 and 0 spoiler leaks, and runs at 0.71 s/call. On held-out adjudication pairs it is more accurate than production qwen3.8 (0.866 against 0.817) but makes 6 false merges against 4, which misses the Done-when line "no more false merges".** Production config is unchanged.
+
+### Pair set
+
+`eval/pntt1/s2_pairs/` (README there): 179 pairs that S2 sent to the adjudicator on chapters 1-200 (qwen3.5, prompt v1), and 30 title-form pairs harvested with the title rule and no model calls. Labels by the lead, policy in the README; 11 + 3 pairs are `unclear` and not scored. Split by chapter parity: dev (odd) 98 + 15 scored pairs, held-out (even) 70 + 12. The labeller saw the recorded qwen3.5 decisions of the first set, so labels are not blind.
+
+### What was tried on dev
+
+Replays send the same pairs to each setup (`tools/replay.py`). One run per row unless noted; repeat runs moved by 0 to 2 pairs.
+
+| Dev setup (98 pairs) | Accuracy | False merges | Missed |
+|---|---|---|---|
+| qwen3.8, prompt v1 (production) | 0.857 | 5 | 9 |
+| qwen3.5, v1 | 0.898 | 5 | 5 |
+| qwen3.5, v2 (naming rules, examples) | 0.878 | 7 | 5 |
+| qwen3.5, v2, generic rule on mention and candidate | 0.888 / 0.888 (two runs) | 5 | 6 |
+| same, second vote on "same" | 0.898 | 4 | 6 |
+| same, reason written before the decision | 0.878 | 6 | 6 |
+| qwen3.5, v3 (v2 + compare-then-decide reason) | 0.796 | 3 | 17 |
+| qwen3.5, v2, generic rule on mention only | 0.908 | 6 | 3 |
+| qwen3.5, v2b (v2 without the "name with description" clause), mention rule | 0.878 / 0.878 | 5 | 7 |
+| **qwen3.5, v1, generic rule on mention only** | **0.918 / 0.918** | 2 / 3 | 6 / 5 |
+| qwen3.5, v1, mention rule, second vote | 0.888 | 3 | 8 |
+
+Prompt v2 made qwen3.5 merge descriptive names that are different things (two wooden boxes, Quy tức công and Liễm tức công, two token plates), so it was dropped; the tried prompts are kept in `tools/prompts/`. The candidate-side generic rule (drop candidates known only by generic words) blocked four true matches where a specific object was first named generically ("đạo phù lục", "công pháp cơ sở", "hồ lô", "lão đầu"), so only the mention-side rule stays.
+
+Title forms on dev (15 pairs): asking about each same-surname candidate and taking the first "same" gave 2 false merges ("Ngô sư huynh" to Ngô Cửu Chỉ and Ngô Minh Thụy; qwen3.8 made 3). Merging only when exactly one candidate is "same" gave 15 of 15.
+
+### Frozen setup
+
+- Adjudicate prompt v1, `models.s2_adjudicator` = `qwen3.5_12k:q8_mtp`.
+- `s2_rules.generic_terms`: a mention that is only a generic word (51 terms such as "phù lục", "khẩu quyết", "chưởng môn") never merges into another entity.
+- `s2_rules.titles`: a character mention "<surname> <title>" (47 title words such as "sư huynh", "môn chủ", "đại phu", plus "thị", "gia", "lão giả", "phủ") is asked against up to 3 named characters of that surname, most recently seen first, and merges only on exactly one "same".
+- Both lists are in `data/bench/g311/configs/config.yaml`; without an `s2_rules` block S2 runs as before. A set block is part of the S2 input hash, so turning it on makes S2 stale.
+
+### Held-out (one run, 82 pairs)
+
+| Held-out setup | Accuracy | False merges | Missed |
+|---|---|---|---|
+| qwen3.8, v1, no rules (production) | 0.817 | 4 (p084, p146, p167, p171) | 11 |
+| qwen3.5, v1, no rules | 0.854 | 6 | 6 |
+| **qwen3.5, v1, rules** | **0.866** | **6** (p070, p110, p146, p148, p168, t023) | **5** |
+
+Without rules the title pairs never reach the adjudicator, so they count as "different" for the first two rows. The qwen3.5 false merges are a place merged into an event (Thiên vụ đài / Thăng Tiên đại hội), two spells that differ in one syllable (Băng trùy / Băng đống thuật, Ẩn hình / Ngụy nặc thuật), a talisman merged into a spell, a description merged into a generic candidate, and one title form (Vương sư đệ / Vương Tuyệt Sở).
+
+### Full rebuild and gold report
+
+S2 rebuilt on chapters 1-200 of a fresh copy (`data/bench/g311-final/`) with the frozen setup, then S3 (1-200), S4 (1-100, collections `g311_chunks`/`g311_arcs`) and the gold report:
+
+| Gold, chapters 1-100 | qwen3.5 + rules (G-31.1) | qwen3.5 (G-31) | qwen3.8 (G-31) |
+|---|---|---|---|
+| Alias F1 (precision / recall) | **0.806** (1.00 / 0.675) | 0.667 (1.00 / 0.50) | 0.644 (1.00 / 0.475) |
+| Q&A citation hit rate / context recall | 1.00 / 0.978 | 1.00 / 0.978 | 1.00 / 0.978 |
+| Spoiler leaks | 0 of 10 | 0 of 10 | 0 of 10 |
+| S2 adjudication calls, s/call | 201, 0.71 | 176, 0.80 | 178, 6.36 |
+
+S2 took 2.5 min (10:55:15 to 10:57:42 UTC). The title rule adds the gold matches "Lệ Phi Vũ / Lệ sư huynh", "Lệ Phi Vũ / Lệ đại đường chủ", "Cổ Thiên Long / Cổ bang chủ", "Hàn Lập / Hàn sư huynh", "Hàn Lập / Hàn đại phu", "Hàn Lập / Hàn tiểu đại phu" and "Hắc Hùng / Hắc gia", with no gold false merge. Still missed: forms whose candidate is itself a title form ("Mặc đại phu / Mặc lão"), nicknames ("Anh ngố", "cự hán") and hidden identities.
+
+### Caveats
+
+- One held-out run; the replays moved by up to 2 pairs between runs on dev.
+- Labels are the lead's and not blind to the qwen3.5 v1 decisions.
+- The generic and title lists were written from the G-31 differences and the title pairs of both halves, so they are not held-out-clean; the prompt choice and the two rule variants were chosen on dev only.
+- Chapters 1-200 only.
+
+### Commands
+
+Tools are in `eval/pntt1/s2_pairs/tools/` and use the paths of this machine. Pairs: `record_pairs.py` (copy of `data/xn.db`, S2 rebuild 1-200 with qwen3.5, records each adjudication), `harvest_titles.py`. Replays, from the repo root:
+
+```bash
+uv run py -I eval/pntt1/s2_pairs/tools/replay.py --configs <data>/bench/g311/configs --prompt v1 --rules --mention-only --split held_out --out <data>/bench/g311/replay/final-q35-pairs-ho.jsonl
+```
+
+```bash
+uv run py -I eval/pntt1/s2_pairs/tools/replay.py --configs <data>/bench/g311/configs --prompt v1 --rules --mention-only --split held_out --pairs eval/pntt1/s2_pairs/title_pairs.jsonl --out <data>/bench/g311/replay/final-q35-titles-ho.jsonl
+```
+
+```bash
+uv run py -I eval/pntt1/s2_pairs/tools/replay.py --configs <data>/bench/g31-q38/configs --prompt v1 --out <data>/bench/g311/replay/q38-v1.jsonl
+```
+
+Title pairs are scored per mention: the merge counts only when exactly one candidate is "same". The full rebuild is `tools/final_rebuild.sh` (S2, S3, S4 and the gold report, as in G-31). All replay outputs are in `<data>/bench/g311/replay/`.
