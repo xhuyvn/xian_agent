@@ -120,6 +120,7 @@ Sub-goals:
   - `py -m compileall -q src` and `uv run pytest tests/unit` pass
   Rounds:
   - R-1 2026-11-08: `--workers N` for S1 in `xn ingest`, 30 s SQLite busy timeout, spend cap moved to a run-only config copy -> FAIL, 1 blocker (`local_model` cached one model for all threads, so workers shared an HTTP client across event loops), 058b67b; fixed with a per-thread model cache and a deterministic stop test in e19e52a -> PASS (delta), 0 blockers, 0 agy tokens; the first verifier hung on its own background work and a fresh one gave the delta verdict; NIT: `_MODEL_CACHE.__dict__.setdefault` could be `getattr`/`setattr`. The live-speed line is checked on the resumed run
+  - Live check 2026-11-08: run f57c2d70 stopped with `xn stop` at 350 S1 chapters (clean chunk boundary, 0 failed) and resumed with `--workers 4 --chunk 25`: 255 chapters in 1,779 s between first and last done, 7.00 s/chapter steady (last 200 also 7.00), 0 `database is locked`, 0 failed, 14.1 GB VRAM. Meets the <= 7 line exactly; slower than G-30's 5.7 on the 50 bench chapters (later chapters, run measured end to end)
 Changes:
 - 2026-11-08: owner approved the plan with decisions 1-3, replaced decision 4 with stop and resume for later use in the web UI, and asked to check the S1 model
 - 2026-11-08: owner approved sub-goal G-29.1, parallel S1 workers ("yes, add it as sub-goal G-29.1")
