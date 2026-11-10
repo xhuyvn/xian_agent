@@ -229,3 +229,24 @@ Full rebuild (`data/bench/g311r3-final/`, chapters 1-200, then S3, S4 1-100 into
 qwen3.5 calls slow from 0.7 to 2.4 s and qwen3.8 confirmations take 12.8 s because each confirmation unloads one model and loads the other. Alias F1 is lower than R-1 because the confirmer rejects some title-form matches R-1 accepted ("Lệ đại đường chủ", "Hắc gia").
 
 Commands: `tools/record_heldout3.py`; replays as in R-2 with `--configs <data>/bench/g311r3/configs` (adds `s2_confirmer`) and `--pairs eval/pntt1/s2_pairs/heldout3_pairs.jsonl`; the full rebuild is `tools/final_rebuild.sh` pointed at `<data>/bench/g311r3-final/`. Outputs in `<data>/bench/g311r3/` and `g311r3-final/`.
+
+### G-31.1 test: qwen3.8-flash (Alibaba Model Studio) as the confirmer
+
+Date: 2026-11-10. Asked by the owner, to time the hybrid with a cloud confirmer. Config `data/bench/g311r4/configs/`: qwen3.5 with the R-2 rules decides; `models.s2_confirmer` is `qwen3.8-flash` on the owner's Model Studio endpoint, thinking off (`extra_body: {enable_thinking: false}`), key from the `dashscope_api_key` setting (environment, never in config).
+
+| | S2 chapters 1-100 wall | qwen3.5 calls, mean | confirmer calls, mean | mean s/call (all) |
+|---|---|---|---|---|
+| hybrid, qwen3.8-flash confirms | **92 s** (15:01:34 to 15:03:06 UTC) | 39, 1.07 s | 19, 2.46 s | 1.53 |
+| hybrid, local qwen3.8 confirms (R-3) | 339 s (S2 job times) | 37, 3.33 s | 16, 13.46 s | 6.38 |
+
+Flash used 17,309 input and 1,803 output tokens on those 19 calls (about 1,000 per call; a local qwen3.8 call is about 660 by Ollama's count).
+
+Held-out 3 (154 blind pairs, chapters 401-600), one run:
+
+| Held-out 3 | Accuracy | False merges | Missed | s/pair |
+|---|---|---|---|---|
+| qwen3.8 alone (production) | 0.916 | 7 | 6 | 5.54 |
+| hybrid, local qwen3.8 confirms | 0.942 | 2 | 7 | 4.08 |
+| **hybrid, qwen3.8-flash confirms** | **0.948** | **0** | 8 | 1.26 |
+
+Projection for all 2,468 chapters: 7,900-16,500 qwen3.5 calls (R-3 estimate), of which 31-49% go to the confirmer (31% on chapters 1-200 locally, 49% on chapters 1-100 here): about 2,400-8,100 flash calls, 2.4-8.1 M flash tokens, and 4-10 h of S2. The flash tokens are well above a 1M free quota. The test itself used about 80k flash tokens (19.1k measured in the rebuild; the replay's are estimated from 57 "same" answers at about 1,000 each).
