@@ -101,6 +101,7 @@ Done when:
 - A smoke run of S4-S7 on chapters 1-100 on a database copy with separate Qdrant collections finishes on the pools, with time and tokens per model reported
 - `py -m compileall -q src` and `uv run pytest tests/unit` pass
 Rounds:
+- R-1 2026-11-11: `model_pools`/`stage_pools`, failover on a quota-used-up error with `model_quota`, a used-up pool stops the stage, `llm_runs` records the answering model, `xn ingest --until`; probe of the 9 models (qwen3.8-2.4t-a95b needs thinking on); smoke S4-S7 on chapters 1-100 (g32 copy, g32_* collections): S5 1 call, S6 2 arcs (deepseek-v4-pro, 18.9k tokens), prefix 10 (28.4k), S7 158 digests (135.5k, 11.5 min), all on qwen3.8-max, 0 failed; S6 first refused its 2nd arc on "no reported cost", fixed by recording free pool calls at $0 -> FAIL, 1 blocker (S5 swallowed the pool-exhausted error), fixed in 0cf7edc -> PASS (delta), 0 agy tokens; NITs: failover on a real quota error not yet seen live, S4 skipped in the smoke so the Qdrant arc-id path was not exercised
 Changes:
 - 2026-11-11: owner approved the goal and the plan ("Go"), with S3 and S4 finished first
 - 2026-11-11: probe: qwen3.8-2.4t-a95b only accepts enable_thinking true, so a pool entry may carry its own extra_body; the other eight models answer with thinking off
