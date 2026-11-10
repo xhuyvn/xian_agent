@@ -92,6 +92,19 @@ Changes:
 - 2026-11-06: owner approved sub-goal G-27.1, the S1-only model split ("Go")
 - 2026-11-06: owner approved the production switch ("Yes, switch it"): `configs/config.yaml` gains `models.s1_extractor` = `qwen3.5:9b_UD_Q6` (`qwen35-9b-udq6-10k`), `prompts.s1_extract: v4` and the `s1.postprocess` block (all three fixes on); `local_extractor` stays `qwen3.8:udiq4_hui` for the router, S2, S5 and prefix. `xn run --stage s1 --stale-only` now compares jobs against the clean-up-aware hash, and the runner tests' fixture names the protagonist mid-sentence so the name filter keeps him. The existing ingests are not re-run here: v4 makes S1 redo every chapter (about 12 h for 2,468), then S2 needs `--rebuild`
 
+### G-32: free-quota Alibaba model pools for S5, S6, prefix and S7 (active)
+Plan: chat plan of 2026-11-11, from the G-29 run. Cut from this branch at ad95f05.
+Owner decisions: the lead writes the code, no agy in Sprint 4. Each model below has a 1M-token free quota on the owner's Alibaba Model Studio workspace and fails when it is used up. S5, prefix and S7 run on a Qwen pool (qwen3.8-max, qwen3.8-2.4t-a95b, qwen3.8-27b, qwen3.8-max-0902, qwen3.7-max); S6 runs on a DeepSeek pool (deepseek-v4-pro, deepseek-v4-pro-0813, deepseek-v4.1-flash-1017, deepseek-v4.1-flash) instead of OpenRouter. When every model of a pool is used up, the run stops and the owner is alerted. The G-29 run stops after S4 (`xn ingest --until s4`) and resumes from S5 on the pools. Only the run config copy changes; `configs/config.yaml` does not. S5, prefix and S7 send chapter text and summaries to Alibaba from now on (owner's choice).
+Done when:
+- Optional `model_pools` and `stage_pools` config blocks: a stage named in `stage_pools` calls its pool, in order; a "quota used up" error marks that model exhausted in a new `model_quota` table, the same call moves to the next model, and later calls and resumed runs skip it; when every model is used up, the stage stops with a clear error and a resume continues from there; without the blocks every stage runs as before; unit tests on fake models
+- `llm_runs` records the pool model that answered each call
+- A smoke run of S4-S7 on chapters 1-100 on a database copy with separate Qdrant collections finishes on the pools, with time and tokens per model reported
+- `py -m compileall -q src` and `uv run pytest tests/unit` pass
+Rounds:
+Changes:
+- 2026-11-11: owner approved the goal and the plan ("Go"), with S3 and S4 finished first
+- 2026-11-11: probe: qwen3.8-2.4t-a95b only accepts enable_thinking true, so a pool entry may carry its own extra_body; the other eight models answer with thinking off
+
 ### G-31: benchmark `qwen3.5_12k:q8_mtp` against `qwen3.8:udiq4_hui` as the S2 adjudicator (active)
 Plan: chat plan of 2026-11-08, from the S4-T1 run. S2 on pntt1 ran at about 13 s/chapter (664 chapters in 2.4 h) and gets slower as aliases grow, so the remaining 1,804 chapters would take 6.5 h or more. S2 runs chapters in order, so it cannot be split across workers; a faster model is the lever. Cut from this branch at 35d52e8.
 Owner decisions: the lead writes the code, no agy in Sprint 4. The G-29 run is stopped first (S2 at chapter 664) and resumed later, maybe with qwen3.5 on S2. Benchmarks use copies of `data/xn.db` under `data/bench/`; the live database is not written. The production config changes only on a separate owner yes.
