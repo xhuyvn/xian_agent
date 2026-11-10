@@ -241,3 +241,28 @@ def test_confirmer_model_is_built_from_its_block(monkeypatch: pytest.MonkeyPatch
     build_adjudicator(repo, novel_id="pntt1", config=cfg, model=FunctionModel(FakeAdjudicator()),
                       prompt=load_adjudicate_prompt(cfg, PROMPTS_DIR))
     assert asked == ["s2_confirmer"]
+
+
+def test_a_failing_confirmer_counts_as_different_and_is_logged(repo: Any, db_conn: sqlite3.Connection) -> None:
+    from xn.pipeline.s2_resolve import build_adjudicator, load_adjudicate_prompt
+    cfg = with_confirmer(make_config())
+    first, broken = FakeAdjudicator(default_decision=True), FakeAdjudicator()
+    broken.should_fail = True
+    adj = build_adjudicator(repo, novel_id="pntt1", config=cfg, model=FunctionModel(first),
+                            prompt=load_adjudicate_prompt(cfg, PROMPTS_DIR), confirmer_model=FunctionModel(broken))
+    m, c = _mention_candidate()
+    assert adj(m, c) is False
+    rows = [(r["model"], r["ok"]) for r in db_conn.execute("SELECT model, ok FROM llm_runs WHERE stage = 's2' ORDER BY rowid")]
+    assert rows == [("s2-model", 1), ("confirm-model", 0)]
+
+
+def test_a_failing_first_model_still_raises(repo: Any) -> None:
+    from xn.pipeline.s2_resolve import build_adjudicator, load_adjudicate_prompt
+    cfg = with_confirmer(make_config())
+    broken = FakeAdjudicator()
+    broken.should_fail = True
+    adj = build_adjudicator(repo, novel_id="pntt1", config=cfg, model=FunctionModel(broken),
+                            prompt=load_adjudicate_prompt(cfg, PROMPTS_DIR), confirmer_model=FunctionModel(FakeAdjudicator()))
+    m, c = _mention_candidate()
+    with pytest.raises(Exception):
+        adj(m, c)

@@ -860,7 +860,16 @@ def build_adjudicator(
     second = one(CONFIRMER_KEY, confirmer_model if confirmer_model is not None else local_model(config, CONFIRMER_KEY))
 
     def adjudicate(mention: Mention, candidate: Candidate) -> bool:
-        return first(mention, candidate) and second(mention, candidate)
+        if not first(mention, candidate):
+            return False
+        try:
+            return second(mention, candidate)
+        except Exception as err:  # the failed call is already in llm_runs (ok=0); unsure means "different"
+            logger.warning(
+                "Chapter %d: confirmer failed on '%s', treated as different: %s",
+                mention.chapter_id, mention.name, err,
+            )
+            return False
 
     return adjudicate
 
