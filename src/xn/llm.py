@@ -404,6 +404,8 @@ def run_compact(
         seconds = time.perf_counter() - start_time
         usage = result.usage if result is not None else None
         cost = _reported_cost(result.all_messages() if result is not None else messages)
+        if cost is None and result is not None and getattr(call_model, "last_used", None):
+            cost = 0.0  # G-32: a free-quota pool member answered; used-up quota fails instead of billing
         repo.add_llm_run(
             novel_id=novel_id,
             run_id=run_id,

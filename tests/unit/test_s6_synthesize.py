@@ -349,3 +349,20 @@ def test_a_used_up_pool_stops_s6_like_the_spend_cap(repo, conn, store, monkeypat
     assert result.stopped_at == 1 and result.written == 0
     assert len(calls) == 1  # the used-up member is never asked again
     assert repo.get_job(novel_id=NOVEL, chapter_id=SPANS[0][1], stage="s6")["status"] == "failed"
+
+
+def test_free_pool_calls_count_as_zero_cost_so_the_spend_cap_keeps_going(repo, conn, store, monkeypatch):
+    from xn.model_pool import DEFAULT_EXHAUSTED_PATTERNS, PoolMember, PoolModel, PoolState
+    from xn.pipeline import s6_synthesize
+
+    def respond(messages, info):  # no cost in provider_details, like Alibaba's free tier
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, synthesis())],
+                             usage=RequestUsage(input_tokens=100, output_tokens=50))
+
+    state = PoolState(name="deepseek_free", provider="dashscope", patterns=DEFAULT_EXHAUSTED_PATTERNS)
+    pool = PoolModel([PoolMember(FunctionModel(respond), "deepseek-v4-pro", state, None)], state)
+    monkeypatch.setattr(s6_synthesize, "build_pool", lambda *a, **k: pool)
+    result = run_s6(repo, novel_id=NOVEL, config=POOL_CONFIG, store=store, embedder=FakeEmbedder(), sleep=lambda s: None)
+    assert result.written == len(SPANS) and result.stopped_at is None
+    rows = list(conn.execute("SELECT model, cost_usd FROM llm_runs WHERE stage = 's6'"))
+    assert [(r["model"], r["cost_usd"]) for r in rows] == [("deepseek-v4-pro", 0.0)] * len(SPANS)
