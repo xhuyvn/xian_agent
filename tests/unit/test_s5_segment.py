@@ -319,3 +319,14 @@ def test_qdrant_failure_marks_job_failed_and_leaves_sqlite(repo, conn, client):
 def test_runner_refuses_partial_s5(repo, kwargs):
     with pytest.raises(RunRequestError):
         run_stage(repo, stage="s5", novel_id=NOVEL, config=CONFIG, **kwargs)
+
+
+def test_a_used_up_pool_stops_the_review_instead_of_keeping_the_boundary():
+    from xn.model_pool import PoolExhaustedError
+
+    def reviewer(b, window):
+        raise PoolExhaustedError("model pool qwen_free: every model's quota is used up")
+
+    with pytest.raises(PoolExhaustedError):
+        review_boundaries([1, 31, 91], n=180, summaries={c: SUMMARY for c in range(1, 181)},
+                          reviewer=reviewer, settings=settings())

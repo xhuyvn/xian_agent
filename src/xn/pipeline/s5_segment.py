@@ -185,6 +185,8 @@ def review_boundaries(
         window = [(c, summaries[c]) for c in range(max(1, b - w), min(n, b + w) + 1)]
         try:
             proposed = reviewer(b, window)
+        except PoolExhaustedError:  # G-32: stop S5 (the job is marked failed) so a resume redoes it
+            raise
         except Exception as err:
             logger.warning("Boundary %d review failed (%s); keeping it", b, err)
             proposed = None
