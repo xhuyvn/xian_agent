@@ -131,9 +131,13 @@ def local_model(config: dict[str, Any], key: str = LOCAL_KEY) -> OpenAIChatModel
 
     Constructs the model on first call from models.<key>.serving_name
     and base_url with api_key="ollama", and caches per (serving_name, base_url).
+    An optional models.<key>.api_key_setting names a CloudSettings field (for example
+    "dashscope_api_key") whose secret is used as the key instead, for an OpenAI-compatible
+    cloud endpoint (G-31.1).
 
     Raises:
-        ValueError: If models.<key>.serving_name is missing.
+        ValueError: If models.<key>.serving_name is missing, or api_key_setting names an
+            unknown or empty setting.
     """
     models_cfg = config.get("models", {}).get(key, {})
     serving_name = models_cfg.get("serving_name")
@@ -141,10 +145,18 @@ def local_model(config: dict[str, Any], key: str = LOCAL_KEY) -> OpenAIChatModel
         raise ValueError(f"Missing required config key: models.{key}.serving_name")
     base_url = models_cfg.get("base_url") or "http://localhost:11434/v1"
 
+    key_setting = models_cfg.get("api_key_setting")
+    api_key = "ollama"
+    if key_setting:
+        secret = getattr(CloudSettings(), str(key_setting), None)
+        api_key = secret.get_secret_value() if secret is not None else ""
+        if not api_key:
+            raise ValueError(f"models.{key}.api_key_setting: {key_setting} is not set")
+
     cache: dict[tuple[str, str], OpenAIChatModel] = _MODEL_CACHE.__dict__.setdefault("models", {})
     cache_key = (serving_name, base_url)
     if cache_key not in cache:
-        provider = OpenAIProvider(base_url=base_url, api_key="ollama")
+        provider = OpenAIProvider(base_url=base_url, api_key=api_key)
         cache[cache_key] = OpenAIChatModel(serving_name, provider=provider)
     return cache[cache_key]
 
@@ -185,11 +197,14 @@ def extractor_settings(config: dict[str, Any], key: str = LOCAL_KEY) -> dict[str
     """Build model settings from models.<key> temperature and think.
 
     think: false asks Ollama to skip thinking. When unset, the model's default applies.
+    extra_body (optional) is sent as is, e.g. {"enable_thinking": false} for DashScope.
     """
     models_cfg = config.get("models", {}).get(key, {})
     settings: dict[str, Any] = {"temperature": models_cfg.get("temperature", 0.1)}
     if models_cfg.get("think") is False:
         settings["openai_reasoning_effort"] = "none"
+    if models_cfg.get("extra_body"):
+        settings["extra_body"] = dict(models_cfg["extra_body"])
     return settings
 
 

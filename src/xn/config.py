@@ -29,6 +29,8 @@ class CloudSettings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     deepseek_api_key: SecretStr = SecretStr("")
     deepseek_base_url: str = "https://api.deepseek.com"
+    # G-31.1: Alibaba Model Studio (DashScope) key for a cloud model block with api_key_setting.
+    dashscope_api_key: SecretStr = SecretStr("")
 
 
 def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
