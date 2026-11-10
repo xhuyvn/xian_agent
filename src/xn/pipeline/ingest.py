@@ -154,10 +154,13 @@ def run_ingest(
     alive: Callable[[int | None], bool] = pid_alive,
     clock: Callable[[], float] = time.monotonic,
     pid: int | None = None,
+    until: str | None = None,
 ) -> IngestResult:
     """Run s0 to s7 for a novel, or resume its last unfinished run."""
     if chunk < 1:
         raise IngestError(f"chunk must be at least 1, got {chunk}")
+    if until is not None and until not in STAGES:
+        raise IngestError(f"until must be one of {', '.join(STAGES)}, got {until}")
     if workers < 1:
         raise IngestError(f"workers must be at least 1, got {workers}")
     if workers > 1 and open_repo is None:
@@ -258,4 +261,8 @@ def run_ingest(
         stage_times[stage] = stage_times.get(stage, 0.0) + clock() - began
         if failed:
             return finish("failed", stage, f"{stage}: {failed} failed")
+        if stage == until and stage != stages[-1]:  # planned pause: resume starts at the next stage
+            following = stages[stages.index(stage) + 1]
+            repo.update_pipeline_run(novel_id=novel_id, run_id=run_id, current_stage=following)
+            return finish("stopped", following)
     return finish("done", None)

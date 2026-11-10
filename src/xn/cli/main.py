@@ -145,6 +145,7 @@ def ingest(
     raw_dir: Path | None = typer.Option(None, "--raw-dir", help="Raw chapters (default: raw_dir in the novel config)"),
     configs_dir: Path = typer.Option(Path("configs"), "--configs-dir", help="Path to configs directory"),
     prompts_dir: Path = typer.Option(Path("prompts"), "--prompts-dir", help="Path to prompts directory"),
+    until: str | None = typer.Option(None, "--until", help="Stop after this stage; --resume continues with the next"),
 ) -> None:
     """Run s0 to s7 in order as one run that `xn stop` can stop and `--resume` continues."""
     logging.basicConfig(level=logging.INFO)
@@ -170,6 +171,7 @@ def ingest(
             repo, novel_id=novel, config=config, chapter_to=chapter_to, resume=resume, chunk=chunk,
             workers=workers, open_repo=lambda: _open_repo(db),
             stage_kwargs={"raw_dir": raw_dir, "prompts_dir": prompts_dir}, before_stage=before_stage,
+            until=until,
         )
     except IngestError as err:
         raise _fail("VALIDATION_FAILED", err)

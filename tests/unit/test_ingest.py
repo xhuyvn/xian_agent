@@ -282,3 +282,22 @@ def test_each_thread_gets_its_own_local_model() -> None:
     t.start()
     t.join()
     assert other[0] is other[1] and other[0] is not here
+
+
+def test_until_stops_after_that_stage_and_resume_continues_with_the_next(repo: Repository) -> None:
+    fake = FakeStages(repo)
+    result = run_ingest(repo, novel_id="n", config=CONFIG, run_stage_fn=fake, clock=ticking(), pid=1, until="s4")
+    assert result.status == "stopped" and result.stage == "s5"
+    assert [c[0] for c in fake.calls][-1] == "s4"
+    assert "s5" not in [c[0] for c in fake.calls]
+    assert repo.get_pipeline_run(novel_id="n")["current_stage"] == "s5"
+    again = FakeStages(repo)
+    resumed = run_ingest(repo, novel_id="n", config=CONFIG, resume=True, run_stage_fn=again, clock=ticking(), pid=2)
+    assert resumed.status == "done"
+    assert [c[0] for c in again.calls] == ["s5", "s6", "prefix", "s7"]
+
+
+def test_until_the_last_stage_is_a_normal_finish_and_unknown_stage_is_refused(repo: Repository) -> None:
+    assert run_ingest(repo, novel_id="n", config=CONFIG, run_stage_fn=FakeStages(repo), pid=1, until="s7").status == "done"
+    with pytest.raises(IngestError, match="until must be one of"):
+        run_ingest(repo, novel_id="m", config=CONFIG, run_stage_fn=FakeStages(repo), pid=1, until="s9")
