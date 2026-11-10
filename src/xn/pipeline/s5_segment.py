@@ -12,7 +12,8 @@ from typing import Any, Callable
 
 from pydantic_ai import Agent
 
-from xn.llm import extractor_output, extractor_settings, local_model, run_logged
+from xn.llm import extractor_output, extractor_settings, run_logged
+from xn.model_pool import PoolExhaustedError, stage_model
 from xn.pipeline.s4_embed import Embedder
 from xn.prompts import load_prompt, profile_from_config
 from xn.schemas.arc import BoundaryReview
@@ -318,7 +319,7 @@ def run_s5(
         if reviewer is None:
             reviewer = build_reviewer(
                 repo, novel_id=novel_id, config=config,
-                model=model if model is not None else local_model(config), prompt=prompt,
+                model=model if model is not None else stage_model(config, "s5", repo=repo, novel_id=novel_id), prompt=prompt,
             )
         summaries = {e.chapter_id: e.micro_summary for e in extractions}
         starts, shifted, review_failed = review_boundaries(

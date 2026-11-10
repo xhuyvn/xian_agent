@@ -911,6 +911,22 @@ class Repository:
         )
         return float(cur.fetchone()[0])
 
+    def mark_model_exhausted(self, *, novel_id: str, provider: str, model: str, error: str) -> None:
+        """Record that a pool model's quota is used up (account-wide; novel_id is the run that found it)."""
+        _validate_novel_id(novel_id)
+        with self._conn:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO model_quota (novel_id, provider, model, exhausted_at, error) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (novel_id, provider, model, datetime.now(timezone.utc).isoformat(), error),
+            )
+
+    def exhausted_models(self, *, novel_id: str, provider: str) -> set[str]:
+        """Return the provider's models whose quota is recorded as used up, whichever run found it."""
+        _validate_novel_id(novel_id)
+        cur = self._conn.execute("SELECT model FROM model_quota WHERE provider = ?", (provider,))
+        return {row[0] for row in cur.fetchall()}
+
     # --- Exempt ---
 
     def list_novels(self) -> list[sqlite3.Row]:

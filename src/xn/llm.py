@@ -228,6 +228,7 @@ def run_logged(
     """
     start_time = time.perf_counter()
     run_id = uuid.uuid4().hex
+    pool = getattr(agent, "model", None)
 
     try:
         result = agent.run_sync(user_prompt)
@@ -259,13 +260,14 @@ def run_logged(
     in_tokens = usage.input_tokens
     out_tokens = usage.output_tokens
     retries = max(usage.requests - 1, 0)
+    used = getattr(pool, "last_used", None)  # G-32: a model pool records the member that answered
 
     repo.add_llm_run(
         novel_id=novel_id,
         run_id=run_id,
         stage=stage,
         chapter_id=chapter_id,
-        model=model,
+        model=str(used) if used else model,
         prompt_version=prompt_version,
         input_tokens=in_tokens,
         output_tokens=out_tokens,
@@ -393,10 +395,9 @@ def run_compact(
         result = None
         error: Exception | None = None
         with capture_run_messages() as messages:
+            call_model = model_factory(name)
             try:
-                result = agent.run_sync(
-                    user_prompt, model=model_factory(name), model_settings=settings
-                )
+                result = agent.run_sync(user_prompt, model=call_model, model_settings=settings)
             except Exception as err:
                 error = err
 
@@ -408,7 +409,7 @@ def run_compact(
             run_id=run_id,
             stage=stage,
             chapter_id=None,
-            model=name,
+            model=str(getattr(call_model, "last_used", None) or name) if result is not None else name,
             prompt_version=prompt_version,
             input_tokens=usage.input_tokens if usage is not None else None,
             output_tokens=usage.output_tokens if usage is not None else None,

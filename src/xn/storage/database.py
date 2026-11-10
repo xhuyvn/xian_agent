@@ -50,6 +50,8 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (run_id TEXT PRIMARY KEY, novel_id TEXT
   current_stage TEXT, progress JSON, stage_times JSON, models JSON, pid INTEGER, error TEXT,
   started_at TEXT, updated_at TEXT, finished_at TEXT);
 CREATE INDEX IF NOT EXISTS ix_pipeline_runs_novel ON pipeline_runs(novel_id, started_at);
+CREATE TABLE IF NOT EXISTS model_quota (novel_id TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL,
+  exhausted_at TEXT NOT NULL, error TEXT, PRIMARY KEY(provider, model));
 """
 
 

@@ -284,3 +284,41 @@ def test_story_reads_honour_the_bound(repo):
     got = repo.list_micro_summaries(novel_id=NOVEL, chapter_from=8, chapter_max=11)
     assert [(r["chapter_id"], r["micro_summary"]) for r in got] == [(c, micro(c)) for c in range(8, 12)]
     assert repo.list_micro_summaries(novel_id="other", chapter_from=1, chapter_max=N) == []
+
+
+# --- model pools (G-32) ---------------------------------------------------------------------------
+
+
+def test_a_used_up_pool_stops_the_run_and_resume_continues(repo, conn):
+    from xn.model_pool import PoolExhaustedError
+
+    class Exhausting(FakeSummarizer):
+        def __call__(self, arc_id, upto, window):
+            if upto == 40:
+                raise PoolExhaustedError("model pool qwen_free: every model's quota is used up")
+            return super().__call__(arc_id, upto, window)
+
+    with pytest.raises(PoolExhaustedError):
+        run_prefix(repo, novel_id=NOVEL, config=CONFIG, summarizer=Exhausting())
+    assert [u for _, u, _ in rows(conn)] == [10, 20, 30]
+    assert repo.get_job(novel_id=NOVEL, chapter_id=40, stage=STAGE)["status"] == "failed"
+    fake = FakeSummarizer()
+    run_prefix(repo, novel_id=NOVEL, config=CONFIG, summarizer=fake)
+    assert [u for _, u, _ in fake.calls] == [40, 50, 60, 70]
+
+
+def test_prefix_asks_for_its_stage_model(repo, monkeypatch):
+    from xn.pipeline import prefix_summaries
+    asked = []
+
+    class Stop(Exception):
+        pass
+
+    def fake_stage_model(config, stage, *, repo=None, novel_id=None):
+        asked.append((stage, novel_id, repo is not None))
+        raise Stop
+
+    monkeypatch.setattr(prefix_summaries, "stage_model", fake_stage_model)
+    with pytest.raises(Stop):
+        run_prefix(repo, novel_id=NOVEL, config=CONFIG)
+    assert asked == [("prefix", NOVEL, True)]
