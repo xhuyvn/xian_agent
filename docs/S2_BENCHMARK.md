@@ -249,4 +249,4 @@ Held-out 3 (154 blind pairs, chapters 401-600), one run:
 | hybrid, local qwen3.8 confirms | 0.942 | 2 | 7 | 4.08 |
 | **hybrid, qwen3.8-flash confirms** | **0.948** | **0** | 8 | 1.26 |
 
-Projection for all 2,468 chapters: 7,900-16,500 qwen3.5 calls (R-3 estimate), of which 31-49% go to the confirmer (31% on chapters 1-200 locally, 49% on chapters 1-100 here): about 2,400-8,100 flash calls, 2.4-8.1 M flash tokens, and 4-10 h of S2. The flash tokens are well above a 1M free quota. The test itself used about 80k flash tokens (19.1k measured in the rebuild; the replay's are estimated from 57 "same" answers at about 1,000 each).
+Projection for all 2,468 chapters: 7,900-16,500 qwen3.5 calls (R-3 estimate), of which 31-49% go to the confirmer (31% on chapters 1-200 locally, 49% on chapters 1-100 here): about 2,400-8,100 flash calls, 2.4-8.1 M flash tokens, and 4-10 h of S2. The flash tokens are well above a 1M free quota. The test itself used about 50k flash tokens: 19.1k measured in the rebuild, about 30k in the replay (estimated: about 30 of the 154 pairs took over 1.8 s, the sign of a confirmer call, at about 1,000 tokens each), and 1.9k in two smoke calls.
