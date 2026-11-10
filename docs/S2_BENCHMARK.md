@@ -198,3 +198,34 @@ Held-out 2 (`eval/pntt1/s2_pairs/heldout2_pairs.jsonl`): a fixed random sample o
 **Exploratory, computed after the held-out was scored (not a tuned or confirmed result):** a hybrid where qwen3.5 with the rules decides first and only its "same" answers go to qwen3.8 for confirmation would have made 5 false merges and 6 missed on held-out 2 (accuracy 0.926), calling qwen3.8 on 34 of 148 pairs; on the R-1 pairs (no rules) it gives 5 false merges but 25 missed (accuracy 0.821). With qwen3.8 on about a quarter of calls, mean latency would be about 2.3 s/call against 6.4. Confirming it needs fresh held-out pairs.
 
 Commands: `tools/record_heldout2.py` (S2 rebuild 1-400 with the R-1 setup, records pairs from chapter 201), `tools/replay.py --configs <data>/bench/g311r2/configs --prompt v1 --rules --mention-only --pairs eval/pntt1/s2_pairs/heldout2_pairs.jsonl` and the same with `--configs <data>/bench/g31-q38/configs` and no `--rules` for qwen3.8. Outputs in `<data>/bench/g311r2/`.
+
+### G-31.1 R-3: qwen3.5 decides, qwen3.8 confirms
+
+Date: 2026-11-08 to 2026-11-10. The owner chose to test the hybrid after R-2.
+
+**Result: the hybrid has the best measured quality, but no speed gain in a real S2 run. On 154 blind pairs from chapters 401-600 it makes 2 false merges against 7 for production qwen3.8 (accuracy 0.942 against 0.916), and on the gold set alias F1 is 0.769 with precision 1.00, Q&A 1.00, 0 leaks. But the two models do not fit on the 16 GB GPU together, so Ollama swaps them on almost every confirmation: S2 on chapters 1-200 took 20.6 min against 19.0 for qwen3.8 alone, and mean adjudication latency was 4.86 s/call, which misses the "<= 1.5 s/call" line.**
+
+Code: optional `models.s2_confirmer` (`build_adjudicator`): when set, a "same" from the S2 adjudicator is asked again on that model with the same prompt, and the pair merges only when both say "same"; both calls are logged in `llm_runs` under their own serving names. Without the block nothing changes. Unit tests in `tests/unit/test_s2_model_split.py`.
+
+Held-out 3 (`eval/pntt1/s2_pairs/heldout3_pairs.jsonl`): a fixed random sample (seed 31) of 160 of the 619 pairs S2 sent to the adjudicator on chapters 401-600, from an S2 rebuild of chapters 1-600 with the R-2 setup; labelled blind; 21 same, 133 different, 6 unclear. One run each:
+
+| Held-out 3 (154 pairs) | Accuracy | False merges | Missed | s/pair |
+|---|---|---|---|---|
+| qwen3.8, v1, no rules (production) | 0.916 | 7 | 6 | 5.54 |
+| hybrid: qwen3.5 + R-2 rules, qwen3.8 confirms "same" | **0.942** | **2** | 7 | 4.08 |
+
+Both hybrid false merges ("Nguyên Anh kỳ" / "nguyên anh", "Độc Long hội" / "Độc Long bang") are also qwen3.8 false merges. The hybrid replay ran on Ollama 0.40.15 and the qwen3.8 replay on 0.40.16: Ollama stopped between the two runs (its first two qwen3.8 attempts failed with a connection error) and came back upgraded.
+
+Full rebuild (`data/bench/g311r3-final/`, chapters 1-200, then S3, S4 1-100 into `g311r3_chunks`/`g311r3_arcs`, gold report):
+
+| Chapters 1-200 | Hybrid | qwen3.5 + rules (R-1) | qwen3.8 (G-31) |
+|---|---|---|---|
+| Alias F1 (precision / recall) | 0.769 (1.00 / 0.625) | 0.806 (1.00 / 0.675) | 0.644 (1.00 / 0.475) |
+| Q&A citation hit rate / context recall | 1.00 / 0.978 | 1.00 / 0.978 | 1.00 / 0.978 |
+| Spoiler leaks | 0 of 10 | 0 of 10 | 0 of 10 |
+| S2 wall time | 20.6 min (14:00:05 to 14:20:40 UTC) | 2.5 min | 19.0 min |
+| Adjudication calls | 192 qwen3.5 (2.38 s mean) + 60 qwen3.8 (12.79 s mean) = 252, 4.86 s mean | 201, 0.71 s | 178, 6.36 s |
+
+qwen3.5 calls slow from 0.7 to 2.4 s and qwen3.8 confirmations take 12.8 s because each confirmation unloads one model and loads the other. Alias F1 is lower than R-1 because the confirmer rejects some title-form matches R-1 accepted ("Lệ đại đường chủ", "Hắc gia").
+
+Commands: `tools/record_heldout3.py`; replays as in R-2 with `--configs <data>/bench/g311r3/configs` (adds `s2_confirmer`) and `--pairs eval/pntt1/s2_pairs/heldout3_pairs.jsonl`; the full rebuild is `tools/final_rebuild.sh` pointed at `<data>/bench/g311r3-final/`. Outputs in `<data>/bench/g311r3/` and `g311r3-final/`.
