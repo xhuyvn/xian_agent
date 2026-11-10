@@ -179,3 +179,15 @@ def test_build_pool_skips_models_already_marked(monkeypatch: pytest.MonkeyPatch,
     repo.mark_model_exhausted(novel_id="pntt1", provider="dashscope", model="m1", error="used up")
     pool = build_pool(POOL_CFG, "qwen_free", repo=repo, novel_id="pntt1")
     assert pool.state.exhausted == {"m1"}
+
+
+def test_a_pool_entry_can_carry_its_own_extra_body(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv(SETTING_ENV, "test-key")
+    cfg = {**POOL_CFG, "model_pools": {"qwen_free": {**POOL_CFG["model_pools"]["qwen_free"],
+           "models": ["m1", {"name": "m2", "extra_body": {"enable_thinking": True}}]}}}
+    pool = build_pool(cfg, "qwen_free")
+    m1, m2 = pool.models[0], pool.models[1]
+    assert (m1.member_name, m2.member_name) == ("m1", "m2")  # type: ignore[attr-defined]
+    assert m1._member_settings({}) == {"extra_body": {"enable_thinking": False}}  # type: ignore[attr-defined]
+    assert m2._member_settings({}) == {"extra_body": {"enable_thinking": True}}  # type: ignore[attr-defined]

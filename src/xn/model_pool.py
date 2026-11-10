@@ -14,7 +14,7 @@ Config (all optional; without stage_pools every stage keeps its usual model):
         base_url: https://.../compatible-mode/v1
         api_key_setting: dashscope_api_key
         extra_body: {enable_thinking: false}
-        models: [qwen3.8-max, qwen3.8-27b]
+        models: [qwen3.8-max, {name: qwen3.8-27b, extra_body: {enable_thinking: true}}]
         exhausted_patterns: [...]      # optional: error text that means "quota used up"
     stage_pools: {s5: qwen_free, prefix: qwen_free, s7: qwen_free, s6: deepseek_free}
 """
@@ -165,10 +165,13 @@ def build_pool(config: dict[str, Any], pool_name: str, *, repo: Any = None, nove
     )
     if repo is not None and novel_id is not None:
         state.exhausted |= repo.exhausted_models(novel_id=novel_id, provider=state.provider)
-    members = [
-        PoolMember(_member_model(str(name), spec["base_url"], api_key), str(name), state, spec.get("extra_body"))
-        for name in spec["models"]
-    ]
+    members = []
+    for entry in spec["models"]:
+        # An entry is a model name, or {name, extra_body} for a model that needs its own settings
+        # (for example one that only accepts enable_thinking: true).
+        name = str(entry["name"] if isinstance(entry, dict) else entry)
+        extra = {**(spec.get("extra_body") or {}), **((entry.get("extra_body") or {}) if isinstance(entry, dict) else {})}
+        members.append(PoolMember(_member_model(name, spec["base_url"], api_key), name, state, extra))
     return PoolModel(members, state)
 
 
