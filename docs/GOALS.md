@@ -92,20 +92,6 @@ Changes:
 - 2026-11-06: owner approved sub-goal G-27.1, the S1-only model split ("Go")
 - 2026-11-06: owner approved the production switch ("Yes, switch it"): `configs/config.yaml` gains `models.s1_extractor` = `qwen3.5:9b_UD_Q6` (`qwen35-9b-udq6-10k`), `prompts.s1_extract: v4` and the `s1.postprocess` block (all three fixes on); `local_extractor` stays `qwen3.8:udiq4_hui` for the router, S2, S5 and prefix. `xn run --stage s1 --stale-only` now compares jobs against the clean-up-aware hash, and the runner tests' fixture names the protagonist mid-sentence so the name filter keeps him. The existing ingests are not re-run here: v4 makes S1 redo every chapter (about 12 h for 2,468), then S2 needs `--rebuild`
 
-### G-33: cost and time of every ingest run, and a forecast before a run (active)
-Plan: chat plan of 2026-11-11, from G-29. Cut from the Sprint 4 branch at 9707f75. The lead writes the code (Sprint 4 rule). The live G-29 database is only read while that run goes on.
-Done when:
-- `xn costs --run <id>` prints, per stage and model: wall time with pauses left out, calls, failed calls, retries, input and output tokens, USD (free-pool calls count as $0), chapters, raw characters, and per-chapter and per-1k-character rates; it writes `data/runs/<run_id>-costs.json` and never writes to the database; `xn ingest` writes the same file when a run ends or stops
-- `xn estimate --chapters N` or `--raw-dir DIR` (optionally `--from <costs.json>`) prints, per stage, projected time, calls and tokens per model, and USD; pool stages fill the pool's models in order up to each model's quota left, with the measured rates for thinking models
-- Quota left per pool model = quota (default 1M, optional `quota_tokens` per pool entry) minus tokens in this database and any `--extra-db` copies; a model marked used up in `model_quota` shows 0
-- A failed pool call records the pool member it was sent to, not the configured model name
-- Works on run f57c2d70, and an estimate for another chapter count is shown
-- Unit tests on a small fake database; `py -m compileall -q src` and `uv run pytest tests/unit` pass; the verifier gives a PASS
-Rounds:
-- R-1 2026-11-11: failed pool calls record the member they were sent to (4b22a4e); `xn costs`, `xn estimate`, the costs JSON written at the end of `xn ingest` (6434e90); on run f57c2d70 (still in S7, read-only): wall 13.8 h, 18,934 calls, 46 failed, 23.4M in and 6.9M out tokens, $0, the 1,601 superseded S2 calls on qwen38 shown as redone; forecast for 1,000 chapters 5.0 h, $0, qwen3.8-2.4t-a95b nearly used up -> PASS (full), 0 blockers, 826 tests, 0 agy tokens; NITs: an all-failed model prints 0.0 s/call, S5 and prefix forecasts use unmeasured rates for pool models not yet run on those stages; about 880 changed lines (half tests) in one round
-Changes:
-- 2026-11-11: owner approved the goal and the plan, with the failed-pool-call model-name fix ("Go")
-
 ### G-32: free-quota Alibaba model pools for S5, S6, prefix and S7 (active)
 Plan: chat plan of 2026-11-11, from the G-29 run. Cut from this branch at ad95f05.
 Owner decisions: the lead writes the code, no agy in Sprint 4. Each model below has a 1M-token free quota on the owner's Alibaba Model Studio workspace and fails when it is used up. S5, prefix and S7 run on a Qwen pool (qwen3.8-max, qwen3.8-2.4t-a95b, qwen3.8-27b, qwen3.8-max-0902, qwen3.7-max); S6 runs on a DeepSeek pool (deepseek-v4-pro, deepseek-v4-pro-0813, deepseek-v4.1-flash-1017, deepseek-v4.1-flash) instead of OpenRouter. When every model of a pool is used up, the run stops and the owner is alerted. The G-29 run stops after S4 (`xn ingest --until s4`) and resumes from S5 on the pools. Only the run config copy changes; `configs/config.yaml` does not. S5, prefix and S7 send chapter text and summaries to Alibaba from now on (owner's choice).
@@ -193,6 +179,21 @@ Changes:
 ## Parked
 
 ## Archive
+
+### G-33: cost and time of every ingest run, and a forecast before a run (done)
+Plan: chat plan of 2026-11-11, from G-29. Cut from the Sprint 4 branch at 9707f75. The lead writes the code (Sprint 4 rule). The live G-29 database is only read while that run goes on.
+Done when:
+- `xn costs --run <id>` prints, per stage and model: wall time with pauses left out, calls, failed calls, retries, input and output tokens, USD (free-pool calls count as $0), chapters, raw characters, and per-chapter and per-1k-character rates; it writes `data/runs/<run_id>-costs.json` and never writes to the database; `xn ingest` writes the same file when a run ends or stops
+- `xn estimate --chapters N` or `--raw-dir DIR` (optionally `--from <costs.json>`) prints, per stage, projected time, calls and tokens per model, and USD; pool stages fill the pool's models in order up to each model's quota left, with the measured rates for thinking models
+- Quota left per pool model = quota (default 1M, optional `quota_tokens` per pool entry) minus tokens in this database and any `--extra-db` copies; a model marked used up in `model_quota` shows 0
+- A failed pool call records the pool member it was sent to, not the configured model name
+- Works on run f57c2d70, and an estimate for another chapter count is shown
+- Unit tests on a small fake database; `py -m compileall -q src` and `uv run pytest tests/unit` pass; the verifier gives a PASS
+Rounds:
+- R-1 2026-11-11: failed pool calls record the member they were sent to (4b22a4e); `xn costs`, `xn estimate`, the costs JSON written at the end of `xn ingest` (6434e90); on run f57c2d70 (still in S7, read-only): wall 13.8 h, 18,934 calls, 46 failed, 23.4M in and 6.9M out tokens, $0, the 1,601 superseded S2 calls on qwen38 shown as redone; forecast for 1,000 chapters 5.0 h, $0, qwen3.8-2.4t-a95b nearly used up -> PASS (full), 0 blockers, 826 tests, 0 agy tokens; NITs: an all-failed model prints 0.0 s/call, S5 and prefix forecasts use unmeasured rates for pool models not yet run on those stages; about 880 changed lines (half tests) in one round
+Changes:
+- 2026-11-11: owner approved the goal and the plan, with the failed-pool-call model-name fix ("Go")
+- 2026-11-11: owner marked G-33 done ("Yes, mark done") after the R-1 PASS at 6434e90
 
 ### G-30: benchmark `qwen3.5_12k:q8_mtp` against production S1 (`qwen35-9b-udq6-10k`) on S1 extraction (done)
 Plan: chat plan of 2026-11-07, from the S4-T1 planning session, to decide which model runs the 12 h S1 of S4-T1. Follows G-25, G-26, G-27 and G-27.1. Cut from `main` at 1551d08.
