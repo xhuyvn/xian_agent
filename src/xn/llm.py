@@ -209,6 +209,12 @@ def extractor_settings(config: dict[str, Any], key: str = LOCAL_KEY) -> dict[str
     return settings
 
 
+def _tried_name(model: Any, default: str) -> str:
+    """The pool member a failed call was last sent to (G-33), else default."""
+    tried = getattr(model, "last_tried", None)
+    return str(tried) if isinstance(tried, str) and tried else default
+
+
 def run_logged(
     agent: Any,
     user_prompt: str,
@@ -247,7 +253,7 @@ def run_logged(
                 run_id=run_id,
                 stage=stage,
                 chapter_id=chapter_id,
-                model=model,
+                model=_tried_name(pool, model),  # G-33: the pool member that failed
                 prompt_version=prompt_version,
                 input_tokens=None,
                 output_tokens=None,
@@ -423,7 +429,7 @@ def run_compact(
             run_id=run_id,
             stage=stage,
             chapter_id=None,
-            model=str(getattr(call_model, "last_used", None) or name) if result is not None else name,
+            model=str(getattr(call_model, "last_used", None) or name) if result is not None else _tried_name(call_model, name),
             prompt_version=prompt_version,
             input_tokens=usage.input_tokens if usage is not None else None,
             output_tokens=usage.output_tokens if usage is not None else None,

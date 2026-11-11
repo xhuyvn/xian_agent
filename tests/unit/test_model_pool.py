@@ -137,6 +137,29 @@ def test_run_logged_records_the_member_that_answered(repo: Repository) -> None:
     assert rows == ["b"]
 
 
+def test_run_logged_records_the_member_a_failed_call_was_sent_to(repo: Repository) -> None:
+    # G-33: a failed pool call is recorded under the member that failed, not the configured name.
+    repo.add_novel(novel_id="pntt1", title="N", genre_profile="xianxia", total_chapters=10)
+    err = ModelHTTPError(status_code=400, model_name="b", body={"code": "InvalidParameter"})
+    pool = make_pool({"a": Fake(error=quota_error("a")), "b": Fake(error=err)}, repo)
+    with pytest.raises(ModelHTTPError):
+        run_logged(Agent(pool), "hi", repo=repo, novel_id="pntt1", stage="s7", chapter_id=3,
+                   model="qwen38-udiq4-hui-10k", prompt_version="v1")
+    rows = [(r["model"], r["ok"]) for r in repo._conn.execute("SELECT model, ok FROM llm_runs")]  # type: ignore[attr-defined]
+    assert rows == [("b", 0)]
+
+
+def test_a_used_up_pool_failure_keeps_the_configured_name(repo: Repository) -> None:
+    repo.add_novel(novel_id="pntt1", title="N", genre_profile="xianxia", total_chapters=10)
+    pool = make_pool({"a": Fake(error=quota_error("a"))}, repo)
+    with pytest.raises(PoolExhaustedError):
+        run_logged(Agent(pool), "hi", repo=repo, novel_id="pntt1", stage="s7", chapter_id=3,
+                   model="configured", prompt_version="v1")
+    assert pool.last_tried is None
+    rows = [r["model"] for r in repo._conn.execute("SELECT model FROM llm_runs")]  # type: ignore[attr-defined]
+    assert rows == ["configured"]
+
+
 def test_answered_by_falls_back_to_the_configured_name() -> None:
     assert answered_by(object(), "local") == "local"
 
