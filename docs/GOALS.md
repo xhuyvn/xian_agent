@@ -102,6 +102,7 @@ Done when:
 - Works on run f57c2d70, and an estimate for another chapter count is shown
 - Unit tests on a small fake database; `py -m compileall -q src` and `uv run pytest tests/unit` pass; the verifier gives a PASS
 Rounds:
+- R-1 2026-11-11: failed pool calls record the member they were sent to (4b22a4e); `xn costs`, `xn estimate`, the costs JSON written at the end of `xn ingest` (6434e90); on run f57c2d70 (still in S7, read-only): wall 13.8 h, 18,934 calls, 46 failed, 23.4M in and 6.9M out tokens, $0, the 1,601 superseded S2 calls on qwen38 shown as redone; forecast for 1,000 chapters 5.0 h, $0, qwen3.8-2.4t-a95b nearly used up -> PASS (full), 0 blockers, 826 tests, 0 agy tokens; NITs: an all-failed model prints 0.0 s/call, S5 and prefix forecasts use unmeasured rates for pool models not yet run on those stages; about 880 changed lines (half tests) in one round
 Changes:
 - 2026-11-11: owner approved the goal and the plan, with the failed-pool-call model-name fix ("Go")
 
