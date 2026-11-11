@@ -20,6 +20,7 @@ from pydantic_ai.models.openrouter import OpenRouterModel
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
+from xn.call_log import log_call
 from xn.config import CloudSettings
 from xn.text import estimate_tokens
 
@@ -231,7 +232,13 @@ def run_logged(
     pool = getattr(agent, "model", None)
 
     try:
-        result = agent.run_sync(user_prompt)
+        with capture_run_messages() as messages:
+            try:
+                result = agent.run_sync(user_prompt)
+            except Exception as err:
+                log_call(run_id=run_id, stage=stage, chapter_id=chapter_id,
+                         model=str(getattr(pool, "last_used", None) or model), messages=messages, error=err)
+                raise
     except Exception:
         latency_ms = int((time.perf_counter() - start_time) * 1000)
         try:
@@ -261,6 +268,8 @@ def run_logged(
     out_tokens = usage.output_tokens
     retries = max(usage.requests - 1, 0)
     used = getattr(pool, "last_used", None)  # G-32: a model pool records the member that answered
+    log_call(run_id=run_id, stage=stage, chapter_id=chapter_id, model=str(used) if used else model,
+             messages=result.all_messages())
 
     repo.add_llm_run(
         novel_id=novel_id,
@@ -402,6 +411,9 @@ def run_compact(
                 error = err
 
         seconds = time.perf_counter() - start_time
+        log_call(run_id=run_id, stage=stage, chapter_id=None,
+                 model=str(getattr(call_model, "last_used", None) or name),
+                 messages=result.all_messages() if result is not None else messages, error=error)
         usage = result.usage if result is not None else None
         cost = _reported_cost(result.all_messages() if result is not None else messages)
         if cost is None and result is not None and getattr(call_model, "last_used", None):
