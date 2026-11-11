@@ -16,6 +16,8 @@ from datetime import datetime, timezone
 import json
 
 from xn.config import load_config
+from xn import costs as run_costs_mod
+from xn import estimate as estimate_mod
 from xn.embed import OllamaEmbedder
 from xn.pipeline.ingest import DEFAULT_CHUNK, IngestError, pid_alive, request_stop, run_ingest
 from xn.graph.deps import GraphDeps, QueryError
@@ -177,6 +179,7 @@ def ingest(
         raise _fail("VALIDATION_FAILED", err)
     finally:
         conn.close()
+    _export_costs(db, result.run_id)
     times = " ".join(f"{s}={t / 60:.1f}m" for s, t in result.stage_times.items())
     typer.echo(f"run {result.run_id}: {result.status}" + (f" at {result.stage}" if result.stage else ""))
     typer.echo(f"stage times: {times or 'none'}")
@@ -240,6 +243,115 @@ def status(
     for row in failed:
         typer.echo(f"failed {row['stage']} ch{row['chapter_id']} attempts={row['attempts']}: {row['error']}")
     typer.echo(f"cloud spend: today ${spend_today:.3f}, total ${spend_total:.3f}")
+
+
+def _export_costs(db: Path, run_id: str) -> None:
+    """Write data/runs/<run_id>-costs.json next to the database; a failure here never fails the run (G-33)."""
+    try:
+        conn = run_costs_mod.open_readonly(db)
+        try:
+            summary = run_costs_mod.run_costs(conn, run_id)
+        finally:
+            conn.close()
+        path = run_costs_mod.write_costs(summary, Path(db).parent / "runs")
+        typer.echo(f"costs: {path}")
+    except Exception as err:  # noqa: BLE001 - the export is a report, not part of the run
+        typer.echo(f"costs not written: {err}")
+
+
+def _latest_run_id(conn: Any, novel: str | None) -> str:
+    row = conn.execute(
+        "SELECT run_id FROM pipeline_runs WHERE (? IS NULL OR novel_id = ?) ORDER BY started_at DESC LIMIT 1",
+        (novel, novel),
+    ).fetchone()
+    if row is None:
+        raise ValueError("no pipeline run in the database")
+    return str(row["run_id"])
+
+
+@app.command("costs")
+def costs(
+    run_id: str | None = typer.Option(None, "--run", help="Pipeline run id (default: the latest run)"),
+    novel: str | None = typer.Option(None, "--novel", help="Pick the latest run of this novel"),
+    db: Path = typer.Option(Path("data/xn.db"), "--db", help="Path to SQLite database file (opened read-only)"),
+    out_dir: Path | None = typer.Option(None, "--out-dir", help="Where to write <run_id>-costs.json (default: runs/ next to the database)"),
+    no_write: bool = typer.Option(False, "--no-write", help="Print only; write no JSON file"),
+    gap_s: float = typer.Option(run_costs_mod.DEFAULT_GAP_S, "--gap", help="Seconds of quiet that count as a pause"),
+) -> None:
+    """Cost and time of an ingest run per stage and model; never writes to the database."""
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    try:
+        conn = run_costs_mod.open_readonly(db)
+    except FileNotFoundError as err:
+        raise _fail("NOT_FOUND", err)
+    try:
+        summary = run_costs_mod.run_costs(conn, run_id or _latest_run_id(conn, novel), gap_s=gap_s)
+    except ValueError as err:
+        raise _fail("NOT_FOUND", err)
+    finally:
+        conn.close()
+    typer.echo(run_costs_mod.format_costs(summary))
+    if not no_write:
+        path = run_costs_mod.write_costs(summary, out_dir or Path(db).parent / "runs")
+        typer.echo(f"written: {path}")
+
+
+def _estimate_config(novel: str, configs_dir: Path) -> dict[str, Any]:
+    try:
+        return load_config(novel, configs_dir=configs_dir)
+    except FileNotFoundError:  # a novel with no config yet: the global config has the pools
+        import yaml
+
+        return yaml.safe_load((Path(configs_dir) / "config.yaml").read_text(encoding="utf-8")) or {}
+
+
+@app.command("estimate")
+def estimate(
+    chapters: int | None = typer.Option(None, "--chapters", help="Chapters to forecast"),
+    raw_dir: Path | None = typer.Option(None, "--raw-dir", help="Raw chapter_N.md files to forecast (by characters)"),
+    source: Path | None = typer.Option(None, "--from", help="A <run_id>-costs.json to scale (default: measure --run in --db)"),
+    run_id: str | None = typer.Option(None, "--run", help="Pipeline run to scale (default: the latest run)"),
+    novel: str | None = typer.Option(None, "--novel", help="Novel whose config names the pools (default: the run's)"),
+    db: Path = typer.Option(Path("data/xn.db"), "--db", help="Path to SQLite database file (opened read-only)"),
+    extra_db: list[Path] = typer.Option([], "--extra-db", help="Other databases whose pool tokens count against the quota"),
+    configs_dir: Path = typer.Option(Path("configs"), "--configs-dir", help="Path to configs directory"),
+) -> None:
+    """Forecast time, tokens per model and cost per stage, and the free pool quota left."""
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if (chapters is None) == (raw_dir is None):
+        raise _fail("VALIDATION_FAILED", "give exactly one of --chapters or --raw-dir")
+    if chapters is not None and chapters <= 0:
+        raise _fail("VALIDATION_FAILED", "--chapters must be positive")
+    conns = []
+    try:
+        try:
+            conns = [run_costs_mod.open_readonly(p) for p in [db, *extra_db]]
+        except FileNotFoundError as err:
+            raise _fail("NOT_FOUND", err)
+        try:
+            if source is not None:
+                summary = json.loads(Path(source).read_text(encoding="utf-8"))
+            else:
+                summary = run_costs_mod.run_costs(conns[0], run_id or _latest_run_id(conns[0], novel))
+        except (ValueError, FileNotFoundError) as err:
+            raise _fail("NOT_FOUND", err)
+        if not summary.get("chapters"):
+            raise _fail("VALIDATION_FAILED", f"run {summary.get('run_id')} has no chapters to scale from")
+        config = _estimate_config(novel or summary["novel_id"], configs_dir)
+        quota = estimate_mod.quota_left(config, conns)
+    finally:
+        for c in conns:
+            c.close()
+    n_chars = None
+    if raw_dir is not None:
+        try:
+            chapters, n_chars = estimate_mod.raw_dir_size(raw_dir)
+        except (OSError, ValueError) as err:
+            raise _fail("NOT_FOUND", err)
+    forecast = estimate_mod.estimate(summary, config, quota, chapters=int(chapters), chars=n_chars)
+    typer.echo(estimate_mod.format_estimate(forecast))
 
 
 def format_answer(state: dict[str, Any]) -> str:

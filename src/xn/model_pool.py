@@ -16,6 +16,7 @@ Config (all optional; without stage_pools every stage keeps its usual model):
         extra_body: {enable_thinking: false}
         models: [qwen3.8-max, {name: qwen3.8-27b, extra_body: {enable_thinking: true}}]
         exhausted_patterns: [...]      # optional: error text that means "quota used up"
+        quota_tokens: 1000000          # optional, also per model entry: free quota, read by `xn estimate` (G-33)
     stage_pools: {s5: qwen_free, prefix: qwen_free, s7: qwen_free, s6: deepseek_free}
 """
 
