@@ -243,7 +243,7 @@ def run_logged(
                 result = agent.run_sync(user_prompt)
             except Exception as err:
                 log_call(run_id=run_id, stage=stage, chapter_id=chapter_id,
-                         model=str(getattr(pool, "last_used", None) or model), messages=messages, error=err)
+                         model=_tried_name(pool, model), messages=messages, error=err)
                 raise
     except Exception:
         latency_ms = int((time.perf_counter() - start_time) * 1000)
@@ -418,7 +418,8 @@ def run_compact(
 
         seconds = time.perf_counter() - start_time
         log_call(run_id=run_id, stage=stage, chapter_id=None,
-                 model=str(getattr(call_model, "last_used", None) or name),
+                 model=str(getattr(call_model, "last_used", None) or name) if result is not None
+                 else _tried_name(call_model, name),
                  messages=result.all_messages() if result is not None else messages, error=error)
         usage = result.usage if result is not None else None
         cost = _reported_cost(result.all_messages() if result is not None else messages)
