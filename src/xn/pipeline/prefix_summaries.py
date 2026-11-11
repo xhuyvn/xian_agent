@@ -12,7 +12,8 @@ from typing import Any, Callable
 from pydantic import BaseModel, Field
 from pydantic_ai import Agent
 
-from xn.llm import extractor_output, extractor_settings, local_model, run_logged
+from xn.llm import extractor_output, extractor_settings, run_logged
+from xn.model_pool import PoolExhaustedError, stage_model
 from xn.prompts import load_prompt, profile_from_config
 from xn.storage.repository import Repository
 
@@ -184,7 +185,7 @@ def run_prefix(
         if summarizer is None:
             summarizer = build_summarizer(
                 repo, novel_id=novel_id, config=config,
-                model=model if model is not None else local_model(config), prompt=prompt,
+                model=model if model is not None else stage_model(config, "prefix", repo=repo, novel_id=novel_id), prompt=prompt,
             )
         try:
             summary = summarizer(arc_id, upto, window)
@@ -192,6 +193,9 @@ def run_prefix(
                 novel_id=novel_id, arc_id=arc_id, upto_chapter=upto, summary=summary, stage=STAGE,
                 input_hash=input_hash, prompt_version=prompt.prompt_version, model=serving_name,
             )
+        except PoolExhaustedError as err:  # G-32: stop, so a resume picks up here
+            repo.upsert_job(status="failed", error=str(err), **job_fields)
+            raise
         except Exception as err:
             logger.error("Prefix summary of arc %d up to chapter %d failed: %s", arc_id, upto, err)
             repo.upsert_job(status="failed", error=str(err), **job_fields)

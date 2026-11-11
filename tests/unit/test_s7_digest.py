@@ -276,3 +276,46 @@ def test_list_events_between_honours_both_bounds_and_the_tenant(repo, conn):
     rows = repo.list_events_between(novel_id=NOVEL, chapter_from=3, chapter_max=8)
     assert sorted({r["chapter_id"] for r in rows}) == [3, 4, 5, 8]
     assert {r["novel_id"] for r in rows} == {NOVEL}
+
+
+# --- model pools (G-32) ---------------------------------------------------------------------------
+
+
+def _used_up_pool():
+    from pydantic_ai.exceptions import ModelHTTPError
+    from xn.model_pool import DEFAULT_EXHAUSTED_PATTERNS, PoolMember, PoolModel, PoolState
+
+    def respond(messages, info):
+        raise ModelHTTPError(status_code=403, model_name="m", body={"code": "AllocationQuota.FreeTierOnly"})
+
+    state = PoolState(name="qwen_free", provider="dashscope", patterns=DEFAULT_EXHAUSTED_PATTERNS)
+    member = PoolMember(FunctionModel(respond, profile=ModelProfile(supports_json_schema_output=True)), "m", state, None)
+    return PoolModel([member], state)
+
+
+def test_a_used_up_pool_stops_s7_instead_of_failing_every_arc(repo, conn):
+    from xn.model_pool import PoolExhaustedError
+
+    with pytest.raises(PoolExhaustedError):
+        run_s7(repo, novel_id=NOVEL, config=CONFIG, model=_used_up_pool())
+    failed = [r["chapter_id"] for r in conn.execute("SELECT chapter_id FROM jobs WHERE stage = 's7' AND status = 'failed'")]
+    assert len(failed) == 1  # the arc it was on; later arcs were never tried
+    result = run_s7(repo, novel_id=NOVEL, config=CONFIG, model=FakeModel().model())
+    assert result.failed == 0 and result.processed >= 1
+
+
+def test_s7_asks_for_its_stage_model(repo, monkeypatch):
+    from xn.pipeline import s7_digest
+    asked = []
+
+    class Stop(Exception):
+        pass
+
+    def fake_stage_model(config, stage, *, repo=None, novel_id=None):
+        asked.append((stage, novel_id))
+        raise Stop
+
+    monkeypatch.setattr(s7_digest, "stage_model", fake_stage_model)
+    with pytest.raises(Stop):
+        run_s7(repo, novel_id=NOVEL, config=CONFIG)
+    assert asked == [("s7", NOVEL)]

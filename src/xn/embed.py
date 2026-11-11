@@ -52,6 +52,13 @@ class OllamaEmbedder:
         data = self._request("GET", "/api/ps")
         return [m["name"] for m in data.get("models") or [] if m["name"] != self.model]
 
+    def unload_others(self) -> list[str]:
+        """Ask Ollama to unload every model besides the embedder; returns their names."""
+        others = self.other_loaded_models()
+        for name in others:
+            self._request("POST", "/api/generate", json={"model": name, "keep_alive": 0})
+        return others
+
     def embed(self, texts: list[str]) -> list[list[float]]:
         """Embed texts in batches, in order."""
         vectors: list[list[float]] = []

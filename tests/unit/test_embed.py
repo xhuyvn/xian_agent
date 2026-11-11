@@ -114,3 +114,16 @@ def test_query_encoder_sends_the_query_options():
     OllamaEmbedder.from_config(config, client).embed(["d"])
     assert calls[0]["options"] == {"num_gpu": 0}
     assert "options" not in calls[1]
+
+
+def test_unload_others_asks_ollama_to_drop_every_other_model():
+    posts = []
+
+    def handler(request):
+        if request.url.path == "/api/ps":
+            return httpx.Response(200, json={"models": [{"name": "bge-m3:latest"}, {"name": "qwen-a"}, {"name": "qwen-b"}]})
+        posts.append(json.loads(request.content))
+        return httpx.Response(200, json={"done": True})
+
+    assert make(handler).unload_others() == ["qwen-a", "qwen-b"]
+    assert posts == [{"model": "qwen-a", "keep_alive": 0}, {"model": "qwen-b", "keep_alive": 0}]

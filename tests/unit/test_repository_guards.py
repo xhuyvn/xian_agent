@@ -27,6 +27,8 @@ EXPECTED_TABLES = [
     "answer_cache",
     "lc_map_cache",
     "feedback",
+    "pipeline_runs",
+    "model_quota",
 ]
 
 STORY_READ_METHODS = [
@@ -68,6 +70,14 @@ OPERATIONAL_METHODS = [
     "save_arc_payload",
     "save_arc_prefix_summary",
     "prune_arc_prefix_summaries",
+    "start_pipeline_run",
+    "get_pipeline_run",
+    "update_pipeline_run",
+    "request_pipeline_stop",
+    "job_summary",
+    "novel_cloud_spend",
+    "mark_model_exhausted",
+    "exhausted_models",
 ]
 
 EXEMPT_METHODS = [
@@ -94,14 +104,14 @@ def repo(db_conn: sqlite3.Connection):
     return Repository(db_conn)
 
 
-def test_all_15_tables_exist_with_novel_id_column(db_conn: sqlite3.Connection) -> None:
-    """Verify that all 15 named tables exist and each contains a novel_id column."""
+def test_all_17_tables_exist_with_novel_id_column(db_conn: sqlite3.Connection) -> None:
+    """Verify that all 17 named tables exist and each contains a novel_id column."""
     cur = db_conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
     )
     existing_tables = {row[0] for row in cur.fetchall()}
 
-    assert len(EXPECTED_TABLES) == 15
+    assert len(EXPECTED_TABLES) == 17
     for table_name in EXPECTED_TABLES:
         assert table_name in existing_tables, f"Expected table '{table_name}' was not created"
         info = db_conn.execute(f"PRAGMA table_info({table_name})").fetchall()
@@ -336,6 +346,14 @@ def test_operational_parameter_guards(repo: Repository) -> None:
             "model": "m",
         },
         "prune_arc_prefix_summaries": {"keep": [], "upto_max": 10, "stage": "prefix"},
+        "start_pipeline_run": {"run_id": "r", "stages": ["s0"], "chapter_to": 10, "models": {}, "pid": 1},
+        "get_pipeline_run": {},
+        "update_pipeline_run": {"run_id": "r", "status": "done"},
+        "request_pipeline_stop": {},
+        "job_summary": {},
+        "novel_cloud_spend": {},
+        "mark_model_exhausted": {"provider": "p", "model": "m", "error": "e"},
+        "exhausted_models": {"provider": "p"},
     }
 
     for method_name in OPERATIONAL_METHODS:

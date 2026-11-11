@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from html import escape
 import logging
+import threading
 import time
 from typing import Any, Callable, Literal
 import uuid
@@ -24,7 +25,9 @@ from xn.text import estimate_tokens
 
 logger = logging.getLogger(__name__)
 
-_MODEL_CACHE: dict[tuple[str, str], OpenAIChatModel] = {}
+# One cache per thread (G-29.1): a model's HTTP client is bound to the event loop of the thread
+# that first used it, so S1 worker threads must not share one.
+_MODEL_CACHE = threading.local()
 
 CLOUD_TIMEOUT_S = 90.0
 CLOUD_RETRIES = 3
@@ -106,6 +109,7 @@ def render_compact_prompt(question: str, items: list[CompactItem]) -> str:
 
 LOCAL_KEY = "local_extractor"
 S1_KEY = "s1_extractor"
+S2_KEY = "s2_adjudicator"
 
 
 def s1_model_key(config: dict[str, Any]) -> str:
@@ -117,14 +121,23 @@ def s1_model_key(config: dict[str, Any]) -> str:
     return S1_KEY if (config.get("models") or {}).get(S1_KEY) else LOCAL_KEY
 
 
+def s2_model_key(config: dict[str, Any]) -> str:
+    """Return the models key the S2 adjudicator runs on: s2_adjudicator when set (G-31), else local_extractor."""
+    return S2_KEY if (config.get("models") or {}).get(S2_KEY) else LOCAL_KEY
+
+
 def local_model(config: dict[str, Any], key: str = LOCAL_KEY) -> OpenAIChatModel:
     """Build or retrieve cached Pydantic-AI OpenAIChatModel for a local model.
 
     Constructs the model on first call from models.<key>.serving_name
     and base_url with api_key="ollama", and caches per (serving_name, base_url).
+    An optional models.<key>.api_key_setting names a CloudSettings field (for example
+    "dashscope_api_key") whose secret is used as the key instead, for an OpenAI-compatible
+    cloud endpoint (G-31.1).
 
     Raises:
-        ValueError: If models.<key>.serving_name is missing.
+        ValueError: If models.<key>.serving_name is missing, or api_key_setting names an
+            unknown or empty setting.
     """
     models_cfg = config.get("models", {}).get(key, {})
     serving_name = models_cfg.get("serving_name")
@@ -132,11 +145,20 @@ def local_model(config: dict[str, Any], key: str = LOCAL_KEY) -> OpenAIChatModel
         raise ValueError(f"Missing required config key: models.{key}.serving_name")
     base_url = models_cfg.get("base_url") or "http://localhost:11434/v1"
 
+    key_setting = models_cfg.get("api_key_setting")
+    api_key = "ollama"
+    if key_setting:
+        secret = getattr(CloudSettings(), str(key_setting), None)
+        api_key = secret.get_secret_value() if secret is not None else ""
+        if not api_key:
+            raise ValueError(f"models.{key}.api_key_setting: {key_setting} is not set")
+
+    cache: dict[tuple[str, str], OpenAIChatModel] = _MODEL_CACHE.__dict__.setdefault("models", {})
     cache_key = (serving_name, base_url)
-    if cache_key not in _MODEL_CACHE:
-        provider = OpenAIProvider(base_url=base_url, api_key="ollama")
-        _MODEL_CACHE[cache_key] = OpenAIChatModel(serving_name, provider=provider)
-    return _MODEL_CACHE[cache_key]
+    if cache_key not in cache:
+        provider = OpenAIProvider(base_url=base_url, api_key=api_key)
+        cache[cache_key] = OpenAIChatModel(serving_name, provider=provider)
+    return cache[cache_key]
 
 
 def cloud_model(model_name: str) -> OpenRouterModel:
@@ -175,11 +197,14 @@ def extractor_settings(config: dict[str, Any], key: str = LOCAL_KEY) -> dict[str
     """Build model settings from models.<key> temperature and think.
 
     think: false asks Ollama to skip thinking. When unset, the model's default applies.
+    extra_body (optional) is sent as is, e.g. {"enable_thinking": false} for DashScope.
     """
     models_cfg = config.get("models", {}).get(key, {})
     settings: dict[str, Any] = {"temperature": models_cfg.get("temperature", 0.1)}
     if models_cfg.get("think") is False:
         settings["openai_reasoning_effort"] = "none"
+    if models_cfg.get("extra_body"):
+        settings["extra_body"] = dict(models_cfg["extra_body"])
     return settings
 
 
@@ -203,6 +228,7 @@ def run_logged(
     """
     start_time = time.perf_counter()
     run_id = uuid.uuid4().hex
+    pool = getattr(agent, "model", None)
 
     try:
         result = agent.run_sync(user_prompt)
@@ -234,13 +260,14 @@ def run_logged(
     in_tokens = usage.input_tokens
     out_tokens = usage.output_tokens
     retries = max(usage.requests - 1, 0)
+    used = getattr(pool, "last_used", None)  # G-32: a model pool records the member that answered
 
     repo.add_llm_run(
         novel_id=novel_id,
         run_id=run_id,
         stage=stage,
         chapter_id=chapter_id,
-        model=model,
+        model=str(used) if used else model,
         prompt_version=prompt_version,
         input_tokens=in_tokens,
         output_tokens=out_tokens,
@@ -368,22 +395,23 @@ def run_compact(
         result = None
         error: Exception | None = None
         with capture_run_messages() as messages:
+            call_model = model_factory(name)
             try:
-                result = agent.run_sync(
-                    user_prompt, model=model_factory(name), model_settings=settings
-                )
+                result = agent.run_sync(user_prompt, model=call_model, model_settings=settings)
             except Exception as err:
                 error = err
 
         seconds = time.perf_counter() - start_time
         usage = result.usage if result is not None else None
         cost = _reported_cost(result.all_messages() if result is not None else messages)
+        if cost is None and result is not None and getattr(call_model, "last_used", None):
+            cost = 0.0  # G-32: a free-quota pool member answered; used-up quota fails instead of billing
         repo.add_llm_run(
             novel_id=novel_id,
             run_id=run_id,
             stage=stage,
             chapter_id=None,
-            model=name,
+            model=str(getattr(call_model, "last_used", None) or name) if result is not None else name,
             prompt_version=prompt_version,
             input_tokens=usage.input_tokens if usage is not None else None,
             output_tokens=usage.output_tokens if usage is not None else None,

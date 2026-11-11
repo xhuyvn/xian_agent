@@ -14,7 +14,8 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, ModelRetry
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 
-from xn.llm import extractor_output, extractor_settings, local_model, run_logged
+from xn.llm import extractor_output, extractor_settings, run_logged
+from xn.model_pool import PoolExhaustedError, stage_model
 from xn.prompts import load_prompt, profile_from_config
 from xn.storage.repository import Repository
 
@@ -292,7 +293,7 @@ def run_s7(
         if digester is None:
             digester = build_digester(
                 repo, novel_id=novel_id, config=config,
-                model=model if model is not None else local_model(config), prompt=prompt, settings=settings,
+                model=model if model is not None else stage_model(config, "s7", repo=repo, novel_id=novel_id), prompt=prompt, settings=settings,
             )
         began = time.perf_counter()
         try:
@@ -307,6 +308,9 @@ def run_s7(
                 novel_id=novel_id, arc_id=arc_id, end_chapter=end, digests=rows, stage=STAGE,
                 input_hash=input_hash, prompt_version=prompt.prompt_version, model=serving_name,
             )
+        except PoolExhaustedError as err:  # G-32: stop, so a resume picks up here
+            repo.upsert_job(status="failed", error=str(err), **job_fields)
+            raise
         except Exception as err:
             logger.error("S7 arc %d (%d-%d) failed: %s", arc_id, start, end, err)
             repo.upsert_job(status="failed", error=str(err), **job_fields)

@@ -45,12 +45,19 @@ CREATE TABLE IF NOT EXISTS lc_map_cache (novel_id TEXT, entity_id INTEGER, arc_i
   prompt_version TEXT, model TEXT, payload JSON, input_tokens INTEGER,
   PRIMARY KEY(novel_id, entity_id, arc_id, upto_chapter, prompt_version, model));
 CREATE TABLE IF NOT EXISTS feedback (novel_id TEXT NOT NULL, run_id TEXT, rating INTEGER, note TEXT, created_at TEXT);
+CREATE TABLE IF NOT EXISTS pipeline_runs (run_id TEXT PRIMARY KEY, novel_id TEXT NOT NULL, status TEXT NOT NULL
+  CHECK (status IN ('running','stopping','stopped','done','failed')), stages JSON NOT NULL, chapter_to INTEGER,
+  current_stage TEXT, progress JSON, stage_times JSON, models JSON, pid INTEGER, error TEXT,
+  started_at TEXT, updated_at TEXT, finished_at TEXT);
+CREATE INDEX IF NOT EXISTS ix_pipeline_runs_novel ON pipeline_runs(novel_id, started_at);
+CREATE TABLE IF NOT EXISTS model_quota (novel_id TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL,
+  exhausted_at TEXT NOT NULL, error TEXT, PRIMARY KEY(provider, model));
 """
 
 
 def connect(db_path: str | Path) -> sqlite3.Connection:
     """Connect to SQLite database, configure WAL mode, foreign keys, and Row factory."""
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30.0)  # G-29.1: S1 workers share the file
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.row_factory = sqlite3.Row

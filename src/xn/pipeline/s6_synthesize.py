@@ -13,6 +13,7 @@ from typing import Any, Callable
 from pydantic_ai import Agent
 
 from xn.llm import CompactItem, SpendCapError, cloud_model, run_compact
+from xn.model_pool import PoolExhaustedError, build_pool, stage_pool_name
 from xn.pipeline.s4_embed import Embedder
 from xn.prompts import load_prompt, profile_from_config
 from xn.schemas.arc import StoryArc, StoryArcSynthesis
@@ -109,6 +110,10 @@ def run_s6(
     model_name = model_cfg["name"]
     temperature = model_cfg.get("temperature", 0.3)
     agent = Agent(output_type=StoryArcSynthesis, system_prompt=prompt.text, retries=2)
+    pool_name = stage_pool_name(config, STAGE)
+    if pool_name is not None and cloud_factory is cloud_model:  # G-32: free-quota pool replaces OpenRouter
+        pool = build_pool(config, pool_name, repo=repo, novel_id=novel_id)
+        cloud_factory = lambda _name: pool  # noqa: E731
     extra = {"sleep": sleep} if sleep is not None else {}
 
     store.ensure_collections()
@@ -171,7 +176,7 @@ def run_s6(
                 prompt_version=prompt.prompt_version, model=model_name,
             )
             written += 1
-        except SpendCapError as err:
+        except (SpendCapError, PoolExhaustedError) as err:
             logger.error("S6 stopped at arc %d: %s", arc_id, err)
             repo.upsert_job(status="failed", error=str(err), **job_fields)
             stopped_at = arc_id

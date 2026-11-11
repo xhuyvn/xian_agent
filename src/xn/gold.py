@@ -15,13 +15,15 @@ from xn.graph.nodes.gate import gate
 from xn.graph.nodes.resolve import resolve_entities
 from xn.graph.nodes.retrieve import retrieve
 from xn.graph.nodes.route import route
-from xn.llm import local_model
+from xn.llm import local_model, s2_model_key
 from xn.pipeline.s2_resolve import (
     Candidate,
     Mention,
     Resolver,
+    S2Rules,
     build_adjudicator,
     load_adjudicate_prompt,
+    s2_rules_from_config,
 )
 from xn.schemas.state import QueryState
 from xn.storage.repository import Repository
@@ -307,9 +309,11 @@ def _context(name: str, texts: dict[int, str]) -> tuple[int, str]:
     return 1, ""
 
 
-def resolver_merges(pair: GoldAliasPair, texts: dict[int, str], adjudicate: Adjudicate) -> bool:
+def resolver_merges(
+    pair: GoldAliasPair, texts: dict[int, str], adjudicate: Adjudicate, rules: S2Rules | None = None
+) -> bool:
     """Run both names through a fresh S2 resolver and report whether they merged."""
-    resolver = Resolver(adjudicate=adjudicate)
+    resolver = Resolver(adjudicate=adjudicate, rules=rules)
     ids = []
     for name in (pair.a, pair.b):
         chapter_id, context = _context(name, texts)
@@ -413,12 +417,13 @@ def gold_report(
         row["chapter_id"]: json.loads(row["payload"])
         for row in repo.list_extractions(novel_id=novel_id, chapter_max=scope)
     }
+    adjudicator_model = model or local_model(config, s2_model_key(config))
     model = model or local_model(config)
     adjudicate = build_adjudicator(
         repo,
         novel_id=novel_id,
         config=config,
-        model=model,
+        model=adjudicator_model,
         prompt=load_adjudicate_prompt(config, prompts_dir),
     )
     deps = GraphDeps(repo=repo, config=config, prompts_dir=prompts_dir, router_model=model)
@@ -436,7 +441,7 @@ def gold_report(
         "extraction_dev": score_extraction(dev, payloads),
         "extraction_held_out": score_extraction(held_out, payloads),
         "aliases": score_aliases(
-            gold.aliases, [resolver_merges(p, texts, adjudicate) for p in gold.aliases]
+            gold.aliases, [resolver_merges(p, texts, adjudicate, s2_rules_from_config(config)) for p in gold.aliases]
         ),
         "qa": score_qa(gold.qa, states(gold.qa)),
         "spoilers": score_spoilers(gold.spoilers, states(gold.spoilers)),
