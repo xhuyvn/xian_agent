@@ -71,6 +71,7 @@ class PoolState:
     novel_id: str | None = None
     exhausted: set[str] = field(default_factory=set)
     last_used: str | None = None
+    last_tried: str | None = None  # G-33: the member a failed call was last sent to
 
     def is_quota_error(self, err: Exception) -> bool:
         text = f"{getattr(err, 'body', '')} {err}".lower()
@@ -103,6 +104,7 @@ class PoolMember(WrapperModel):
     async def request(self, messages: list[Any], model_settings: Any, model_request_parameters: ModelRequestParameters) -> Any:
         if self.member_name in self._pool_state.exhausted:
             raise MemberExhausted(self.member_name)
+        self._pool_state.last_tried = self.member_name
         try:
             response = await self.wrapped.request(messages, self._member_settings(model_settings), model_request_parameters)
         except ModelHTTPError as err:
@@ -122,6 +124,7 @@ class _PoolEnd(WrapperModel):
         self._pool_state = state
 
     async def request(self, messages: list[Any], model_settings: Any, model_request_parameters: ModelRequestParameters) -> Any:
+        self._pool_state.last_tried = None
         raise PoolExhaustedError(
             f"model pool {self._pool_state.name}: every model's quota is used up ({', '.join(sorted(self._pool_state.exhausted))})"
         )
@@ -137,6 +140,10 @@ class PoolModel(FallbackModel):
     @property
     def last_used(self) -> str | None:
         return self.state.last_used
+
+    @property
+    def last_tried(self) -> str | None:
+        return self.state.last_tried
 
 
 def _member_model(name: str, base_url: str, api_key: str) -> OpenAIChatModel:
@@ -193,3 +200,4 @@ def answered_by(model: Any, default: str) -> str:
     r"""The model name to record for a call: the pool member that answered, else default."""
     used = getattr(model, "last_used", None)
     return str(used) if used else default
+
